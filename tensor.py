@@ -4,6 +4,7 @@ import numpy as np
 class Tensor:
   def __init__(self, data: np.array):
     self.data = data
+    self.grad = 0
 
   # TODO: make op wrappers here
   def item(self):
@@ -16,6 +17,9 @@ class Tensor:
     shp = self.data.shape
     for idx in idxs:
       ret.append(shp[idx])
+    
+    if len(ret) == 1:
+      ret = int(ret[0])
     return ret
 
   def mean(self):
@@ -26,7 +30,7 @@ class Tensor:
   # TODO: the weight shape defines the output shape (bias needs to be the same shape as output)
   def linear(self, w, b):
     #return (self.data * w) + b
-    return np.dot(self.data, w) + b
+    return np.dot(self.data, w.data) + b.data
 
   # TODO: implement activation functions here
 
