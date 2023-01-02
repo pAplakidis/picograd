@@ -2,11 +2,21 @@
 import numpy as np
 
 class Tensor:
-  def __init__(self, data: np.array):
+  def __init__(self, data: np.array, __children=()):
     self.data = data
-    self.grad = 0
+    self.grad = 0.0
+    self.__prev = set(__children)
 
-  # TODO: make op wrappers here
+  # TODO: write op wrappers here
+  def __repr__(self):
+    return f"Tensor(data={self.data}, shape={self.shape})"
+
+  def __add__(self, other):
+    return Tensor(self.data + other.data)
+
+  def __mul__(self, other):
+    return Tensor(self.data * other.data)
+
   def item(self):
     return self.data
 
