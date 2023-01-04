@@ -2,13 +2,6 @@
 import numpy as np
 from tensor import Tensor
 
-# TODO: debug
-def ReLU(x: Tensor):
-  if x >= 0:
-    return x
-  else:
-    return 0
-
 class Linear():
   def __init__(self, in_feats, out_feats):
     self.weight = Tensor(np.random.rand(in_feats, out_feats))

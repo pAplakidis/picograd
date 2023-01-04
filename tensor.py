@@ -4,12 +4,12 @@ import numpy as np
 class Tensor:
   def __init__(self, data: np.array, __children=()):
     self.data = data
-    self.grad = 0.0
+    self.grad = np.zeros(self.shape(), dtype=np.float)
     self.__prev = set(__children)
 
   # TODO: write op wrappers here
   def __repr__(self):
-    return f"Tensor(data={self.data}, shape={self.shape})"
+    return f"Tensor(shape={str(self.shape())}, data={str(self.data)}, grad={self.grad})"
 
   def __add__(self, other):
     return Tensor(self.data + other.data)
@@ -40,9 +40,26 @@ class Tensor:
   # TODO: the weight shape defines the output shape (bias needs to be the same shape as output)
   def linear(self, w, b):
     #return (self.data * w) + b
-    return np.dot(self.data, w.data) + b.data
+    t = Tensor(np.dot(self.data, w.data) + b.data, self.__prev)
+    t.__prev.add(self)
+    return t
+
+  def backward(self):
+    # TODO: self.grad = w * next.grad
+    self.grad = Tensor(np.ones(self.data.shape))
 
   # TODO: implement activation functions here
+  def ReLU(self):
+    pass
+
+  def tahn(self):
+    pass
+
+  def sigmoid(self):
+    pass
+
+  def softmax(self):
+    pass
 
 
 if __name__ == '__main__':
