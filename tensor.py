@@ -9,7 +9,7 @@ class Tensor:
 
   # TODO: write op wrappers here
   def __repr__(self):
-    return f"Tensor(shape={str(self.shape())}, data={str(self.data)}, grad={self.grad})"
+    return f"Tensor(shape={str(self.shape())}, data={str(self.data)}, grad={self.grad}), prev_tensors={len(self.__prev)}"
 
   def __add__(self, other):
     return Tensor(self.data + other.data)
@@ -44,8 +44,11 @@ class Tensor:
     t.__prev.add(self)
     return t
 
+  # TODO: implement a backward for each type of op
+  # NOTE: here is the code that just calls backward(*args) for each child
   def backward(self):
     # TODO: self.grad = w * next.grad
+    # TODO: calc grad for every node
     self.grad = Tensor(np.ones(self.data.shape))
 
   # TODO: implement activation functions here
