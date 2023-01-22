@@ -17,6 +17,7 @@ class MSELoss(Loss):
 """
 
 # z: network output, y: ground truth
+# TODO: this should output a Tensor
 def MSELoss(z: Tensor, y: Tensor):
   assert (n := z.shape()[0]) == y.shape()[0]
   t = 1/n * np.sum(np.power(z.data-y.data, 2))
