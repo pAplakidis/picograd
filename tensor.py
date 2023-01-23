@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 import numpy as np
 
-OPS = {0: "Linear",
-       1: "Conv2d",
-       2: "ReLU",
-       3: "Softmax",
-       4: "Sigmoid"}
+OPS = {"Linear": 0,
+       "Conv2d": 1,
+       "ReLU": 2,
+       "Softmax": 3,
+       "Sigmoid": 4}
 
 
 class Tensor:
@@ -52,12 +52,12 @@ class Tensor:
     #return (self.data * w) + b
     out = Tensor(np.dot(self.data, w.data) + b.data, self.__prev)
     out.__prev.add(self)
-    #t.prev_op = OPS["Linear"]
+    out.prev_op = OPS["Linear"]
 
     def _backward():
       # TODO: handle dot/mul first (with W)
       self.grad += np.array([1.0 for _ in range(len(self.grad))]) * out.grad
-      w.grad = np.array([1.0 for _ in range(len(w.grad))]) * out.grad
+      b.grad = np.array([1.0 for _ in range(len(w.grad))]) * out.grad
     out._backward = _backward
 
     return out
