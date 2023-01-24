@@ -11,7 +11,7 @@ OPS = {"Linear": 0,
 class Tensor:
   def __init__(self, data: np.array, __children=()):
     self.data = data
-    self.grad = None
+    self.grad = np.zeros(len(self.data))
     self.__prev = set(__children)
     self._ctx = None
     self.prev_op = None
@@ -19,7 +19,7 @@ class Tensor:
 
   # TODO: write op wrappers here
   def __repr__(self):
-    return f"Tensor(shape={str(self.shape())}, data={str(self.data)}, grad={self.grad}), prev_tensors={len(self.__prev)}"
+    return f"Tensor(shape={str(self.shape())}, data={str(self.data)}, grad={self.grad}), prev_op={str(self.prev_op)}, prev_tensors={len(self.__prev)}"
 
   def __add__(self, other):
     return Tensor(self.data + other.data)
@@ -55,11 +55,11 @@ class Tensor:
     out.prev_op = OPS["Linear"]
 
     def _backward():
-      # TODO: handle dot/mul first (with W)
-      self.grad += np.array([1.0 for _ in range(len(self.grad))]) * out.grad
-      b.grad = np.array([1.0 for _ in range(len(w.grad))]) * out.grad
-    out._backward = _backward
+      w.grad = np.dot(out.grad, self.data.T)  # BUG: shapes
+      self.grad = np.dot(w.data.T, out.grad)
+      # TODO: check if we need to handle bias (prob not)
 
+    out._backward = _backward
     return out
 
   def conv2d(self):
