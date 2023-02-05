@@ -55,13 +55,21 @@ class Tensor:
     out.prev_op = OPS["Linear"]
 
     def _backward():
+<<<<<<< HEAD
       #w.grad = np.dot(out.grad, self.data.T)  # BUG: shapes
       #self.grad = np.dot(w.data.T, out.grad)
       self.grad = np.dot(out.grad, w.grad.T)
       w.grad = np.dot(self.data.T, out.grad)
       # TODO: check if we need to handle bias (prob not)
 
+=======
+      # TODO: the shapes are all wrong!
+      w.grad = np.dot(self.data.T, self.grad)
+      b.grad = np.sum(self.grad, axis=0, keepdims=True)
+      self.grad = np.dot(self.grad, w.data.T)
+>>>>>>> c1668d49e6cd83ae7b0c80ebd8c0d4900332c787
     out._backward = _backward
+
     return out
 
   def conv2d(self):
@@ -97,7 +105,13 @@ class Tensor:
 
   # TODO: implement activation functions here
   def ReLU(self):
-    pass
+    out = Tensor(np.maximum(self.data, np.zeros(self.data.shape)), self.__prev)
+
+    def _backward():
+      self.grad += out.grad * (out.data > 0)
+    out._backward = _backward
+
+    return out
 
   def tahn(self):
     pass
