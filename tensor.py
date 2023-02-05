@@ -55,6 +55,7 @@ class Tensor:
     out.prev_op = OPS["Linear"]
 
     def _backward():
+      # TODO: the shapes are all wrong!
       w.grad = np.dot(self.data.T, self.grad)
       b.grad = np.sum(self.grad, axis=0, keepdims=True)
       self.grad = np.dot(self.grad, w.data.T)
@@ -95,7 +96,7 @@ class Tensor:
 
   # TODO: implement activation functions here
   def ReLU(self):
-    out = Tensor(np.maximum(self.data, np.zeros(self.data.shape)))
+    out = Tensor(np.maximum(self.data, np.zeros(self.data.shape)), self.__prev)
 
     def _backward():
       self.grad += out.grad * (out.data > 0)
