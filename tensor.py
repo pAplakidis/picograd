@@ -55,8 +55,10 @@ class Tensor:
     out.prev_op = OPS["Linear"]
 
     def _backward():
-      w.grad = np.dot(out.grad, self.data.T)  # BUG: shapes
-      self.grad = np.dot(w.data.T, out.grad)
+      #w.grad = np.dot(out.grad, self.data.T)  # BUG: shapes
+      #self.grad = np.dot(w.data.T, out.grad)
+      self.grad = np.dot(out.grad, w.grad.T)
+      w.grad = np.dot(self.data.T, out.grad)
       # TODO: check if we need to handle bias (prob not)
 
     out._backward = _backward
