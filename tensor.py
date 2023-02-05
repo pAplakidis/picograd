@@ -27,6 +27,12 @@ class Tensor:
   def __mul__(self, other):
     return Tensor(self.data * other.data)
 
+  def dot(self, other):
+    return Tensor(np.dot(self.data, other.data))
+
+  def T(self):
+    return Tensor(self.data.T)
+
   def item(self):
     return self.data
 
@@ -45,9 +51,6 @@ class Tensor:
   def mean(self):
     return np.mean(self.data)
 
-  # TODO: make operations for neural networks here
-
-  # TODO: the weight shape defines the output shape (bias needs to be the same shape as output)
   def linear(self, w, b):
     #return (self.data * w) + b
     out = Tensor(np.dot(self.data, w.data) + b.data, self.__prev)
@@ -55,24 +58,27 @@ class Tensor:
     out.prev_op = OPS["Linear"]
 
     def _backward():
-<<<<<<< HEAD
-      #w.grad = np.dot(out.grad, self.data.T)  # BUG: shapes
-      #self.grad = np.dot(w.data.T, out.grad)
-      self.grad = np.dot(out.grad, w.grad.T)
-      w.grad = np.dot(self.data.T, out.grad)
-      # TODO: check if we need to handle bias (prob not)
-
-=======
       # TODO: the shapes are all wrong!
       w.grad = np.dot(self.data.T, self.grad)
       b.grad = np.sum(self.grad, axis=0, keepdims=True)
       self.grad = np.dot(self.grad, w.data.T)
->>>>>>> c1668d49e6cd83ae7b0c80ebd8c0d4900332c787
     out._backward = _backward
 
     return out
 
   def conv2d(self):
+    pass
+
+  def batchnorm1d(self):
+    pass
+
+  def batchnorm2d(self):
+    pass
+
+  def maxpool(self):
+    pass
+
+  def avgpool(self):
     pass
 
   # TODO: implement a backward for each type of op
