@@ -11,7 +11,7 @@ OPS = {"Linear": 0,
 class Tensor:
   def __init__(self, data: np.array, __children=()):
     self.data = data
-    self.grad = np.zeros(len(self.data))
+    self.grad = None
     self.__prev = set(__children)
     self._ctx = None
     self.prev_op = None
@@ -52,16 +52,25 @@ class Tensor:
     return np.mean(self.data)
 
   def linear(self, w, b):
-    #return (self.data * w) + b
-    out = Tensor(np.dot(self.data, w.data) + b.data, self.__prev)
+    out = self.dot(w.data) + b.data
+    out.__prev = self.__prev
     out.__prev.add(self)
     out.prev_op = OPS["Linear"]
 
     def _backward():
       # TODO: the shapes are all wrong!
+      print(self.data.shape, self.grad.shape)
+      #print(out.grad.shape, self.grad.shape)
       w.grad = np.dot(self.data.T, self.grad)
+      #w.grad = np.dot(out.grad, self.grad.T)
+
+      print(out.grad.shape)
       b.grad = np.sum(self.grad, axis=0, keepdims=True)
+      #b.grad = np.sum(out.grad, axis=1, keepdims=True)
+
+      print(w.data.shape, out.grad.shape)
       self.grad = np.dot(self.grad, w.data.T)
+      #self.grad = np.dot(w.data.T, out.grad)
     out._backward = _backward
 
     return out
@@ -91,8 +100,8 @@ class Tensor:
     return walk(self, set(), [])
 
   # NOTE: here is the code that just calls backward(*args) for each child
-  """
   def backward(self):
+    """
     # TODO: self.grad = w * next.grad
     # TODO: calc grad for every node
     self.grad = Tensor(np.ones(self.data.shape))
@@ -107,7 +116,9 @@ class Tensor:
           assert g.shape == t.shape
           t.grad = g if t.grad is None else (t.grad + g)
       del t0._ctx
-  """
+    """
+    self.grad = np.ones_like(self.data) # TODO: this has to be the same shape as the neurons
+    self._backward()
 
   # TODO: implement activation functions here
   def ReLU(self):
