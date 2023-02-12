@@ -4,10 +4,13 @@ from tensor import Tensor
 
 class Module:
   def __init__(self):
-    pass
+    self.params = []
 
   def forward(self):
-    pass
+    return
+
+  def __call__(self, *params):
+    self.forward(*params)
 
 class Linear:
   def __init__(self, in_feats, out_feats):

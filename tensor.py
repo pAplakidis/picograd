@@ -120,7 +120,8 @@ class Tensor:
 
   # TODO: implement activation functions here
   def ReLU(self):
-    out = Tensor(np.maximum(self.data, np.zeros(self.data.shape)), self.__prev)
+    out = Tensor(np.maximum(self.data, np.zeros(self.data.shape)), self.__prev.copy())
+    out.__prev.add(self)
 
     def _backward():
       self.grad += out.grad * (out.data > 0)
@@ -135,7 +136,15 @@ class Tensor:
     pass
 
   def softmax(self):
-    pass
+    exp_val = np.exp(self.data - np.max(self.data, axis=1, keepdims=True))
+    probs = exp_val / np.sum(exp_val, axis=1, keepdims=True)
+    out = Tensor(probs, __children=self.__prev.copy())
+    out.__prev.add(self)
+
+    def _backward():
+      pass
+    out._backward = _backward()
+    return out
 
 
 if __name__ == '__main__':
