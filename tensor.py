@@ -24,8 +24,17 @@ class Tensor:
   def __add__(self, other):
     return Tensor(self.data + other.data)
 
+  def __sub__(self, other):
+    return Tensor(self.data - other.data)
+
   def __mul__(self, other):
     return Tensor(self.data * other.data)
+
+  def __pow__(self, other):
+    return Tensor(self.data ** other)
+
+  def __div__(self, other):
+    return self * (other ** -1)
 
   def dot(self, other):
     return Tensor(np.dot(self.data, other.data))
