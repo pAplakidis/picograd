@@ -17,12 +17,11 @@ class MSELoss(Loss):
 """
 
 # z: network output, y: ground truth
-# TODO: Tensor obj has no attribute __prev???
 def MSELoss(z: Tensor, y: Tensor):
   assert (n := z.shape()[0]) == y.shape()[0]
   loss_val = 1/n * np.sum((z.data-y.data) ** 2)
-  t = Tensor(loss_val, __children=z.__prev.copy())
-  t.__prev.add(z)
+  t = Tensor(loss_val, _children=z._prev.copy())
+  t._prev.add(z)
   return t
 
 

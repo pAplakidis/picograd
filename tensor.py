@@ -9,17 +9,19 @@ OPS = {"Linear": 0,
 
 
 class Tensor:
-  def __init__(self, data: np.array, __children=()):
+  def __init__(self, data: np.array, name="t", _children=()):
+    self.name = name
     self.data = data
     self.grad = None
-    self.__prev = set(__children)
+    self.out = None
+    self._prev = set(_children)
     self._ctx = None
     self.prev_op = None
     self._backward = lambda: None
 
   # TODO: write op wrappers here
   def __repr__(self):
-    return f"Tensor(shape={str(self.shape())}, data={str(self.data)}, grad={self.grad}), prev_op={str(self.prev_op)}, prev_tensors={len(self.__prev)}"
+    return f"Tensor(name={self.name}, shape={str(self.shape())}, data={str(self.data)}, grad={self.grad}), prev_op={str(self.prev_op)}, prev_tensors={len(self._prev)}"
 
   def __add__(self, other):
     return Tensor(self.data + other.data)
@@ -61,10 +63,10 @@ class Tensor:
     return np.mean(self.data)
 
   def linear(self, w, b):
-    out = self.dot(w.data) + b.data
-    out.__prev = self.__prev.copy()
-    out.__prev.add(self)
-    out.prev_op = OPS["Linear"]
+    self.out = self.dot(w.data) + b.data
+    self.out._prev = self._prev.copy()
+    self.out._prev.add(self)
+    self.out.prev_op = OPS["Linear"]
 
     def _backward():
       self.grad = np.ones_like(w)
@@ -80,9 +82,9 @@ class Tensor:
       #print(w.data.shape, out.grad.shape)
       self.grad = np.dot(self.grad, w.data.T)
       #self.grad = np.dot(w.data.T, out.grad)
-    out._backward = _backward
+    self.out._backward = _backward
 
-    return out
+    return self.out
 
   def conv2d(self):
     pass
@@ -126,17 +128,19 @@ class Tensor:
     """
     #self.grad = np.ones_like(self.data) # TODO: this has to be the same shape as the neurons
     self._backward()
+    for t0 in reversed(list(self._prev)):
+      t0._backward()
 
   # TODO: implement activation functions here
   def ReLU(self):
-    out = Tensor(np.maximum(self.data, np.zeros(self.data.shape)), self.__prev.copy())
-    out.__prev.add(self)
+    self.out = Tensor(np.maximum(self.data, np.zeros(self.data.shape)), self._prev.copy())
+    self.out._prev.add(self)
 
     def _backward():
       self.grad += out.grad * (out.data > 0)
-    out._backward = _backward
+    self.out._backward = _backward
 
-    return out
+    return self.out
 
   def tahn(self):
     pass
@@ -147,13 +151,13 @@ class Tensor:
   def softmax(self):
     exp_val = np.exp(self.data - np.max(self.data, axis=1, keepdims=True))
     probs = exp_val / np.sum(exp_val, axis=1, keepdims=True)
-    out = Tensor(probs, __children=self.__prev.copy())
-    out.__prev.add(self)
+    self.out = Tensor(probs, _children=self._prev.copy())
+    self.out._prev.add(self)
 
     def _backward():
       pass
-    out._backward = _backward()
-    return out
+    self.out._backward = _backward()
+    return self.out
 
 
 if __name__ == '__main__':
