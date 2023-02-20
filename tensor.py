@@ -9,40 +9,57 @@ OPS = {"Linear": 0,
 
 
 class Tensor:
-  def __init__(self, data: np.array, name="t", _children=()):
+  def __init__(self, data: np.array, name="t", _children=(), verbose=False):
     self.name = name
     self.data = data
+    self.verbose = verbose
+    self._prev = set(_children)
     self.grad = None
     self.out = None
-    self._prev = set(_children)
     self._ctx = None
     self.prev_op = None
     self._backward = lambda: None
 
-  # TODO: write op wrappers here
   def __repr__(self):
-    return f"Tensor(name={self.name}, shape={str(self.shape())}, data={str(self.data)}, grad={self.grad}), prev_op={str(self.prev_op)}, prev_tensors={len(self._prev)}"
+    if self.verbose:
+      return f"Tensor(name={self.name}, shape={str(self.shape())}, data={str(self.data)}, grad={self.grad}), prev_op={str(self.prev_op)}, prev_tensors={len(self._prev)}"
+    else:
+      return f"Tensor(name={self.name}, shape={str(self.shape())}, prev_op={str(self.prev_op)}, prev_tensors={len(self._prev)}"
 
   def __add__(self, other):
-    return Tensor(self.data + other.data)
+    children = self._prev.copy()
+    children.add(self)
+    return Tensor(self.data + other.data, _children=children)
 
   def __sub__(self, other):
-    return Tensor(self.data - other.data)
+    children = self._prev.copy()
+    children.add(self)
+    return Tensor(self.data - other.data, _children=children)
 
   def __mul__(self, other):
-    return Tensor(self.data * other.data)
+    children = self._prev.copy()
+    children.add(self)
+    return Tensor(self.data * other.data, _children=children)
 
   def __pow__(self, other):
-    return Tensor(self.data ** other)
+    children = self._prev.copy()
+    children.add(self)
+    return Tensor(self.data ** other, _children=children)
 
   def __div__(self, other):
-    return self * (other ** -1)
+    children = self._prev.copy()
+    children.add(self)
+    return Tensor(self * (other ** -1), _children=children)
 
   def dot(self, other):
-    return Tensor(np.dot(self.data, other.data))
+    children = self._prev.copy()
+    children.add(self)
+    return Tensor(np.dot(self.data, other.data), _children=children)
 
   def T(self):
-    return Tensor(self.data.T)
+    children = self._prev.copy()
+    children.add(self)
+    return Tensor(self.data.T, _children=children)
 
   def item(self):
     return self.data
@@ -62,26 +79,29 @@ class Tensor:
   def mean(self):
     return np.mean(self.data)
 
+  # TODO: debug _prev tensors
   def linear(self, w, b):
-    self.out = self.dot(w.data) + b.data
-    self.out._prev = self._prev.copy()
-    self.out._prev.add(self)
+    self.w = w
+    self.b = b
+    self.out = self.dot(self.w.data) + self.b.data
+    self.name = "linearout"
+    #self.out._prev = self._prev.copy()
+    #self.out._prev.add(self)
     self.out.prev_op = OPS["Linear"]
 
     def _backward():
-      self.grad = np.ones_like(w)
-      print(self.data.shape, self.grad.shape)
-      #print(out.grad.shape, self.grad.shape)
-      w.grad = np.dot(self.data.T, self.grad)
-      #w.grad = np.dot(out.grad, self.grad.T)
+      print(self.data.shape, self.out.grad.shape)
+      if len(self.data.shape) == 1:
+        self.w.grad = np.dot(self.data[np.newaxis].T, self.out.grad)
+      else:
+        self.w.grad = np.dot(self.data.T, self.out.grad)
 
-      #print(out.grad.shape)
-      b.grad = np.sum(self.grad, axis=0, keepdims=True)
-      #b.grad = np.sum(out.grad, axis=1, keepdims=True)
+      print(self.out.grad.shape)
+      self.b.grad = np.sum(self.out.grad, axis=0, keepdims=True)
 
       #print(w.data.shape, out.grad.shape)
-      self.grad = np.dot(self.grad, w.data.T)
-      #self.grad = np.dot(w.data.T, out.grad)
+      print(self.out.grad.shape, self.w.data.shape)
+      self.grad = np.dot(self.out.grad, self.w.data.T)
     self.out._backward = _backward
 
     return self.out
@@ -110,34 +130,22 @@ class Tensor:
       return nodes
     return walk(self, set(), [])
 
-  # NOTE: here is the code that just calls backward(*args) for each child
   def backward(self):
-    """
-    self.grad = Tensor(np.ones(self.data.shape))
-
-    for t0 in reversed(self.deepwalk()):
-      assert (t0.grad is not None)
-      grads = t0._ctx.backward(t0.grad)
-      grads = [Tensor(g) if g is not None else None for g in ([grads] if len(t0._ctx.parents)== 1 else grads)]
-
-      for t, g in zip(t0._ctx.parents, grads):
-        if g is not None:
-          assert g.shape == t.shape
-          t.grad = g if t.grad is None else (t.grad + g)
-      del t0._ctx
-    """
-    #self.grad = np.ones_like(self.data) # TODO: this has to be the same shape as the neurons
+    self.grad = np.ones(self.data.shape)
+    print()
+    print("[==]", self)
     self._backward()
     for t0 in reversed(list(self._prev)):
+      print("[=>]", t0)
       t0._backward()
+    print()
 
-  # TODO: implement activation functions here
   def ReLU(self):
     self.out = Tensor(np.maximum(self.data, np.zeros(self.data.shape)), self._prev.copy())
     self.out._prev.add(self)
 
     def _backward():
-      self.grad += out.grad * (out.data > 0)
+      self.grad += self.out.grad * (self.out.data > 0)
     self.out._backward = _backward
 
     return self.out

@@ -3,14 +3,11 @@ import numpy as np
 from tensor import Tensor
 
 # TODO: all losses need to be classes that inherit from this abstract one
+"""
 class Loss:
   def __init__(self):
     pass
-
-  def backward():
-    pass
   
-"""
 class MSELoss(Loss):
   def __call__(self):
     # code that calculcates the loss value
@@ -20,7 +17,7 @@ class MSELoss(Loss):
 def MSELoss(z: Tensor, y: Tensor):
   assert (n := z.shape()[0]) == y.shape()[0]
   loss_val = 1/n * np.sum((z.data-y.data) ** 2)
-  t = Tensor(loss_val, _children=z._prev.copy())
+  t = Tensor(loss_val, _children=z._prev.copy(), name="mseloss")
   t._prev.add(z)
   return t
 
