@@ -14,7 +14,7 @@ class Tensor:
     self.data = data
     self.verbose = verbose
     self._prev = set(_children)
-    self.grad = None
+    self.grad = np.ones(self.data.shape)
     self.out = None
     self._ctx = None
     self.prev_op = None
@@ -79,6 +79,10 @@ class Tensor:
   def mean(self):
     return np.mean(self.data)
 
+  # TODO: pretty print the tensor and all prev ones like in backward()
+  def print_graph(self):
+    pass
+
   # TODO: debug _prev tensors
   def linear(self, w, b):
     self.w = w
@@ -121,7 +125,7 @@ class Tensor:
   def avgpool(self):
     pass
 
-  # TODO: implement a backward for each type of op
+  # TODO: maybe implement a backward for each type of op instead of layer??
   def deep_walk(self):
     def walk(node, visited, nodes):
       if node._ctx:
@@ -130,14 +134,22 @@ class Tensor:
       return nodes
     return walk(self, set(), [])
 
+  # TODO: DEBUG
+  # BUG: the _prev tensors are wrong
   def backward(self):
-    self.grad = np.ones(self.data.shape)
-    print()
+    #self.grad = np.ones(self.data.shape)
     print("[==]", self)
+    print("[data]", self.data)
+    print("[grad]", self.grad)
+    print()
     self._backward()
     for t0 in reversed(list(self._prev)):
-      print("[=>]", t0)
+      print("[==]", t0)
+      print("[data]", t0.data)
+      print("[grad]", t0.grad)
       t0._backward()
+      print()
+    print()
     print()
 
   def ReLU(self):
