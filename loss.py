@@ -7,7 +7,7 @@ from tensor import Tensor
 class Loss:
   def __init__(self):
     pass
-  
+
 class MSELoss(Loss):
   def __call__(self):
     # code that calculcates the loss value

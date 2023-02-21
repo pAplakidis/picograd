@@ -5,18 +5,6 @@ from tensor import Tensor
 from loss import MSELoss
 from nn import *
 
-from graphviz import Digraph
-
-# TODO: implement graph visualization
-def trace():
-  pass
-
-def graph():
-  pass
-
-def draw_dot():
-  pass
-
 
 if __name__ == '__main__':
   t_in = Tensor(np.random.rand(10), name="t_in")
