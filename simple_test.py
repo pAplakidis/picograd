@@ -25,10 +25,7 @@ if __name__ == '__main__':
   t_out = perceptron(t_in)
   print("t_out:", t_out)
   print()
-  for p in t_out._prev:
-    print("[*]", p)
-  print()
-  print("==Backpropagation==")
+  print("==Backpropagation of t_out==")
   t_out.backward()
 
   exit(0)

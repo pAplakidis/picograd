@@ -88,7 +88,7 @@ class Tensor:
     self.w = w
     self.b = b
     self.out = self.dot(self.w.data) + self.b.data
-    self.name = "linearout"
+    self.out.name = "linearout"
     #self.out._prev = self._prev.copy()
     #self.out._prev.add(self)
     self.out.prev_op = OPS["Linear"]
