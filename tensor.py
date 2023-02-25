@@ -11,17 +11,36 @@ OPS = {"Linear": 0,
 def get_key_from_value(d, val):
   return [k for k, v in d.items() if v == val]
 
-# TODO: implement graph visualization
-def trace():
-  pass
+def trace(root):
+  nodes, edges = set(), set()
+  def build(v):
+    if v not in nodes:
+      nodes.add(v)
+      for child in v._prev:
+        edges.add((child, v))
+        build(child)
+  build(root)
+  return nodes, edges
 
-def graph():
-  pass
+# TODO: debug
+def draw_dot(root, format='svg', rankdir='LR'):
+  assert rankdir in ['LR', 'TB']
+  nodes, edges = trace(root)
+  dot = Digraph(format=format, graph_attr={'rankdir': rankdir}) #, node_attr={'rankdir': 'TB'})
+  
+  for n in nodes:
+    #dot.node(name=str(id(n)), label = "{ data %.4f | grad %.4f }" % (n.data, n.grad), shape='record')
+    dot.node(name=str(id(n)), label = f"[ data {str(n.data)} | grad {n.grad} ]", shape='record')
+    #if n._op:
+      #dot.node(name=str(id(n)) + n._op, label=n._op)
+      #dot.edge(str(id(n.name)) + n._op, str(id(n.name)))
+  
+  for n1, n2 in edges:
+    #dot.edge(str(id(n1)), str(id(n2)) + n2._op)
+    dot.edge(str(id(n1)), str(id(n2)))
 
-def draw_dot():
-  pass
-
-
+  dot.render('output')
+  return dot
 
 class Tensor:
   def __init__(self, data: np.array, name="t", _children=(), verbose=False):
@@ -166,11 +185,13 @@ class Tensor:
     #self.grad = np.ones(self.data.shape)
     print("\n[+] Before backpropagation")
     self.print_graph()
+    draw_dot(self)
     self._backward()
     for t0 in reversed(list(self._prev)):
       t0._backward()
     print("\n[+] After backpropagation")
     self.print_graph()
+    draw_dot(self)
 
   def ReLU(self):
     self.out = Tensor(np.maximum(self.data, np.zeros(self.data.shape)), self._prev.copy())
