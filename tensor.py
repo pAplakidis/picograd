@@ -6,7 +6,8 @@ OPS = {"Linear": 0,
        "Conv2d": 1,
        "ReLU": 2,
        "Softmax": 3,
-       "Sigmoid": 4}
+       "Sigmoid": 4,
+       "MSELoss": 5}
 
 def get_key_from_value(d, val):
   return [k for k, v in d.items() if v == val]
@@ -39,7 +40,7 @@ def draw_dot(root, format='svg', rankdir='LR'):
     #dot.edge(str(id(n1)), str(id(n2)) + n2._op)
     dot.edge(str(id(n1)), str(id(n2)))
 
-  dot.render('output')
+  dot.render('graphs/output')
   return dot
 
 class Tensor:
@@ -56,9 +57,9 @@ class Tensor:
 
   def __repr__(self):
     if self.verbose:
-      return f"Tensor(name={self.name}, shape={str(self.shape())}, data={str(self.data)}, grad={self.grad}), prev_op={get_key_from_value(OPS, self.prev_op)}, prev_tensors={len(self._prev)}"
+      return f"Tensor(name={self.name}, shape={str(self.shape())}, data={str(self.data)}, grad={self.grad}), prev_op={get_key_from_value(OPS, self.prev_op)}, prev_tensors={len(self._prev)})"
     else:
-      return f"Tensor(name={self.name}, shape={str(self.shape())}, prev_op={get_key_from_value(OPS, self.prev_op)}, prev_tensors={len(self._prev)}"
+      return f"Tensor(name={self.name}, shape={str(self.shape())}, prev_op={get_key_from_value(OPS, self.prev_op)}, prev_tensors={len(self._prev)})"
 
   def __add__(self, other):
     #children = self._prev.copy()
@@ -125,11 +126,15 @@ class Tensor:
     print("[==]", self)
     print("[data]", self.data)
     print("[grad]", self.grad)
-    for t0 in reversed(list(self._prev)):
+    if self.prev_op != None:
+      print(get_key_from_value(OPS, self.prev_op))
+    for t0 in list(self._prev):
       print("[==]", t0)
       print("[data]", t0.data)
       print("[grad]", t0.grad)
       print()
+      if t0.prev_op != None:
+        print(get_key_from_value(OPS, t0.prev_op))
 
   def linear(self, w, b):
     self.w = w
@@ -187,7 +192,7 @@ class Tensor:
     self.print_graph()
     draw_dot(self)
     self._backward()
-    for t0 in reversed(list(self._prev)):
+    for t0 in list(self._prev):
       t0._backward()
     print("\n[+] After backpropagation")
     self.print_graph()

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import numpy as np
-from tensor import Tensor
+from tensor import *
 
 # TODO: all losses need to be classes that inherit from this abstract one
 """
@@ -19,6 +19,7 @@ def MSELoss(z: Tensor, y: Tensor):
   loss_val = 1/n * np.sum((z.data-y.data) ** 2)
   t = Tensor(loss_val, _children=z._prev.copy(), name="mseloss")
   t._prev.add(z)
+  t.prev_op = OPS["MSELoss"]
   return t
 
 

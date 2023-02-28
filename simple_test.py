@@ -12,15 +12,15 @@ if __name__ == '__main__':
   perceptron = Linear(t_in.shape([0]), 5)
   t_out = perceptron(t_in)
   print("t_out:", t_out)
-  print()
-  print("==Backpropagation of t_out==")
-  t_out.backward()
+  #print()
+  #print("==Backpropagation of t_out==")
+  #t_out.backward()
 
-  exit(0)
   gt = Tensor(np.random.rand(1, 5), name="ground_truth")
   loss = MSELoss(t_out, gt)
   print("loss:", loss)
   print()
-  for p in loss._prev:
-    print("[*] ", p)
+  #for p in loss._prev:
+  #  print("[*] ", p)
+  print("==Backpropagation of Loss==")
   loss.backward()
