@@ -48,12 +48,15 @@ class Tensor:
     self.name = name
     self.data = data
     self.verbose = verbose
+
+    self._ctx = None
     self._prev = set(_children)
     self.grad = np.ones(self.data.shape)
     self.out = None
-    self._ctx = None
     self.prev_op = None
     self._backward = lambda: None
+
+    self.w, self.b = None, None
 
   def __repr__(self):
     if self.verbose:
@@ -123,25 +126,27 @@ class Tensor:
 
   # pretty print the graph for this tensor backwards
   def print_graph(self):
-    print("[==]", self)
-    print("[data]", self.data)
-    print("[grad]", self.grad)
-    if self.prev_op != None:
-      print(get_key_from_value(OPS, self.prev_op))
-    for t0 in list(self._prev):
+    tmp = list(self._prev.copy())
+    tmp.insert(0, self)
+
+    for t0 in tmp:
       print("[==]", t0)
-      print("[data]", t0.data)
-      print("[grad]", t0.grad)
-      print()
+      print("[data]\n", t0.data)
+      print("[grad]\n", t0.grad)
+      if t0.w:
+        print("[w_data]\n", t0.w.data)
+        print("[w_grad]\n", t0.w.grad)
+      if t0.b:
+        print("[b_data]\n", t0.b.data)
+        print("[b_grad]\n", t0.b.grad)
       if t0.prev_op != None:
-        print(get_key_from_value(OPS, t0.prev_op))
+        print("====++++****++++====\n[OP]:", get_key_from_value(OPS, t0.prev_op) ,"\n====++++****++++====")
 
   def linear(self, w, b):
     self.w = w
     self.b = b
     self.out = self.dot(self.w.data) + self.b.data
     self.out.name = "linearout"
-    # TODO: decide whether to add backprop in Layers or Ops
     self.out._prev = self._prev.copy()
     self.out._prev.add(self)
     self.out.prev_op = OPS["Linear"]
@@ -177,7 +182,8 @@ class Tensor:
   def avgpool(self):
     pass
 
-  # TODO: maybe implement a backward for each type of op instead of layer??
+  # TODO: backward needs to implemented for all tensors in each op (a = b + c => a.back -> b.back and c.back)
+  # that's why deepwalk is implemented
   def deep_walk(self):
     def walk(node, visited, nodes):
       if node._ctx:
@@ -186,6 +192,7 @@ class Tensor:
       return nodes
     return walk(self, set(), [])
 
+  # TODO: maybe implement a backward for each type of op instead of layer??
   def backward(self):
     #self.grad = np.ones(self.data.shape)
     print("\n[+] Before backpropagation")
