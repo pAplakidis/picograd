@@ -56,6 +56,7 @@ class Tensor:
     self.prev_op = None
     self._backward = lambda: None
 
+    self.layer = None
     self.w, self.b = None, None
 
   def __repr__(self):
@@ -195,14 +196,16 @@ class Tensor:
   # TODO: maybe implement a backward for each type of op instead of layer??
   def backward(self):
     #self.grad = np.ones(self.data.shape)
-    print("\n[+] Before backpropagation")
-    self.print_graph()
+    if self.verbose:
+      print("\n[+] Before backpropagation")
+      self.print_graph()
     draw_dot(self)
     self._backward()
     for t0 in list(self._prev):
       t0._backward()
-    print("\n[+] After backpropagation")
-    self.print_graph()
+    if self.verbose:
+      print("\n[+] After backpropagation")
+      self.print_graph()
     draw_dot(self)
 
   def ReLU(self):
