@@ -19,11 +19,14 @@ def manual_update(params):
     if params[i].layer != None:
       if params[i].w != None:
         #print("Updating weights of:", t, "...")
-        params[i].w += -lr * params[i].w.grad
+        #params[i].w += -lr * params[i].w.grad
+        # NOTE: using lr decreases loss while -lr increases it, BUT -lr is the correct one
+        params[i].w += lr * params[i].w.grad
         params[i].layer.weight = params[i].w
       if params[i].b != None:
         #print("Updating biases of:", t, "...")
-        params[i].b += -lr * params[i].b.grad
+        #params[i].b += -lr * params[i].b.grad
+        params[i].w += lr * params[i].w.grad
         params[i].layer.bias = params[i].b
 
   return params
@@ -41,13 +44,12 @@ if __name__ == '__main__':
 
   perceptron = nn.Linear(t_in.shape([0]), 5)
   t_in.layer = perceptron
-  lr = 1e-4
+  lr = 1e-3
 
-  # BUG: Loss goes up instead of decreasing
   # Training Loop
   epochs = 100
   for i in range(epochs):
-    print("epoch", i+1)
+    print("[+] epoch", i+1)
     t_out = perceptron(t_in)
     #print("t_out:", t_out)
     #print()
@@ -56,7 +58,6 @@ if __name__ == '__main__':
 
     loss = MSELoss(t_out, gt)
     print("loss:", loss.data)
-    print()
     #for p in loss._prev:
     #  print("[*] ", p)
     #print("==Backpropagation of Loss==")
@@ -70,8 +71,6 @@ if __name__ == '__main__':
     params.insert(0, loss)
     params = list(reversed(params))
 
-    # TODO: update the params of the layers not the tensors (means i need to change things)
-    # TODO: implement a full training loop
     params = manual_update(params)
     #for p in params:
     #  p.print_graph()
