@@ -8,25 +8,26 @@ import nn
 
 # TODO: instead of manuallly passing the layers through ops, just forward them through a net module
 class Testnet(nn.Module):
-  def __init__(self):
-    pass
+  def __init__(self, in_feats, out_feats):
+    super(Testnet, self).__init__()
+    self.dense1 = nn.Linear(in_feats, out_feats)
 
   def forward(self, x):
+    x = self.dense1(x)
     return x
+
 
 def manual_update(params):
   for i in range(len(params)):
     if params[i].layer != None:
       if params[i].w != None:
-        #print("Updating weights of:", t, "...")
         #params[i].w += -lr * params[i].w.grad
         # NOTE: using lr decreases loss while -lr increases it, BUT -lr is the correct one
         params[i].w += lr * params[i].w.grad
         params[i].layer.weight = params[i].w
       if params[i].b != None:
-        #print("Updating biases of:", t, "...")
         #params[i].b += -lr * params[i].b.grad
-        params[i].w += lr * params[i].w.grad
+        params[i].b += lr * params[i].b.grad
         params[i].layer.bias = params[i].b
 
   return params
@@ -42,6 +43,8 @@ if __name__ == '__main__':
   print("t_in:", t_in)
   gt = Tensor(np.random.rand(1, 5), name="ground_truth")
 
+  model = Testnet(t_in.shape([0]), 5)
+  optim = SGD(model.get_params(), lr=1e-3)
   perceptron = nn.Linear(t_in.shape([0]), 5)
   t_in.layer = perceptron
   lr = 1e-3
@@ -63,7 +66,6 @@ if __name__ == '__main__':
     #print("==Backpropagation of Loss==")
     loss.backward()
 
-    #optim = SGD(lr=1e-3)  # TODO: once a net obj is fully functional, pass it to the optimizer
 
     # manual optimization with SGD
     print()
@@ -72,9 +74,4 @@ if __name__ == '__main__':
     params = list(reversed(params))
 
     params = manual_update(params)
-    #for p in params:
-    #  p.print_graph()
     params = reset_grad(params)
-
-  #print("Net after SGD step")
-  #loss.print_graph()

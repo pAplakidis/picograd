@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 import numpy as np
+from enum import Enum
 from tensor import Tensor
+
+class LayerType(Enum):
+  NOLAYER = 0
+  LINEAR = 1
 
 class Module:
   def __init__(self):
@@ -12,8 +17,17 @@ class Module:
   def __call__(self, *params):
     self.forward(*params)
 
-class Linear:
+  def get_params(self):
+    # TODO: add params from each layer (w,b)
+    return self.params
+
+class Layer:
+  def __init__(self):
+    self.type = None
+    
+class Linear(Layer):
   def __init__(self, in_feats, out_feats):
+    self.type = LayerType['LINEAR'].value
     self.weight = Tensor(0.01 * np.random.rand(in_feats, out_feats), name="weight")
     self.bias = Tensor(np.zeros((1, out_feats)), name="bias")
 

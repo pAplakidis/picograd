@@ -152,6 +152,7 @@ class Tensor:
     self.out._prev.add(self)
     self.out.prev_op = OPS["Linear"]
 
+    # TODO: update layer's grads as well
     def _backward():
       #print(self.data.shape, self.out.grad.shape)
       if len(self.data.shape) == 1:
