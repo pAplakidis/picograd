@@ -126,20 +126,21 @@ class Tensor:
     return np.mean(self.data)
 
   # pretty print the graph for this tensor backwards
-  def print_graph(self):
-    tmp = list(self._prev.copy())
+  def print_graph(self, verbose=False):
+    tmp = list(reversed(list(self._prev.copy())))
     tmp.insert(0, self)
 
     for t0 in tmp:
       print("[==]", t0)
-      print("[data]\n", t0.data)
-      print("[grad]\n", t0.grad)
-      if t0.w:
-        print("[w_data]\n", t0.w.data)
-        print("[w_grad]\n", t0.w.grad)
-      if t0.b:
-        print("[b_data]\n", t0.b.data)
-        print("[b_grad]\n", t0.b.grad)
+      if verbose:
+        print("[data]\n", t0.data)
+        print("[grad]\n", t0.grad)
+        if t0.w:
+          print("[w_data]\n", t0.w.data)
+          print("[w_grad]\n", t0.w.grad)
+        if t0.b:
+          print("[b_data]\n", t0.b.data)
+          print("[b_grad]\n", t0.b.grad)
       if t0.prev_op != None:
         print("====++++****++++====\n[OP]:", get_key_from_value(OPS, t0.prev_op) ,"\n====++++****++++====")
 
@@ -202,7 +203,7 @@ class Tensor:
       self.print_graph()
     draw_dot(self)
     self._backward()
-    for t0 in list(self._prev):
+    for t0 in reversed(list(self._prev)):
       t0._backward()
     if self.verbose:
       print("\n[+] After backpropagation")

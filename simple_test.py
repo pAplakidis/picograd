@@ -45,25 +45,25 @@ if __name__ == '__main__':
 
   model = Testnet(t_in.shape([0]), 5)
   optim = SGD(model.get_params(), lr=1e-3)
-  perceptron = nn.Linear(t_in.shape([0]), 5)
-  t_in.layer = perceptron
+  layer1 = nn.Linear(t_in.shape([0]), 5)
+  layer2 = nn.Linear(5, 5)
+  layer3 = nn.Linear(5, 5)
+
   lr = 1e-3
 
   # Training Loop
   epochs = 100
   for i in range(epochs):
     print("[+] epoch", i+1)
-    t_out = perceptron(t_in)
-    #print("t_out:", t_out)
-    #print()
-    #print("==Backpropagation of t_out==")
-    #t_out.backward()
+    t_in.layer = layer1
+    t1 = layer1(t_in)
+    t1.layer = layer2
+    t2 = layer2(t1)
+    t2.layer = layer3
+    t3 = layer3(t2)
 
-    loss = MSELoss(t_out, gt)
+    loss = MSELoss(t2, gt)
     print("loss:", loss.data)
-    #for p in loss._prev:
-    #  print("[*] ", p)
-    #print("==Backpropagation of Loss==")
     loss.backward()
 
 
@@ -75,3 +75,5 @@ if __name__ == '__main__':
 
     params = manual_update(params)
     params = reset_grad(params)
+
+  t3.print_graph()  # BUG: in _prev order when adding 2 layers (t_in is in the wrong place)
