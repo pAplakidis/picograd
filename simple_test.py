@@ -2,7 +2,7 @@
 import numpy as np
 
 from tensor import Tensor
-from loss import MSELoss
+from loss import *
 from optim import SGD
 import nn
 
@@ -63,7 +63,8 @@ if __name__ == '__main__':
     t3.layer = layer3
     t4 = layer3(t3)
 
-    loss = MSELoss(t4, gt)
+    #loss = MSELoss(t4, gt)
+    loss = MAELoss(t4, gt)
     print("loss:", loss.data)
     loss.backward()
 
@@ -76,4 +77,4 @@ if __name__ == '__main__':
     params = reset_grad(params)
 
   print("\nNetwork Graph:")
-  t4.print_graph()
+  loss.print_graph()

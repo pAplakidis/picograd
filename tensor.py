@@ -7,7 +7,8 @@ OPS = {"Linear": 0,
        "ReLU": 2,
        "Softmax": 3,
        "Sigmoid": 4,
-       "MSELoss": 5}
+       "MSELoss": 5,
+       "MAELoss": 6}
 
 def get_key_from_value(d, val):
   return [k for k, v in d.items() if v == val]
@@ -211,9 +212,9 @@ class Tensor:
     draw_dot(self)
 
   def ReLU(self):
-    self.out = Tensor(np.maximum(self.data, np.zeros(self.data.shape)), name="ReLU_out")
-    self.out._prev = self._prev.copy()
+    self.out = Tensor(np.maximum(self.data, np.zeros(self.data.shape)), name="ReLU_out", _children=self._prev.copy())
     self.out._prev.append(self)
+    self.out.prev_op = OPS["ReLU"]
 
     def _backward():
       self.grad += self.out.grad * (self.out.data > 0)
