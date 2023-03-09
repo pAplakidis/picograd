@@ -6,6 +6,8 @@ from tensor import Tensor
 class LayerType(Enum):
   NOLAYER = 0
   LINEAR = 1
+  CONV2D = 2
+
 
 class Module:
   def __init__(self):
@@ -33,3 +35,10 @@ class Linear(Layer):
 
   def __call__(self, x: Tensor):
     return x.linear(self.weight, self.bias)
+
+class Conv2d(Layer):
+  def __init__(self, kernel_size, stride=1):
+    self.type = LayerType['CONV2D'].value
+
+  def __call__(self, x: Tensor):
+    pass

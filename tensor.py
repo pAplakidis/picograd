@@ -44,13 +44,13 @@ def draw_dot(root, format='svg', rankdir='LR'):
   return dot
 
 class Tensor:
-  def __init__(self, data: np.array, name="t", _children=(), verbose=False):
+  def __init__(self, data: np.array, name="t", _children=[], verbose=False):
     self.name = name
     self.data = data
     self.verbose = verbose
 
     self._ctx = None
-    self._prev = set(_children)
+    self._prev = list(_children)
     self.grad = np.ones(self.data.shape)
     self.out = None
     self.prev_op = None
@@ -67,43 +67,43 @@ class Tensor:
 
   def __add__(self, other):
     #children = self._prev.copy()
-    #children.add(self)
+    #children.append(self)
     #return Tensor(self.data + other.data, _children=children)
     return Tensor(self.data + other.data)
 
   def __sub__(self, other):
     #children = self._prev.copy()
-    #children.add(self)
+    #children.append(self)
     #return Tensor(self.data - other.data, _children=children)
     return Tensor(self.data - other.data)
 
   def __mul__(self, other):
     #children = self._prev.copy()
-    #children.add(self)
+    #children.append(self)
     #return Tensor(self.data * other.data, _children=children)
     return Tensor(self.data * other.data)
 
   def __pow__(self, other):
     #children = self._prev.copy()
-    #children.add(self)
+    #children.append(self)
     #return Tensor(self.data ** other, _children=children)
     return Tensor(self.data ** other)
 
   def __div__(self, other):
     #children = self._prev.copy()
-    #children.add(self)
+    #children.append(self)
     #return Tensor(self * (other ** -1), _children=children)
     return Tensor(self * (other ** -1))
 
   def dot(self, other):
     #children = self._prev.copy()
-    #children.add(self)
+    #children.append(self)
     #return Tensor(np.dot(self.data, other.data), _children=children)
     return Tensor(np.dot(self.data, other.data))
 
   def T(self):
     #children = self._prev.copy()
-    #children.add(self)
+    #children.append(self)
     #return Tensor(self.data.T, _children=children)
     return Tensor(self.data.T)
 
@@ -150,7 +150,7 @@ class Tensor:
     self.out = self.dot(self.w.data) + self.b.data
     self.out.name = "linearout"
     self.out._prev = self._prev.copy()
-    self.out._prev.add(self)
+    self.out._prev.append(self)
     self.out.prev_op = OPS["Linear"]
 
     # TODO: update layer's grads as well
@@ -211,8 +211,9 @@ class Tensor:
     draw_dot(self)
 
   def ReLU(self):
-    self.out = Tensor(np.maximum(self.data, np.zeros(self.data.shape)), self._prev.copy())
-    self.out._prev.add(self)
+    self.out = Tensor(np.maximum(self.data, np.zeros(self.data.shape)), name="ReLU_out")
+    self.out._prev = self._prev.copy()
+    self.out._prev.append(self)
 
     def _backward():
       self.grad += self.out.grad * (self.out.data > 0)
@@ -230,7 +231,7 @@ class Tensor:
     exp_val = np.exp(self.data - np.max(self.data, axis=1, keepdims=True))
     probs = exp_val / np.sum(exp_val, axis=1, keepdims=True)
     self.out = Tensor(probs, _children=self._prev.copy())
-    self.out._prev.add(self)
+    self.out._prev.append(self)
 
     def _backward():
       pass
