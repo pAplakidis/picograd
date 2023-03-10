@@ -33,12 +33,27 @@ def MAELoss(z: Tensor, y: Tensor):
   return t
 
 # Binary Cross Entropy Loss
-def BCELoss():
-  pass
+def BCELoss(z: Tensor, y: Tensor):
+  assert (n := z.shape()[0]) == y.shape()[0], f"Z Tensor doesn't have the same shape as ground-truth Y: z.shape={str(z.data.shape)}, y.shape={str(y.data.shape)}"
+  return None
 
+# BUG
 # Categorical Cross Entropy
-def CrossEntropyLoss():
-  pass
+def CrossEntropyLoss(z: Tensor, y: Tensor):
+  assert (n := z.shape()[0]) == y.shape()[0], f"Z Tensor doesn't have the same shape as ground-truth Y: z.shape={str(z.data.shape)}, y.shape={str(y.data.shape)}"
+  samples = z.data.shape[0]
+  y_pred_clipped = np.clip(y.data, 1e-7, 1 - 1e-7)
+
+  if len(y.data.shape) == 1:
+    correct_confidences = y_pred_clipped[range(samples), y.data]
+  elif len(y.data.shape) == 2:
+    correct_confidences = np.sum(y_pred_clipped * y.data, axis=1)
+
+  loss_val = -np.log(correct_confidences)
+  t = Tensor(loss_val, name="crossentropyloss_out", _children=z._prev.copy())
+  t._prev.append(z)
+  t.prev_op = OPS["CrossEntropyLoss"]
+  return t
 
 # Negative Log Likelihood Loss
 def NLLLoss():

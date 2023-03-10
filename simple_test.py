@@ -43,11 +43,10 @@ if __name__ == '__main__':
     t3.layer = layer3
     t4 = layer3(t3)   # for regression
     t5 = t4.softmax() # for classification
-    t5.print_graph()
-    exit(0)
 
-    #loss = MSELoss(t4, gt)
-    loss = MAELoss(t4, gt)
+    #loss = MSELoss(t4, gt) # for regression
+    loss = CrossEntropyLoss(t4, gt) # for classification
+    
     print("loss:", loss.data)
     loss.backward()
 

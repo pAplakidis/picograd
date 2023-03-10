@@ -9,7 +9,8 @@ OPS = {"Linear": 0,
        "Softmax": 4,
        "Sigmoid": 5,
        "MSELoss": 6,
-       "MAELoss": 7}
+       "MAELoss": 7,
+       "CrossEntropyLoss": 8}
 
 def get_key_from_value(d, val):
   return [k for k, v in d.items() if v == val]
