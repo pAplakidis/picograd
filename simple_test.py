@@ -20,7 +20,8 @@ class Testnet(nn.Module):
 if __name__ == '__main__':
   t_in = Tensor(np.random.rand(10), name="t_in")
   print("t_in:", t_in)
-  gt = Tensor(np.random.rand(1, 5), name="ground_truth")
+  #gt = Tensor(np.random.rand(1, 5), name="ground_truth")  # for regression
+  gt = Tensor(np.ones((1,5)) / 2, name="ground_truth")  # for classification
 
   model = Testnet(t_in.shape([0]), 5)
   optim = SGD(model.get_params(), lr=1e-3)
@@ -40,7 +41,10 @@ if __name__ == '__main__':
     t2 = layer2(t1)
     t3 = t2.relu()
     t3.layer = layer3
-    t4 = layer3(t3)
+    t4 = layer3(t3)   # for regression
+    t5 = t4.softmax() # for classification
+    t5.print_graph()
+    exit(0)
 
     #loss = MSELoss(t4, gt)
     loss = MAELoss(t4, gt)

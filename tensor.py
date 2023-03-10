@@ -241,12 +241,20 @@ class Tensor:
   def softmax(self):
     exp_val = np.exp(self.data - np.max(self.data, axis=1, keepdims=True))
     probs = exp_val / np.sum(exp_val, axis=1, keepdims=True)
-    self.out = Tensor(probs, _children=self._prev.copy())
+    self.out = Tensor(probs, name="softmax_out", _children=self._prev.copy())
     self.out._prev.append(self)
+    self.out.prev_op = OPS["Softmax"]
 
     def _backward():
-      pass
+      #self.grad += probs*(1-probs) * self.out.grad
+      for i in range(self.out.data.shape[0]):
+        for j in range(self.data.shape[0]):
+          if i == j:
+            self.grad[i] = (self.out.data[i] * (1-self.data[i])) * self.out.grad
+          else:
+            self.grad[i] = (-self.out.data[i] * self.data[j]) * self.out.grad
     self.out._backward = _backward()
+
     return self.out
 
 
