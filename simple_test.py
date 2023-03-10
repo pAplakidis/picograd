@@ -3,7 +3,7 @@ import numpy as np
 
 from tensor import Tensor
 from loss import *
-from optim import SGD
+from optim import *
 import nn
 
 # TODO: instead of manuallly passing the layers through ops, just forward them through a net module
@@ -15,27 +15,6 @@ class Testnet(nn.Module):
   def forward(self, x):
     x = self.dense1(x)
     return x
-
-
-def manual_update(params):
-  for i in range(len(params)):
-    if params[i].layer != None:
-      if params[i].w != None:
-        #params[i].w += -lr * params[i].w.grad
-        # NOTE: using lr decreases loss while -lr increases it, BUT -lr is the correct one
-        params[i].w += lr * params[i].w.grad
-        params[i].layer.weight = params[i].w
-      if params[i].b != None:
-        #params[i].b += -lr * params[i].b.grad
-        params[i].b += lr * params[i].b.grad
-        params[i].layer.bias = params[i].b
-
-  return params
-
-def reset_grad(params):
-  for i in range(len(params)):
-    params[i].grad = np.ones_like(params[i].grad)
-  return params
 
 
 if __name__ == '__main__':
@@ -59,7 +38,7 @@ if __name__ == '__main__':
     t1 = layer1(t_in)
     t1.layer = layer2
     t2 = layer2(t1)
-    t3 = t2.ReLU()
+    t3 = t2.relu()
     t3.layer = layer3
     t4 = layer3(t3)
 
@@ -73,7 +52,7 @@ if __name__ == '__main__':
     params.insert(0, loss)
     params = list(reversed(params))
 
-    params = manual_update(params)
+    params = manual_update(params, lr)
     params = reset_grad(params)
 
   print("\nNetwork Graph:")

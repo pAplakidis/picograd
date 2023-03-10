@@ -5,10 +5,11 @@ from graphviz import Digraph
 OPS = {"Linear": 0,
        "Conv2d": 1,
        "ReLU": 2,
-       "Softmax": 3,
-       "Sigmoid": 4,
-       "MSELoss": 5,
-       "MAELoss": 6}
+       "Tanh": 3,
+       "Softmax": 4,
+       "Sigmoid": 5,
+       "MSELoss": 6,
+       "MAELoss": 7}
 
 def get_key_from_value(d, val):
   return [k for k, v in d.items() if v == val]
@@ -211,7 +212,7 @@ class Tensor:
       self.print_graph()
     draw_dot(self)
 
-  def ReLU(self):
+  def relu(self):
     self.out = Tensor(np.maximum(self.data, np.zeros(self.data.shape)), name="ReLU_out", _children=self._prev.copy())
     self.out._prev.append(self)
     self.out.prev_op = OPS["ReLU"]
@@ -222,8 +223,17 @@ class Tensor:
 
     return self.out
 
-  def tahn(self):
-    pass
+  def tanh(self):
+    t = (np.exp(2*self.data) - 1) / (np.exp(2*self.data) + 1)
+    self.out = Tensor(t, name="Tanh_out", _children=self._prev.copy())
+    self.out._prev.append(self)
+    self.out.prev_op = OPS["Tanh"]
+
+    def _backward():
+      self.grad += (1 - t**2) / self.out.grad
+    self.out._backward = _backward
+
+    return self.out
 
   def sigmoid(self):
     pass

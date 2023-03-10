@@ -33,7 +33,7 @@ def MAELoss(z: Tensor, y: Tensor):
   return t
 
 # Binary Cross Entropy Loss
-def BNELoss():
+def BCELoss():
   pass
 
 # Categorical Cross Entropy
