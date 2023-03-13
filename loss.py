@@ -35,16 +35,22 @@ def MAELoss(z: Tensor, y: Tensor):
 # Binary Cross Entropy Loss
 def BCELoss(z: Tensor, y: Tensor):
   assert (n := z.shape()[0]) == y.shape()[0], f"Z Tensor doesn't have the same shape as ground-truth Y: z.shape={str(z.data.shape)}, y.shape={str(y.data.shape)}"
-  return None
+  samples = z.data.shape[0]
+  y_pred_clipped = np.clip(z.data, 1e-7, 1 - 1e-7)
 
-# BUG
+  term_0 = (1 - y.data) * np.log(1 - y_pred_clipped + 1e-7)
+  term_1 = y.data * np.log(y_pred_clipped + 1e-7)
+  loss_val = -np.mean(term_0+term_1, axis=0)
+  t = Tensor(loss_val, name="bceloss_out", _children=z._prev.copy())
+  t._prev.append(z)
+  t.prev_op = OPS["BCELoss"]
+  return t
+
 # Categorical Cross Entropy
 def CrossEntropyLoss(z: Tensor, y: Tensor):
   assert (n := z.shape()[0]) == y.shape()[0], f"Z Tensor doesn't have the same shape as ground-truth Y: z.shape={str(z.data.shape)}, y.shape={str(y.data.shape)}"
   samples = z.data.shape[0]
   y_pred_clipped = np.clip(z.data, 1e-7, 1 - 1e-7)
-
-  # -np.sum(log(z.data) * y.data)
 
   if len(y.data.shape) == 1:
     correct_confidences = y_pred_clipped[range(samples), y.data]
