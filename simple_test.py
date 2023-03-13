@@ -47,7 +47,7 @@ if __name__ == '__main__':
 
     #loss = MSELoss(t4, gt) # for regression
     #loss = CrossEntropyLoss(t4, gt) # for classification
-    loss = BCELoss(t4, gt) # for classification
+    loss = BCELoss(t4, gt) # for binary classification
     
     print("loss:", loss.data)
     loss.backward()
