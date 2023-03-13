@@ -42,7 +42,9 @@ def BCELoss(z: Tensor, y: Tensor):
 def CrossEntropyLoss(z: Tensor, y: Tensor):
   assert (n := z.shape()[0]) == y.shape()[0], f"Z Tensor doesn't have the same shape as ground-truth Y: z.shape={str(z.data.shape)}, y.shape={str(y.data.shape)}"
   samples = z.data.shape[0]
-  y_pred_clipped = np.clip(y.data, 1e-7, 1 - 1e-7)
+  y_pred_clipped = np.clip(z.data, 1e-7, 1 - 1e-7)
+
+  # -np.sum(log(z.data) * y.data)
 
   if len(y.data.shape) == 1:
     correct_confidences = y_pred_clipped[range(samples), y.data]
@@ -56,8 +58,10 @@ def CrossEntropyLoss(z: Tensor, y: Tensor):
   return t
 
 # Negative Log Likelihood Loss
-def NLLLoss():
-  pass
+def NLLLoss(z: Tensor, y: Tensor, sigma=1.0):
+  dist = np.random.normal(z.data, sigma)
+
+  return None
 
 
 if __name__ == '__main__':
