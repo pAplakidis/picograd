@@ -214,7 +214,7 @@ class Tensor:
     draw_dot(self)
 
   def relu(self):
-    self.out = Tensor(np.maximum(self.data, np.zeros(self.data.shape)), name="ReLU_out", _children=self._prev.copy())
+    self.out = Tensor(np.maximum(self.data, np.zeros(self.data.shape)), name="relu_out", _children=self._prev.copy())
     self.out._prev.append(self)
     self.out.prev_op = OPS["ReLU"]
 
@@ -226,18 +226,27 @@ class Tensor:
 
   def tanh(self):
     t = (np.exp(2*self.data) - 1) / (np.exp(2*self.data) + 1)
-    self.out = Tensor(t, name="Tanh_out", _children=self._prev.copy())
+    self.out = Tensor(t, name="tanh_out", _children=self._prev.copy())
     self.out._prev.append(self)
     self.out.prev_op = OPS["Tanh"]
 
     def _backward():
-      self.grad += (1 - t**2) / self.out.grad
+      self.grad += (1 - t**2) * self.out.grad
     self.out._backward = _backward
 
     return self.out
 
   def sigmoid(self):
-    pass
+    t = np.exp(self.data) / (np.exp(self.data) + 1)
+    self.out = Tensor(t, name="sigmoid_out", _children=self._prev.copy())
+    self.out._prev.append(self)
+    self.out.prev_op = OPS["Sigmoid"]
+
+    def _backward():
+      self.grad = t * (1-t) * self.out.grad
+    self.out._backward = _backward
+
+    return self.out
 
   def softmax(self):
     exp_val = np.exp(self.data - np.max(self.data, axis=1, keepdims=True))
