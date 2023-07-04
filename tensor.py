@@ -3,7 +3,7 @@ import numpy as np
 from graphviz import Digraph
 
 OPS = {"Linear": 0,
-       "Conv2d": 1,
+       "Conv2D": 1,
        "ReLU": 2,
        "Tanh": 3,
        "Softmax": 4,
@@ -174,8 +174,40 @@ class Tensor:
 
     return self.out
 
-  def conv2d(self):
-    pass
+  def conv2d(self, bias, in_channels, out_channels, kernel_size, stride=1, padding=0):
+    assert len(self.data.shape) == 2, "Conv2D input tensor must be 2D"
+    assert kernel_size in [3, 5, 7], "Conv2D kenrel_size must be 3, 5, or 7"
+    self.kernel = np.random.randint(0, 255, (kernel_size**2,), dtype=np.uint8)  # weight
+    self.b = bias   # TODO: bias is an array of image size (W * H)
+    self.out = np.ones_like(self.data)
+    self.out.name = "conv2d"
+    self.out._prev = self._prev.copy()
+    self.out._prev.append(self)
+    self.out.prev_op = OPS["Conv2D"]
+
+    # TODO: find a more generic way to do this, if possible
+    bdrs = {3: kernel_size - 1,
+            5: kernel_size - 2,
+            7: kernel_size - 3}
+    bdr = bdrs[kernel_size]
+
+    # TODO: handle out of range cases
+    # TODO: handle channels
+    # apply filter
+    for c in range(in_channels):
+      for i in range(0, self.data.shape[0], stride):
+        for j in range(0, self.data.shape[1], stride):
+          summ = 0
+          for k in range(i-bdr, i+bdr, 1):
+            for l in range(j-bdr, j+bdr, 1):
+              summ += self.data[k][l] * self.kernel
+          self.out[i][j] = summ + self.b
+
+    def _backward():
+      pass
+    self.out._backward = _backward
+
+    return self.out
 
   def batchnorm1d(self):
     pass
