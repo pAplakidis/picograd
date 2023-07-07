@@ -174,14 +174,12 @@ class Tensor:
 
     return self.out
 
-  def conv2d(self, bias, in_channels, out_channels, kernel_size, stride=1, padding=0):
+  def conv2d(self, in_channels, out_channels, kernel_size, stride=1, padding=0, bias=0,):
     assert len(self.data.shape) == 2, "Conv2D input tensor must be 2D"
     assert kernel_size in [3, 5, 7], "Conv2D kenrel_size must be 3, 5, or 7"
     self.kernel = np.random.randint(0, 255, (kernel_size**2,), dtype=np.uint8)  # weight
     self.b = bias   # TODO: bias is an array of image size (W * H)
-    self.out = np.ones_like(self.data)
-    self.out.name = "conv2d"
-    self.out._prev = self._prev.copy()
+    self.out = Tensor(np.ones_like(self.data), "conv2d", _children=self._prev.copy())
     self.out._prev.append(self)
     self.out.prev_op = OPS["Conv2D"]
 
@@ -191,17 +189,23 @@ class Tensor:
             7: kernel_size - 3}
     bdr = bdrs[kernel_size]
 
-    # TODO: handle out of range cases
+    # TODO: handle out of range cases with padding
     # TODO: handle channels
+    # TODO: optimize, it is too slow
     # apply filter
-    for c in range(in_channels):
-      for i in range(0, self.data.shape[0], stride):
-        for j in range(0, self.data.shape[1], stride):
-          summ = 0
-          for k in range(i-bdr, i+bdr, 1):
-            for l in range(j-bdr, j+bdr, 1):
-              summ += self.data[k][l] * self.kernel
-          self.out[i][j] = summ + self.b
+    for i in range(0, self.data.shape[0], stride):
+      for j in range(0, self.data.shape[1], stride):
+        summ = 0
+        kernel_idx = 0
+        for k in range(i-bdr, i+bdr-1, 1):
+          if i - bdr < 0 or i + bdr >= self.data.shape[0]:
+            continue
+          for l in range(j-bdr, j+bdr-1, 1):
+            if j - bdr < 0 or j + bdr >= self.data.shape[1]:
+              continue
+            summ += self.data[k][l] * self.kernel[kernel_idx]
+            kernel_idx += 1
+        self.out.data[i][j] = summ
 
     def _backward():
       pass
