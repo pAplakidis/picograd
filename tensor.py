@@ -11,7 +11,9 @@ OPS = {"Linear": 0,
        "MSELoss": 6,
        "MAELoss": 7,
        "CrossEntropyLoss": 8,
-       "BCELoss": 9}
+       "BCELoss": 9,
+       "MaxPool2D": 10
+      }
 
 def get_key_from_value(d, val):
   return [k for k, v in d.items() if v == val]
@@ -175,7 +177,7 @@ class Tensor:
     return self.out
 
   def conv2d(self, in_channels, out_channels, kernel_size, stride=1, padding=0, bias=0,):
-    assert len(self.data.shape) == 2, "Conv2D input tensor must be 2D"
+    assert len(self.data.shape) == 2, "Conv2D input tensor must be 2D"  # TODO: 3D tensors (RGB)
     assert kernel_size in [3, 5, 7], "Conv2D kenrel_size must be 3, 5, or 7"
     self.kernel = np.random.randint(0, 255, (kernel_size**2,), dtype=np.uint8)  # weight
     self.b = bias   # TODO: bias is an array of image size (W * H)
@@ -219,8 +221,38 @@ class Tensor:
   def batchnorm2d(self):
     pass
 
-  def maxpool(self):
-    pass
+  def maxpool2d(self, filter=(2,2), stride=(2,2), padding=1):
+    # TODO: assert dimensionality
+    h_offset = -padding
+    w_offset = -padding
+    self.out = Tensor(np.ones_like(self.data), "maxpool2d", _children=self._prev.copy())
+    self.out._prev.append(self)
+    self.out.prev_op = OPS["MaxPool2D"]
+
+    # TODO: handle channels as well
+    # TODO: test and debug this code
+    # code from: [ https://github.com/mratsim/Arraymancer/issues/174 ]
+    for i in range(self.data.shape[0]):
+      for j in range(self.data.shape[1]):
+        out_idx = j + self.data.shape[1]*(i + self.data.shape[0])
+        maxx = float("-inf")
+        max_i = -1
+        for n in range(filter[0]):
+          for m in range(filter[1]):
+            curr_h = h_offset + i*stride[0] + n
+            curr_w = w_offset + j*stride[1] + m
+            idx = curr_w + self.data.shape[1] * (curr_h + self.data.shape[0])
+            valid = (curr_h >= 0 and curr_h < self.data.shape[0]
+                     and curr_w >= 0 and curr_w < self.data.shape[1])
+            val = float(self.data[idx]) if valid != 0 else float("-inf")
+            max_i = idx if (val > maxx) else max_i
+            maxx = val if (val > maxx) else maxx
+
+    def _backward():
+      pass
+    self.out._backward = _backward
+
+    return self.out
 
   def avgpool(self):
     pass
