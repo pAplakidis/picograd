@@ -36,6 +36,7 @@ class Linear(Layer):
   def __call__(self, x: Tensor):
     return x.linear(self.weight, self.bias)
 
+# TODO: move most of the stuff from tensor here
 class Conv2d(Layer):
   def __init__(self, kernel_size, stride=1):
     self.type = LayerType['CONV2D'].value
