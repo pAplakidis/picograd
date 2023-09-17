@@ -46,8 +46,8 @@ if __name__ == '__main__':
     t5 = t4.softmax() # for classification
 
     #loss = MSELoss(t4, gt) # for regression
-    #loss = CrossEntropyLoss(t4, gt) # for classification
-    loss = BCELoss(t4, gt) # for binary classification
+    #loss = CrossEntropyLoss(t5, gt) # for classification
+    loss = BCELoss(t5, gt) # for binary classification
     print("loss:", loss.data)
     loss.backward()
 

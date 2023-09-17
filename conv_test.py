@@ -12,17 +12,19 @@ classes = {0: "not-cat", 1: "cat"}
 
 if __name__ == "__main__":
   img = Image.open("./media/cat.jpeg")
-  img = img.convert("L")
+  # img = img.convert("L")
+  img = img.convert("RGB")
   img = img.resize((224, 224))
   plt.imshow(img, cmap="gray")
   plt.show()
 
   img = np.array(img)
+  img = np.moveaxis(img, -1, 0)
+  print(img.shape)
   t_in = Tensor(img, name="t_in")
   print("t_in:", t_in)
   gt = Tensor(np.ones((1,1)), name="ground_truth")  # for binary classification
-  print("Ground Truth:", gt)
-  print("=>", classes[gt.data[0][0]])
+  print("Ground Truth:", gt, "=>", classes[gt.data[0][0]])
 
   conv_time = time()
   t1 = t_in.conv2d(3, 6, 5)

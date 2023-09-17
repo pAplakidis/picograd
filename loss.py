@@ -32,6 +32,7 @@ def MAELoss(z: Tensor, y: Tensor):
   t.prev_op = OPS["MAELoss"]
   return t
 
+# TODO: always outputs 0?? (might be just the tests, but double check!)
 # Binary Cross Entropy Loss
 def BCELoss(z: Tensor, y: Tensor):
   assert (n := z.shape()[0]) == y.shape()[0], f"Z Tensor doesn't have the same shape as ground-truth Y: z.shape={str(z.data.shape)}, y.shape={str(y.data.shape)}"
