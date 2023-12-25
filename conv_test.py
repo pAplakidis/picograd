@@ -22,15 +22,17 @@ if __name__ == "__main__":
   img = np.moveaxis(img, -1, 0)
   print(img.shape)
   t_in = Tensor(img, name="t_in")
+  # t_in = Tensor(np.random.randint(0, 255, (3, 5, 5)), name="t_in") # NOTE: mock-tensor
   print("t_in:", t_in)
   gt = Tensor(np.ones((1,1)), name="ground_truth")  # for binary classification
   print("Ground Truth:", gt, "=>", classes[gt.data[0][0]])
 
   conv_time = time()
-  t1 = t_in.conv2d(3, 6, 5)
+  t1 = t_in.conv2d(3, 6, 3)
   print("t1:", t1)
   print("Time elapsed for Conv2D op: %.2f sec"%(time() - conv_time))
   conv_img = t1.data
+  exit(0)
 
   # pool_time = time()
   # t2 = t2.maxpool2d()

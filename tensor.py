@@ -180,41 +180,49 @@ class Tensor:
 
     return self.out
 
-  def conv2d(self, in_channels, out_channels, kernel_size, stride=1, bias=0,):
+  def conv2d(self, in_channels, out_channels, kernel_size, stride=1, padding=0, bias=0, debug=False):
     assert len(self.data.shape) == 3, "Conv2D input tensor must be 2D-RGB"
     assert kernel_size % 2 != 0, "Conv2D kenrel_size must be odd"
 
-    self.kernel = Tensor(np.random.randint(0, 255, (kernel_size**2), dtype=np.uint8), "conv_kernel")  # weight
+    self.kernel = Tensor(np.random.randint(0, 255, (out_channels, kernel_size, kernel_size), dtype=np.uint8), "conv_kernel")  # weight
     self.b = bias # TODO: bias is an array of image size (W * H)
     bdr = kernel_size // 2
 
-    self.out = Tensor(np.zeros_like(self.data), "conv2d_out", _children=self._prev.copy())
+    _, H, W = self.data.shape # TODO: double-check, we assume (c, h, w)
+    H_out = ((H - kernel_size + 2*padding) // stride) + 1
+    W_out = ((W - kernel_size + 2*padding) // stride) + 1
+
+    self.out = Tensor(np.zeros((out_channels, W, H)), "conv2d_out", _children=self._prev.copy())
     self.out._prev.append(self)
     self.out.prev_op = OPS["Conv2D"]
 
-    # TODO: how do we handle output channels?
-    # TODO: optimize, it is too slow (cython?)
-    # apply filter
-    for c in range(in_channels):
-      i_idx = 0
-      for i in range(0, self.data.shape[1] * stride, stride):
-        j_idx = 0
-        for j in range(0, self.data.shape[2] * stride, stride):
-          summ = 0
-          kernel_idx = 0
-          for k in range(i-bdr, i+bdr-1, 1):
-            # pseudo zero padding
-            if i - bdr < 0 or i + bdr >= self.data.shape[1]:
-              continue
-            for l in range(j-bdr, j+bdr-1, 1):
-              # pseudo zero padding
-              if j - bdr < 0 or j + bdr >= self.data.shape[2]:
-                continue
-              summ += self.data[c][k][l] * self.kernel.data[kernel_idx]
-              kernel_idx += 1
-          self.out.data[c][i_idx][j_idx] = summ
-          j_idx += 1
-        i_idx += 1
+    # TODO: debug padding index out of range
+    for out_c in range(out_channels):
+      for in_c in range(in_channels):
+        i_idx = 0 - padding
+        for i in range(H_out):
+          j_idx = 0 - padding
+          for j in range(W_out):
+            # TODO: use something more simplified like this:
+            # region = padded_input[i_c, h:h + kernel_size, w:w + kernel_size]
+            for k in range(kernel_size):
+              for l in range(kernel_size):
+                # handle padding
+                if i_idx + k < 0 or j_idx + l < 0 or i_idx + k >= H or j_idx + l >= W:
+                  self.out.data[out_c][i][j] += 0
+                self.out.data[out_c][i][j] += self.data[in_c][i_idx + k][j_idx + l] * self.kernel.data[out_c][k][l]
+                if debug:
+                  print(f"OUT ({out_c},{i},{j}), IN ({in_c},{i_idx},{j_idx}) => ({in_c},{i_idx+k},{j_idx+l}), W ({out_c},{k},{l})")
+            if debug:
+              print()
+            j_idx += stride
+          if debug:
+            print()
+          i_idx += stride
+        if debug:
+          print(f"IN_C {in_c}")
+      if debug:
+        print(f"OUT_C {out_c}")
 
     # TODO: this is not good code, yet
     def _backward():
