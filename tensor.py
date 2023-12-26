@@ -13,7 +13,7 @@ OPS = {"Linear": 0,
        "CrossEntropyLoss": 8,
        "BCELoss": 9,
        "MaxPool2D": 10,
-       "AvgPoll2D": 11
+       "AvgPool2D": 11
       }
 
 def get_key_from_value(d, val):
@@ -71,6 +71,10 @@ class Tensor:
       return f"Tensor(name={self.name}, shape={str(self.shape())}, data={str(self.data)}, grad={self.grad}), prev_op={get_key_from_value(OPS, self.prev_op)}, prev_tensors={len(self._prev)})"
     else:
       return f"Tensor(name={self.name}, shape={str(self.shape())}, prev_op={get_key_from_value(OPS, self.prev_op)}, prev_tensors={len(self._prev)})"
+
+  # TODO: handle multidimensional idx
+  def __getitem__(self, idx):
+    return self.data[idx]
 
   def __add__(self, other):
     #children = self._prev.copy()
@@ -182,11 +186,11 @@ class Tensor:
 
   # FIXME: padding
   # TODO: bias
-  def conv2d(self, in_channels, out_channels, kernel_size, stride=1, padding=0, bias=0, debug=False):
+  def conv2d(self, weight, bias, in_channels, out_channels, kernel_size, stride=1, padding=0, debug=False):
     assert len(self.data.shape) == 3, "Conv2D input tensor must be 2D-RGB"
     assert kernel_size % 2 != 0, "Conv2D kenrel_size must be odd"
 
-    self.kernel = Tensor(np.random.randint(0, 255, (out_channels, kernel_size, kernel_size), dtype=np.uint8), "conv_kernel")  # weight
+    self.kernel = weight
     self.b = bias # TODO: bias is an array of image size (c,h,w)
 
     _, H, W = self.data.shape # NOTE: double-check, we assume (c, h, w)
@@ -208,13 +212,13 @@ class Tensor:
           j_idx = 0 - padding
           for j in range(W_out):
             # TODO: use something more simplified like this:
-            # region = padded_input[i_c, h:h + kernel_size, w:w + kernel_size]
+            # regn = padded_input[i_c, h:h + kernel_size, w:w + kernel_size]
             for k in range(kernel_size):
               for l in range(kernel_size):
                 # handle padding
                 if i_idx + k < 0 or j_idx + l < 0 or i_idx + k >= H or j_idx + l >= W:
-                  self.out.data[out_c][i][j] += 0
-                self.out.data[out_c][i][j] += self.data[in_c][i_idx + k][j_idx + l] * self.kernel.data[out_c][k][l]
+                  self.out.data[out_c][i][j] += self.b.data[out_c]
+                self.out.data[out_c][i][j] += self.data[in_c][i_idx + k][j_idx + l] * self.kernel.data[out_c][k][l] + self.b.data[out_c]
                 if debug:
                   print(f"OUT ({out_c},{i},{j}), IN ({in_c},{i_idx},{j_idx}) => ({in_c},{i_idx+k},{j_idx+l}), W ({out_c},{k},{l})", end="\t (==)")
                   print(f"VAL: {self.out.data[out_c][i][j]}")
@@ -234,7 +238,7 @@ class Tensor:
       self.out.grad = np.ones_like(self.out.data)
       self.grad = np.zeros_like(self.data)
       self.kernel.grad = np.zeros_like(self.kernel.data)
-      # self.bias.grad = np.sum(self.out.grad)
+      self.b.grad = np.sum(self.out.grad)
 
       for i in range(0, H, stride):
         for j in range(0, W, stride):
@@ -276,7 +280,7 @@ class Tensor:
 
     return self.out
 
-  def avgpool(self, filter=(2,2), stride=1, padding=0):
+  def avgpool2d(self, filter=(2,2), stride=1, padding=0):
     # TODO: assert dimensionality
     # TODO: handle channels and padding as well
     # TODO: double-check if stride is used correctly

@@ -17,23 +17,25 @@ def train(t_in, gt):
   for i in range(epochs):
     print("[+] epoch", i+1)
     # t1 = t_in.conv2d(3, 6, 3, padding=2, debug=True)
-    t1 = t_in.conv2d(3, 6, 3)
+    conv1 = nn.Conv2d(3, 6, 3)
+    t_in.layer = conv1
+    t1 = conv1(t_in)
 
-    # pool_time = time()
-    # t2 = t2.maxpool2d()
-    # print("t2:", t2)
-    # print("Time elapsed for MaxPool2D op: %.2f sec"%(time() - pool_time))
+    pooling = nn.MaxPool2D()
+    # pooling = nn.AvgPool2D()
+    t1.layer = pooling
+    t2 = pooling(t1)
 
     # TODO: add ReLU
 
-    t1.flatten()
-    fc = nn.Linear(t1.data.shape[0], 1)
-    t1.layer = fc
-    t2 = fc(t1)
+    t2.flatten()
+    fc = nn.Linear(t2.data.shape[0], 1)
+    t2.layer = fc
+    t3 = fc(t2)
 
-    t3 = t2.softmax()
+    t4 = t3.softmax()
 
-    loss = BCELoss(t3, gt) # for binary classification
+    loss = BCELoss(t4, gt) # for binary classification
     print("Loss:", loss.data)
     loss.backward()
 
@@ -43,6 +45,9 @@ def train(t_in, gt):
 
     params = manual_update(params, lr)
     params = reset_grad(params)
+
+  print("\nNetwork Graph:")
+  loss.print_graph()
 
 def manual_test(t_in, gt):
   conv_time = time()
