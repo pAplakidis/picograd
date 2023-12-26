@@ -180,23 +180,27 @@ class Tensor:
 
     return self.out
 
+  # FIXME: padding
+  # TODO: bias
   def conv2d(self, in_channels, out_channels, kernel_size, stride=1, padding=0, bias=0, debug=False):
     assert len(self.data.shape) == 3, "Conv2D input tensor must be 2D-RGB"
     assert kernel_size % 2 != 0, "Conv2D kenrel_size must be odd"
 
     self.kernel = Tensor(np.random.randint(0, 255, (out_channels, kernel_size, kernel_size), dtype=np.uint8), "conv_kernel")  # weight
-    self.b = bias # TODO: bias is an array of image size (W * H)
-    bdr = kernel_size // 2
+    self.b = bias # TODO: bias is an array of image size (c,h,w)
 
-    _, H, W = self.data.shape # TODO: double-check, we assume (c, h, w)
+    _, H, W = self.data.shape # NOTE: double-check, we assume (c, h, w)
     H_out = ((H - kernel_size + 2*padding) // stride) + 1
     W_out = ((W - kernel_size + 2*padding) // stride) + 1
 
-    self.out = Tensor(np.zeros((out_channels, W, H)), "conv2d_out", _children=self._prev.copy())
+    self.out = Tensor(np.zeros((out_channels, H_out, W_out)), "conv2d_out", _children=self._prev.copy())
+    self.out.data = self.out.data.astype(np.uint8)
     self.out._prev.append(self)
     self.out.prev_op = OPS["Conv2D"]
 
-    # TODO: debug padding index out of range
+    self.grad = Tensor(np.zeros_like(self.data))
+    self.out.grad = Tensor(np.zeros_like(self.out))
+
     for out_c in range(out_channels):
       for in_c in range(in_channels):
         i_idx = 0 - padding
@@ -212,7 +216,8 @@ class Tensor:
                   self.out.data[out_c][i][j] += 0
                 self.out.data[out_c][i][j] += self.data[in_c][i_idx + k][j_idx + l] * self.kernel.data[out_c][k][l]
                 if debug:
-                  print(f"OUT ({out_c},{i},{j}), IN ({in_c},{i_idx},{j_idx}) => ({in_c},{i_idx+k},{j_idx+l}), W ({out_c},{k},{l})")
+                  print(f"OUT ({out_c},{i},{j}), IN ({in_c},{i_idx},{j_idx}) => ({in_c},{i_idx+k},{j_idx+l}), W ({out_c},{k},{l})", end="\t (==)")
+                  print(f"VAL: {self.out.data[out_c][i][j]}")
             if debug:
               print()
             j_idx += stride
@@ -224,12 +229,18 @@ class Tensor:
       if debug:
         print(f"OUT_C {out_c}")
 
-    # TODO: this is not good code, yet
+    # TODO: double-check the math
     def _backward():
-      self.kernel.grad = np.dot(self.data.T, self.out.grad)
-      #self.b.grad = np.sum(self.out.grad, axis=0, keepdims=True)
-      self.grad = np.dot(self.out.grad, self.kernel.data.T)
-    self.out._backward = _backward
+      self.out.grad = np.ones_like(self.out.data)
+      self.grad = np.zeros_like(self.data)
+      self.kernel.grad = np.zeros_like(self.kernel.data)
+      # self.bias.grad = np.sum(self.out.grad)
+
+      for i in range(0, H, stride):
+        for j in range(0, W, stride):
+          self.grad[i:i+kernel_size, j:j+kernel_size] += self.out.grad * self.kernel.data
+          self.kernel.grad = self.out.grad * self.data[i:i+kernel_size, j:j+kernel_size]
+      self.out._backward = _backward
 
     return self.out
 
