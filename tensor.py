@@ -31,7 +31,7 @@ def trace(root):
   build(root)
   return nodes, edges
 
-# TODO: debug
+# FIXME
 def draw_dot(root, format='svg', rankdir='LR'):
   assert rankdir in ['LR', 'TB']
   nodes, edges = trace(root)
@@ -137,14 +137,12 @@ class Tensor:
   def mean(self):
     return np.mean(self.data)
 
-  # TODO: test this
   def flatten(self):
     self.out = Tensor(self.data.flatten(), name="flattenout")
     self.out.prev_channels, self.out.prev_height, self.out.prev_width = self.data.shape
     self.out._prev = self._prev.copy()
     self.out._prev.append(self)
     self.out.prev_op = OPS["Flatten"]
-
 
     def _backward():
       self.grad = self.out.grad
@@ -181,7 +179,6 @@ class Tensor:
     self.out._prev.append(self)
     self.out.prev_op = OPS["Linear"]
 
-    # TODO: update layer's grads as well
     def _backward():
       #print(self.data.shape, self.out.grad.shape)
       if len(self.data.shape) == 1:
@@ -199,13 +196,12 @@ class Tensor:
     return self.out
 
   # FIXME: padding
-  # TODO: bias
   def conv2d(self, weight, bias, in_channels, out_channels, kernel_size, stride=1, padding=0, debug=False):
     assert len(self.data.shape) == 3, "Conv2D input tensor must be 2D-RGB"
     assert kernel_size % 2 != 0, "Conv2D kenrel_size must be odd"
 
     self.kernel = weight
-    self.b = bias # TODO: bias is an array of image size (c,h,w)
+    self.b = bias
 
     _, H, W = self.data.shape # NOTE: double-check, we assume (c, h, w)
     H_out = ((H - kernel_size + 2*padding) // stride) + 1
@@ -247,9 +243,8 @@ class Tensor:
       if debug:
         print(f"OUT_C {out_c}")
 
-    # TODO: double-check the math
     def _backward():
-      self.out.grad = np.ones_like(self.out.data)
+      # self.out.grad = np.ones_like(self.out.data)
       self.grad = np.zeros_like(self.data)
       self.kernel.grad = np.zeros_like(self.kernel.data)
       self.b.grad = np.sum(self.out.grad)
@@ -303,6 +298,7 @@ class Tensor:
 
     return self.out
 
+  # TODO: fix this like maxpool2D
   def avgpool2d(self, filter=(2,2), stride=1, padding=0):
     # TODO: assert dimensionality
     # TODO: handle channels and padding as well

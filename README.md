@@ -3,6 +3,7 @@
 ## Give it a try
 ```
 python simple_test.py
+python conv_test.py
 ```
 
 ## TODO:
@@ -11,10 +12,15 @@ python simple_test.py
 * Implement optimization  (DONE)
 * Tidy up code and use the operation wrappers for Tensor  (DONE)
 * Fully train a toy Net with only Linear layers (DONE)
-* Implement convolution (Conv2D backward, C backend for forward, too slow)
-* Implement maxpool and avgpool (optimize/refactor code)
+* Implement convolution (Conv2D backward) (DONE, fix padding + more tests)
+* Implement maxpool and avgpool (optimize/refactor code) (DONE, needs fixing + tests)
+* Support CUDA for numpy using CuPy => add device property
+* Support batches
+
+* separate layers => whole model/Module
+* save/load models
 * Implement BatchNorm1d and 2d
+* better backward: debug and use deepwalk
 * Test on actual neural networks (full training and evaluation of simple models)
 * Release (make the project cleaner, more robust and usable)
-* cuda support?
 

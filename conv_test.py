@@ -89,15 +89,15 @@ if __name__ == "__main__":
   img = Image.open("./media/cat.jpeg")
   # img = img.convert("L")
   img = img.convert("RGB")
-  img = img.resize((224, 224))
+  img = img.resize((112, 112))
   plt.imshow(img, cmap="gray")
   plt.show()
 
   img = np.array(img)
   img = np.moveaxis(img, -1, 0)
   print(img.shape)
-  # t_in = Tensor(img, name="t_in")
-  t_in = Tensor(np.random.randint(0, 255, (3, 5, 5)), name="t_in") # NOTE: mock-tensor
+  t_in = Tensor(img, name="t_in")
+  # t_in = Tensor(np.random.randint(0, 255, (3, 5, 5)), name="t_in") # NOTE: mock-tensor
   print("t_in:", t_in)
   gt = Tensor(np.ones((1,1)), name="ground_truth")  # for binary classification
   print("Ground Truth:", gt, "=>", classes[gt.data[0][0]])
