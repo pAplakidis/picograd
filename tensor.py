@@ -13,7 +13,8 @@ OPS = {"Linear": 0,
        "CrossEntropyLoss": 8,
        "BCELoss": 9,
        "MaxPool2D": 10,
-       "AvgPool2D": 11
+       "AvgPool2D": 11,
+       "Flatten": 12
       }
 
 def get_key_from_value(d, val):
@@ -136,8 +137,21 @@ class Tensor:
   def mean(self):
     return np.mean(self.data)
 
+  # TODO: test this
   def flatten(self):
-    self.data = self.data.flatten()
+    self.out = Tensor(self.data.flatten(), name="flattenout")
+    self.out.prev_channels, self.out.prev_height, self.out.prev_width = self.data.shape
+    self.out._prev = self._prev.copy()
+    self.out._prev.append(self)
+    self.out.prev_op = OPS["Flatten"]
+
+
+    def _backward():
+      self.grad = self.out.grad
+      self.data = self.out.data.copy().reshape(self.out.prev_channels, self.out.prev_height, self.out.prev_width)
+    self._backward = _backward
+
+    return self.out
 
   # pretty print the graph for this tensor backwards
   def print_graph(self, verbose=False):
@@ -254,26 +268,35 @@ class Tensor:
   def batchnorm2d(self):
     pass
 
-  def maxpool2d(self, filter=(2,2), stride=1, padding=0):
+  def maxpool2d(self, filter=(2,2), stride=1):
     # TODO: assert dimensionality
-    # TODO: handle channels and padding as well
-    # TODO: double-check if stride is used correctly
+    # TODO: double-check and test
+    channels, height, width = self.data.shape
+    out_height = (height - filter[0]) // stride + 1
+    out_width = (width - filter[1]) // stride + 1
+    out_img = np.zeros((channels, out_height, out_width))
+    mask = np.zeros_like(self.data)
 
-    # pooling out_dim = (((input_dim - filter_dim) / stride) + 1) * channels
-    out_img = np.ones(((self.data.shape[0] - filter[0] // stride) + 1, (self.data.shape[1] - filter[1] // stride) + 1))
-    for i in range(0, self.data.shape[0]-filter[0], filter[0]):
-      for j in range(0, self.data.shape[1]-filter[0], filter[1]):
-        tmp = []
-        for n in range(filter[0]):
-          for m in range(filter[1]):
-            # TODO: keep pooling (max) indices, for use on GANs (like SegNet)
-            tmp.append(out_img[i*stride+n][j*stride+m])
-        out_img[i][j] = np.array(tmp).max()
+    for i in range(out_height):
+      for j in range(out_width):
+        h_start, h_end = i * stride, i * stride+ filter[0]
+        w_start, w_end = j * stride, j * stride + filter[1]
+
+        # Extract the region to perform max pooling
+        x_slice = self.data[:, h_start:h_end, w_start:w_end]
+
+        # Perform max pooling along the specified axis
+        max_values = np.max(x_slice, axis=(1, 2), keepdims=True)
+
+        # Update the output and mask
+        out_img[:, i, j] = max_values[:, 0, 0]
+        mask[:, h_start:h_end, w_start:w_end] = (x_slice == max_values)
 
     self.out = Tensor(out_img, "maxpool2d", _children=self._prev.copy())
     self.out._prev.append(self)
     self.out.prev_op = OPS["MaxPool2D"]
 
+    # TODO: implement backward
     def _backward():
       self.grad = self.out.grad
     self.out._backward = _backward
@@ -338,7 +361,7 @@ class Tensor:
     self.out.prev_op = OPS["ReLU"]
 
     def _backward():
-      self.grad += self.out.grad * (self.out.data > 0)
+      self.grad += self.out.grad * (self.data > 0)
     self.out._backward = _backward
 
     return self.out
@@ -385,20 +408,3 @@ class Tensor:
     self.out._backward = _backward
 
     return self.out
-
-
-if __name__ == '__main__':
-  arr = np.random.rand(3)
-  t = Tensor(arr)
-  print(t.item())
-  print(t.shape())
-
-  w = np.random.rand(3, 4)
-  b = np.random.rand(4)
-  print(w)
-  print(w.shape)
-  print(b)
-  print(b.shape)
-  l = t.linear(w, b)
-  print(l)
-  print(l.shape)

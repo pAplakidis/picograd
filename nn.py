@@ -61,15 +61,14 @@ class Conv2d(Layer):
 
 
 class MaxPool2D(Layer):
-  def __init__(self, filter=(2,2), stride=1, padding=0):
+  def __init__(self, filter=(2,2), stride=1):
     self.type = LayerType['MAXPOOL2D'].value
     
     self.filter = filter
     self.stride = stride
-    self.padding = padding
 
   def __call__(self, x: Tensor):
-    return x.maxpool2d(self.filter, self.stride, self.padding)
+    return x.maxpool2d(self.filter, self.stride)
 
 
 class AvgPool2D(Layer):

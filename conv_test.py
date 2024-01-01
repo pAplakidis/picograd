@@ -26,16 +26,16 @@ def train(t_in, gt):
     t1.layer = pooling
     t2 = pooling(t1)
 
-    # TODO: add ReLU
+    t3 = t2.relu()
 
-    t2.flatten()
-    fc = nn.Linear(t2.data.shape[0], 1)
-    t2.layer = fc
-    t3 = fc(t2)
+    t4 = t3.flatten()
+    fc = nn.Linear(t4.data.shape[0], 1)
+    t4.layer = fc
+    t5 = fc(t4)
 
-    t4 = t3.softmax()
+    t6 = t5.softmax()
 
-    loss = BCELoss(t4, gt) # for binary classification
+    loss = BCELoss(t6, gt) # for binary classification
     print("Loss:", loss.data)
     loss.backward()
 
