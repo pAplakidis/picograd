@@ -16,6 +16,7 @@ python conv_test.py
 * Implement maxpool and avgpool (optimize/refactor code) (DONE, needs fixing + tests)
 * Support CUDA for numpy using CuPy => add device property
 * Support batches
+* Low Level Debugging: calculate FLOPS
 
 * separate layers => whole model/Module
 * save/load models

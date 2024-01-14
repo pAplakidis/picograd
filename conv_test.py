@@ -27,7 +27,7 @@ def train(t_in, gt):
     t2 = pooling(t1)
 
     t3 = t2.relu()
-
+#
     t4 = t3.flatten()
     fc = nn.Linear(t4.data.shape[0], 1)
     t4.layer = fc
@@ -35,6 +35,7 @@ def train(t_in, gt):
 
     t6 = t5.softmax()
 
+    print("Pred:", t6.data)
     loss = BCELoss(t6, gt) # for binary classification
     print("Loss:", loss.data)
     loss.backward()
