@@ -10,6 +10,7 @@ class LayerType(Enum):
   MAXPOOL2D = 3
   AVGPOOL2D = 4
 
+# TODO: Sequential
 
 class Module:
   def __init__(self):
@@ -19,10 +20,13 @@ class Module:
     return
 
   def __call__(self, *params):
-    self.forward(*params)
+    return self.forward(*params)
 
   def get_params(self):
-    # TODO: add params from each layer (w,b)
+    # TODO: params are tensors(weights, biases, etc) not layers
+    for name, param in self.__dict__.items():
+      if isinstance(param, Layer):
+        self.params.append(param)
     return self.params
 
 

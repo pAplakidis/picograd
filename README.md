@@ -14,6 +14,7 @@ python conv_test.py
 * Fully train a toy Net with only Linear layers (DONE)
 * Implement convolution (Conv2D backward) (DONE, fix padding + more tests)
 * Implement maxpool and avgpool (optimize/refactor code) (DONE, needs fixing + tests)
+* Use nn.Module instead of Tensors (manually)
 * Support CUDA for numpy using CuPy => add device property
 * Support batches
 * Low Level Debugging: calculate FLOPS

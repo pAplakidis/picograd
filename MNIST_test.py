@@ -1,15 +1,34 @@
 #!/usr/bin/env python3
 import numpy as np
 import torchvision.datasets as datasets
+import requests, gzip, os, hashlib, numpy
 
 from tensor import Tensor
 from loss import *
 from optim import *
 import nn
 
-def get_data():
-  mnist_trainset = datasets.MNIST(root='./data', train=True, download=True, transform=None)
-  return mnist_trainset
+def get_data(use_dataset=False):
+  if use_dataset:
+    mnist_trainset = datasets.MNIST(root='./data', train=True, download=True, transform=None)
+    return mnist_trainset
+
+  def fetch(url):
+    fp = os.path.join("/tmp", hashlib.md5(url.encode('utf-8')).hexdigest())
+    if os.path.isfile(fp):
+      with open(fp, "rb") as f:
+        dat = f.read()
+    else:
+      with open(fp, "wb") as f:
+        dat = requests.get(url).content
+        f.write(dat)
+    return numpy.frombuffer(gzip.decompress(dat), dtype=np.uint8).copy()
+
+  X_train = fetch("http://yann.lecun.com/exdb/mnist/train-images-idx3-ubyte.gz")[0x10:].reshape((-1, 28, 28))
+  Y_train = fetch("http://yann.lecun.com/exdb/mnist/train-labels-idx1-ubyte.gz")[8:]
+  X_test = fetch("http://yann.lecun.com/exdb/mnist/t10k-images-idx3-ubyte.gz")[0x10:].reshape((-1, 28, 28))
+  Y_test = fetch("http://yann.lecun.com/exdb/mnist/t10k-labels-idx1-ubyte.gz")[8:]
+  return X_train, Y_train, X_test, Y_test
 
 
 # TODO: instead of manuallly passing the layers through ops, just forward them through a net module
@@ -24,9 +43,9 @@ class Testnet(nn.Module):
 
 
 if __name__ == '__main__':
-  dataset = get_data()
+  X_train, Y_train, X_test, Y_test = get_data()
 
-  print(dataset)
+  print(X_train)
   exit(0)
 
   t_in = Tensor(np.random.rand(10), name="t_in")

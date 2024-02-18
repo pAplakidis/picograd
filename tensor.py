@@ -73,50 +73,48 @@ class Tensor:
     else:
       return f"Tensor(name={self.name}, shape={str(self.shape())}, prev_op={get_key_from_value(OPS, self.prev_op)}, prev_tensors={len(self._prev)})"
 
-  # TODO: handle multidimensional idx
   def __getitem__(self, idx):
-    return self.data[idx]
+    if isinstance(idx, tuple):
+      # Recursively access the elements
+      result = self.data
+      for i in idx:
+          result = result[i]
+      return result
+    else:
+        return self.data[idx]
 
+  def _create_op_tensor(self, data):
+    children = self._prev.copy()
+    children.append(self)
+    return Tensor(data, _children=children)
+
+  # TODO: remove commeneted when proper recursive backward() is implemented
+  # TODO: implement backward for each op (?)
   def __add__(self, other):
-    #children = self._prev.copy()
-    #children.append(self)
-    #return Tensor(self.data + other.data, _children=children)
+    return self._create_op_tensor(self.data + other.data)
     return Tensor(self.data + other.data)
 
   def __sub__(self, other):
-    #children = self._prev.copy()
-    #children.append(self)
-    #return Tensor(self.data - other.data, _children=children)
+    return self._create_op_tensor(self.data - other.data)
     return Tensor(self.data - other.data)
 
   def __mul__(self, other):
-    #children = self._prev.copy()
-    #children.append(self)
-    #return Tensor(self.data * other.data, _children=children)
+    return self._create_op_tensor(self.data * other.data)
     return Tensor(self.data * other.data)
 
   def __pow__(self, other):
-    #children = self._prev.copy()
-    #children.append(self)
-    #return Tensor(self.data ** other, _children=children)
+    return self._create_op_tensor(self.data ** other.data)
     return Tensor(self.data ** other)
 
   def __div__(self, other):
-    #children = self._prev.copy()
-    #children.append(self)
-    #return Tensor(self * (other ** -1), _children=children)
+    return self._create_op_tensor(self * (other ** -1))
     return Tensor(self * (other ** -1))
 
   def dot(self, other):
-    #children = self._prev.copy()
-    #children.append(self)
-    #return Tensor(np.dot(self.data, other.data), _children=children)
+    return self._create_op_tensor(np.dot(self.data, other.data))
     return Tensor(np.dot(self.data, other.data))
 
   def T(self):
-    #children = self._prev.copy()
-    #children.append(self)
-    #return Tensor(self.data.T, _children=children)
     return Tensor(self.data.T)
 
   def item(self):
