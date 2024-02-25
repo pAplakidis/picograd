@@ -27,9 +27,11 @@ class SGD:
     self.params = params
     self.lr = lr
 
+  # not zero_grad since we reset it to ones
   def reset_grad(self):
     for i in range(len(self.params)):
-      self.params[i].grad = np.ones_like(self.params[i].grad)
+      self.params[i].t_in.grad = np.ones_like(self.params[i].t_in.grad)
+      self.params[i].t_out.grad = np.ones_like(self.params[i].t_out.grad)
     return self.params
 
   def step(self):

@@ -35,6 +35,7 @@ def MAELoss(z: Tensor, y: Tensor):
 # TODO: always outputs 0?? (might be just the tests, but double check!)
 # Binary Cross Entropy Loss
 def BCELoss(z: Tensor, y: Tensor):
+  # FIXME: assert all dimensions
   assert (n := z.shape()[0]) == y.shape()[0], f"Z Tensor doesn't have the same shape as ground-truth Y: z.shape={str(z.data.shape)}, y.shape={str(y.data.shape)}"
   samples = z.data.shape[0]
   y_pred_clipped = np.clip(z.data, 1e-7, 1 - 1e-7)

@@ -73,6 +73,7 @@ class Tensor:
     else:
       return f"Tensor(name={self.name}, shape={str(self.shape())}, prev_op={get_key_from_value(OPS, self.prev_op)}, prev_tensors={len(self._prev)})"
 
+  # TODO: support item assignment as well
   def __getitem__(self, idx):
     if isinstance(idx, tuple):
       # Recursively access the elements
