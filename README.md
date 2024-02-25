@@ -17,12 +17,12 @@ python conv_test.py
 * Use nn.Module instead of Tensors (manually)
 * Support CUDA for numpy using CuPy => add device property
 * Support batches
-* Low Level Debugging: calculate FLOPS
+* Low Level Debugging: calculate and print FLOPS
 
 * separate layers => whole model/Module
 * save/load models
 * Implement BatchNorm1d and 2d
-* better backward: debug and use deepwalk
+* better backward: debug and use deepwalk (prev: only tensors used in current op => recursively call backward())
 * Test on actual neural networks (full training and evaluation of simple models)
 * Release (make the project cleaner, more robust and usable)
 
