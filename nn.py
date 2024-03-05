@@ -15,9 +15,18 @@ class LayerType(Enum):
 class Module:
   def __init__(self):
     self.params = []
+    self.train = True
+
+  def train(self):
+    self.train = True
+    return self
+
+  def eval(self):
+    self.eval = False
+    return self
 
   def forward(self):
-    return
+    return None
 
   def __call__(self, *params):
     return self.forward(*params)
