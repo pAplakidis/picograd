@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import ctypes
 import numpy as np
 from graphviz import Digraph
 
@@ -213,6 +214,38 @@ class Tensor:
 
     self.grad = Tensor(np.zeros_like(self.data))
     self.out.grad = Tensor(np.zeros_like(self.out))
+
+    def conv2d_cpp():
+      conv2d = ctypes.CDLL('./conv2d.so')
+      conv2d.conv2d.argtypes = [
+          ctypes.c_int,                    # out_channels
+          ctypes.c_int,                    # in_channels
+          ctypes.c_int,                    # kernel_size
+          ctypes.c_int,                    # padding
+          ctypes.c_int,                    # H_out
+          ctypes.c_int,                    # W_out
+          ctypes.c_int,                    # H
+          ctypes.c_int,                    # W
+          ctypes.POINTER(ctypes.c_float),  # out.data
+          ctypes.c_int,                    # len(out.data)
+          ctypes.POINTER(ctypes.c_float),  # kernel.data 
+          ctypes.c_int,                    # len(kernel.data)
+          ctypes.POINTER(ctypes.c_float),  # b.data 
+          ctypes.c_int,                    # len(b.data)
+          ctypes.POINTER(ctypes.c_float),  # self.data 
+          ctypes.c_int,                    # len(self.data)
+      ]
+      conv2d.conv2d.restype = ctypes.c_int
+
+      result = conv2d.conv2d(
+        out_channels, in_channels, kernel_size, padding, H_out, W_out, H, W,
+        self.out.data.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), len(self.out.data),
+        self.kernel.data.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), len(self.kernel.data),
+        self.b.data.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), len(self.b.data),
+        self.data.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), len(self.data)
+      )
+      print(result)
+      return result
 
     for out_c in range(out_channels):
       for in_c in range(in_channels):
