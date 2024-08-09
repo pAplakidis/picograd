@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import ctypes
 import numpy as np
+from sys import platform
 from graphviz import Digraph
 
 OPS = {"Linear": 0,
@@ -17,6 +18,16 @@ OPS = {"Linear": 0,
        "AvgPool2D": 11,
        "Flatten": 12
       }
+
+if platform == "linux" or platform == "linux2":
+    # linux
+    PICOGRAD_LIB = ctypes.CDLL('./lib/libpicograd.so')
+elif platform == "darwin":
+    # OS X
+    PICOGRAD_LIB = ctypes.CDLL('./lib/libpicograd.dylib')
+elif platform == "win32":
+    # Windows
+    PICOGRAD_LIB = ctypes.CDLL('./lib/libpicograd.dll')
 
 def get_key_from_value(d, val):
   return [k for k, v in d.items() if v == val]
@@ -216,8 +227,8 @@ class Tensor:
     self.out.grad = Tensor(np.zeros_like(self.out))
 
     def conv2d_cpp():
-      conv2d = ctypes.CDLL('./conv2d.so')
-      conv2d.conv2d.argtypes = [
+      print("Initializing c++ function")
+      PICOGRAD_LIB.conv2d.argtypes = [
           ctypes.c_int,                    # out_channels
           ctypes.c_int,                    # in_channels
           ctypes.c_int,                    # kernel_size
@@ -235,9 +246,10 @@ class Tensor:
           ctypes.POINTER(ctypes.c_float),  # self.data 
           ctypes.c_int,                    # len(self.data)
       ]
-      conv2d.conv2d.restype = ctypes.c_int
+      PICOGRAD_LIB.conv2d.restype = ctypes.c_int
 
-      result = conv2d.conv2d(
+      print("Calling c++ function")
+      result = PICOGRAD_LIB.conv2d(
         out_channels, in_channels, kernel_size, padding, H_out, W_out, H, W,
         self.out.data.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), len(self.out.data),
         self.kernel.data.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), len(self.kernel.data),
@@ -246,6 +258,9 @@ class Tensor:
       )
       print(result)
       return result
+
+    # conv2d_cpp()
+    # print("[+] C++ finished")
 
     for out_c in range(out_channels):
       for in_c in range(in_channels):

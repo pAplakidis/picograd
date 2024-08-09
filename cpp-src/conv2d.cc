@@ -1,3 +1,5 @@
+#include <iostream>
+
 // g++ -shared -o conv2d.so -fPIC conv2d.cc
 
 extern "C" {
@@ -7,6 +9,9 @@ int conv2d(int in_ch, int out_ch, int kernel_size, int padding, int h_out,
            int b_data_size, float ***data, int data_size) {
   int i_idx;
   int j_idx;
+
+  // FIXME: segfaults
+  std::cout << "Hello from C++" << std::endl;
 
   for (int o_c; o_c < out_ch; o_c++) {
     for (int i_c; i_c < in_ch; i_c++) {
