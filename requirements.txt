@@ -5,3 +5,5 @@ requests
 torch
 torchvision
 cupy
+tensorflow
+keras

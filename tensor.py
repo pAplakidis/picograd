@@ -16,7 +16,8 @@ OPS = {"Linear": 0,
        "BCELoss": 9,
        "MaxPool2D": 10,
        "AvgPool2D": 11,
-       "Flatten": 12
+       "Flatten": 12,
+       "Unsqueeze": 13
       }
 
 if platform == "linux" or platform == "linux2":
@@ -148,6 +149,14 @@ class Tensor:
   def mean(self):
     return np.mean(self.data)
 
+  def float(self):
+    self.data = self.data.astype(np.float32)
+    return self
+
+  def long(self):
+    self.data = self.data.astype(np.int64)
+    return self
+
   def flatten(self):
     self.out = Tensor(self.data.flatten(), name="flattenout")
     self.out.prev_channels, self.out.prev_height, self.out.prev_width = self.data.shape
@@ -161,6 +170,24 @@ class Tensor:
     self._backward = _backward
 
     return self.out
+
+  # TODO: backward + squeeze
+  def unsqueeze(self, axis=0):
+    self.out = Tensor(np.expand_dims(self.data, axis=axis), name="unsqueeze_out")
+    # self.out.prev_channels, self.out.prev_height, self.out.prev_width = self.data.shape
+    self.out._prev = self._prev.copy()
+    self.out._prev.append(self)
+    self.out.prev_op = OPS["Unsqueeze"]
+
+    def _backward():
+      self.grad = self.out.grad
+      # self.data = self.out.data.copy().reshape(self.out.prev_channels, self.out.prev_height, self.out.prev_width)
+    self._backward = _backward
+
+    return self.out
+
+  def squeeze(self):
+    pass
 
   # pretty print the graph for this tensor backwards
   def print_graph(self, verbose=False):

@@ -21,8 +21,9 @@ if __name__ == '__main__':
   t_in = Tensor(np.random.rand(10), name="t_in")
   print("t_in:", t_in)
   #gt = Tensor(np.random.rand(1, 5), name="ground_truth")  # for regression
-  #gt = Tensor(np.ones((1,5)) / 2, name="ground_truth")  # for classification
-  gt = Tensor(np.ones((1,1)), name="ground_truth")  # for binary classification
+  gt = Tensor(np.zeros((1,5)), name="ground_truth")  # for classification
+  gt.data[0][1] = 1.0
+  # gt = Tensor(np.ones((1,1)), name="ground_truth")  # for binary classification
 
   model = Testnet(t_in.shape([0]), 5)
   optim = SGD(model.get_params(), lr=1e-3)
@@ -44,10 +45,12 @@ if __name__ == '__main__':
     t3.layer = layer3
     t4 = layer3(t3)   # for regression
     t5 = t4.softmax() # for classification
+    print("NN:", t5.data)
+    print("GT:", gt.data)
 
     #loss = MSELoss(t4, gt) # for regression
-    #loss = CrossEntropyLoss(t5, gt) # for classification
-    loss = BCELoss(t5, gt) # for binary classification
+    loss = CrossEntropyLoss(t5, gt) # for classification
+    # loss = BCELoss(t5, gt) # for binary classification
     print("loss:", loss.data)
     loss.backward()
 
