@@ -4,6 +4,8 @@ import numpy as np
 from sys import platform
 from graphviz import Digraph
 
+from util import *
+
 OPS = {"Linear": 0,
        "Conv2D": 1,
        "ReLU": 2,
@@ -64,6 +66,7 @@ def draw_dot(root, format='svg', rankdir='LR'):
   dot.render('graphs/output')
   return dot
 
+# TODO: add a .add_to_prev() to prevent duplicate code
 class Tensor:
   def __init__(self, data: np.array, name="t", _children=[], verbose=False):
     self.name = name
@@ -100,40 +103,24 @@ class Tensor:
   def _create_op_tensor(self, data):
     children = self._prev.copy()
     children.append(self)
+
+    # TODO: add small backward here (for later, when we have a more detailed graph)
     return Tensor(data, _children=children)
 
   # TODO: remove commeneted when proper recursive backward() is implemented
   # TODO: implement backward for each op (?)
-  def __add__(self, other):
-    return self._create_op_tensor(self.data + other.data)
-    return Tensor(self.data + other.data)
+  def __add__(self, other): return self._create_op_tensor(self.data + other.data)
+  def __sub__(self, other): return self._create_op_tensor(self.data - other.data)
+  def __mul__(self, other): return self._create_op_tensor(self.data * other.data)
+  def __pow__(self, other): return self._create_op_tensor(self.data ** other.data)
+  def __div__(self, other): return self._create_op_tensor(self * (other ** -1))
+  def dot(self, other): return self._create_op_tensor(np.dot(self.data, other.data))
+  def T(self): return Tensor(self.data.T)
 
-  def __sub__(self, other):
-    return self._create_op_tensor(self.data - other.data)
-    return Tensor(self.data - other.data)
+  # TODO: use @property
+  def item(self): return self.data
 
-  def __mul__(self, other):
-    return self._create_op_tensor(self.data * other.data)
-    return Tensor(self.data * other.data)
-
-  def __pow__(self, other):
-    return self._create_op_tensor(self.data ** other.data)
-    return Tensor(self.data ** other)
-
-  def __div__(self, other):
-    return self._create_op_tensor(self * (other ** -1))
-    return Tensor(self * (other ** -1))
-
-  def dot(self, other):
-    return self._create_op_tensor(np.dot(self.data, other.data))
-    return Tensor(np.dot(self.data, other.data))
-
-  def T(self):
-    return Tensor(self.data.T)
-
-  def item(self):
-    return self.data
-
+  # TODO: use @property
   def shape(self, idxs=None):
     if idxs is None:
       return self.data.shape
@@ -146,8 +133,7 @@ class Tensor:
       ret = int(ret[0])
     return ret
 
-  def mean(self):
-    return np.mean(self.data)
+  def mean(self): return np.mean(self.data)
 
   def float(self):
     self.data = self.data.astype(np.float32)
@@ -227,10 +213,15 @@ class Tensor:
       #print(self.out.grad.shape)
       self.b.grad = np.sum(self.out.grad, axis=0, keepdims=True)
 
-      #print(self.out.grad.shape, self.w.data.shape)
+      # print(self.out.grad.shape, self.w.data.shape)
       self.grad = np.dot(self.out.grad, self.w.data.T)
-    self.out._backward = _backward
 
+      # TODO: does this fix the inf/vanishing-gradient problem or just hide it?
+      grad_norm = np.linalg.norm(self.grad)
+      if grad_norm > MAX_GRAD_NORM:
+        self.grad = self.grad * (MAX_GRAD_NORM / grad_norm)
+
+    self.out._backward = _backward
     return self.out
 
   # FIXME: padding
@@ -417,9 +408,11 @@ class Tensor:
       print("\n[+] Before backpropagation")
       self.print_graph()
     draw_dot(self)
+
     self._backward()
     for t0 in reversed(list(self._prev)):
       t0._backward()
+
     if self.verbose:
       print("\n[+] After backpropagation")
       self.print_graph()

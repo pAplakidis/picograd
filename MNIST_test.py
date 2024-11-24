@@ -19,10 +19,13 @@ def get_data():
 class Testnet(nn.Module):
   def __init__(self, in_feats, out_feats):
     super(Testnet, self).__init__()
-    self.dense1 = nn.Linear(in_feats, out_feats)
+    self.dense1 = nn.Linear(in_feats, 128)
+    self.dense2 = nn.Linear(128, out_feats)
 
   def forward(self, x):
     x = self.dense1(x)
+    x = x.relu()
+    x = self.dense2(x)
     return x.softmax()
 
 
