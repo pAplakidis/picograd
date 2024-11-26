@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 
 import nn
+from backend.ops import *
 from tensor import Tensor
 from loss import BCELoss
 from optim import *
@@ -16,7 +17,6 @@ def train(t_in, gt):
   epochs = 10
   for i in range(epochs):
     print("[+] epoch", i+1)
-    # t1 = t_in.conv2d(3, 6, 3, padding=2, debug=True)
     conv1 = nn.Conv2d(3, 6, 3)
     t_in.layer = conv1
     t1 = conv1(t_in)
@@ -52,8 +52,7 @@ def train(t_in, gt):
 
 def manual_test(t_in, gt):
   conv_time = time()
-  # t1 = t_in.conv2d(3, 6, 3, padding=2, debug=True)
-  t1 = t_in.conv2d(3, 6, 3)
+  t1 = conv2d(t_in, 3, 6, 3)
   print("t1:", t1)
   print("Time elapsed for Conv2D op: %.2f sec"%(time() - conv_time))
   conv_img = t1.data

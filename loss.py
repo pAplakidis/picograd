@@ -20,7 +20,7 @@ def MSELoss(z: Tensor, y: Tensor) -> Tensor:
   loss_val = 1/n * np.sum((z.data-y.data) ** 2)
   t = Tensor(loss_val, name="mseloss_out", _children=z._prev.copy())
   t._prev.append(z)
-  t.prev_op = OPS["MSELoss"]
+  t.prev_op = OPS.MSELoss
   return t
 
 # Mean Absolute Error Loss
@@ -29,7 +29,7 @@ def MAELoss(z: Tensor, y: Tensor) -> Tensor:
   loss_val = 1/n * np.sum(np.abs(z.data-y.data))
   t = Tensor(loss_val, name="maeloss_out", _children=z._prev.copy())
   t._prev.append(z)
-  t.prev_op = OPS["MAELoss"]
+  t.prev_op = OPS.MAELoss
   return t
 
 # TODO: always outputs 0?? (might be just the tests, but double check!)
@@ -45,7 +45,7 @@ def BCELoss(z: Tensor, y: Tensor) -> Tensor:
   loss_val = -np.mean(term_0+term_1, axis=0)
   t = Tensor(loss_val, name="bceloss_out", _children=z._prev.copy())
   t._prev.append(z)
-  t.prev_op = OPS["BCELoss"]
+  t.prev_op = OPS.BCELoss
   return t
 
 # Categorical Cross Entropy
@@ -65,7 +65,7 @@ def CrossEntropyLoss(z: Tensor, y: Tensor) -> Tensor:
   loss_val = -np.sum(y.data * np.log(y_pred_clipped), axis=1)
   t = Tensor(loss_val, name="crossentropyloss_out", _children=z._prev.copy())
   t._prev.append(z)
-  t.prev_op = OPS["CrossEntropyLoss"]
+  t.prev_op = OPS.CrossEntropyLoss
   return t
 
 # Negative Log Likelihood Loss

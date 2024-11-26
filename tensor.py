@@ -2,69 +2,15 @@
 import ctypes
 import numpy as np
 from sys import platform
-from graphviz import Digraph
 
+from backend.ops import *
 from util import *
+from draw_utils import draw_dot
 
-OPS = {"Linear": 0,
-       "Conv2D": 1,
-       "ReLU": 2,
-       "Tanh": 3,
-       "Softmax": 4,
-       "Sigmoid": 5,
-       "MSELoss": 6,
-       "MAELoss": 7,
-       "CrossEntropyLoss": 8,
-       "BCELoss": 9,
-       "MaxPool2D": 10,
-       "AvgPool2D": 11,
-       "Flatten": 12,
-       "Unsqueeze": 13
-      }
-
-if platform == "linux" or platform == "linux2":
-    # linux
-    PICOGRAD_LIB = ctypes.CDLL('./lib/libpicograd.so')
-elif platform == "darwin":
-    # OS X
-    PICOGRAD_LIB = ctypes.CDLL('./lib/libpicograd.dylib')
-elif platform == "win32":
-    # Windows
-    PICOGRAD_LIB = ctypes.CDLL('./lib/libpicograd.dll')
-
-def get_key_from_value(d, val):
-  return [k for k, v in d.items() if v == val]
-
-def trace(root):
-  nodes, edges = set(), set()
-  def build(v):
-    if v not in nodes:
-      nodes.add(v)
-      for child in v._prev:
-        edges.add((child, v))
-        build(child)
-  build(root)
-  return nodes, edges
-
-# FIXME
-def draw_dot(root, format='svg', rankdir='LR'):
-  assert rankdir in ['LR', 'TB']
-  nodes, edges = trace(root)
-  dot = Digraph(format=format, graph_attr={'rankdir': rankdir}) #, node_attr={'rankdir': 'TB'})
-  
-  for n in nodes:
-    #dot.node(name=str(id(n)), label = "{ data %.4f | grad %.4f }" % (n.data, n.grad), shape='record')
-    dot.node(name=str(id(n)), label = f"[ data {str(n.data)} | grad {n.grad} ]", shape='record')
-    #if n._op:
-      #dot.node(name=str(id(n)) + n._op, label=n._op)
-      #dot.edge(str(id(n.name)) + n._op, str(id(n.name)))
-  
-  for n1, n2 in edges:
-    #dot.edge(str(id(n1)), str(id(n2)) + n2._op)
-    dot.edge(str(id(n1)), str(id(n2)))
-
-  dot.render('graphs/output')
-  return dot
+if platform == "linux" or platform == "linux2": PICOGRAD_LIB = ctypes.CDLL('./lib/libpicograd.so')  # linux
+elif platform == "darwin":  PICOGRAD_LIB = ctypes.CDLL('./lib/libpicograd.dylib') # OS X
+elif platform == "win32": PICOGRAD_LIB = ctypes.CDLL('./lib/libpicograd.dll') # Windows
+else: PICOGRAD_LIB = None
 
 # TODO: add a .add_to_prev() to prevent duplicate code
 class Tensor:
@@ -73,7 +19,7 @@ class Tensor:
     self.data = data
     self.verbose = verbose
 
-    self._ctx = None
+    self._ctx = None  # TODO: use context like pytorch
     self._prev = list(_children)
     self.grad = np.ones(self.data.shape)
     self.out = None
@@ -148,7 +94,7 @@ class Tensor:
     self.out.prev_channels, self.out.prev_height, self.out.prev_width = self.data.shape
     self.out._prev = self._prev.copy()
     self.out._prev.append(self)
-    self.out.prev_op = OPS["Flatten"]
+    self.out.prev_op = OPS.Flatten
 
     def _backward():
       self.grad = self.out.grad
@@ -163,7 +109,7 @@ class Tensor:
     # self.out.prev_channels, self.out.prev_height, self.out.prev_width = self.data.shape
     self.out._prev = self._prev.copy()
     self.out._prev.append(self)
-    self.out.prev_op = OPS["Unsqueeze"]
+    self.out.prev_op = OPS.Unsqueeze
 
     def _backward():
       self.grad = self.out.grad
@@ -201,8 +147,9 @@ class Tensor:
     self.out.name = "linearout"
     self.out._prev = self._prev.copy()
     self.out._prev.append(self)
-    self.out.prev_op = OPS["Linear"]
+    self.out.prev_op = OPS.Linear
 
+    # TODO: won't be needed if we implement low level ops
     def _backward():
       #print(self.data.shape, self.out.grad.shape)
       if len(self.data.shape) == 1:
@@ -225,7 +172,7 @@ class Tensor:
     return self.out
 
   # FIXME: padding
-  def conv2d(self, weight, bias, in_channels, out_channels, kernel_size, stride=1, padding=0, debug=False):
+  def conv2d(self, weight: np.ndarray, bias: np.ndarray, in_channels: int, out_channels: int, kernel_size: int, stride: int = 1, padding: int = 0, lib=PICOGRAD_LIB, debug=False):
     assert len(self.data.shape) == 3, "Conv2D input tensor must be 2D-RGB"
     assert kernel_size % 2 != 0, "Conv2D kenrel_size must be odd"
 
@@ -239,14 +186,15 @@ class Tensor:
     self.out = Tensor(np.zeros((out_channels, H_out, W_out)), "conv2d_out", _children=self._prev.copy())
     self.out.data = self.out.data.astype(np.uint8)
     self.out._prev.append(self)
-    self.out.prev_op = OPS["Conv2D"]
+    self.out.prev_op = OPS.Conv2D
 
     self.grad = Tensor(np.zeros_like(self.data))
     self.out.grad = Tensor(np.zeros_like(self.out))
 
     def conv2d_cpp():
+      assert lib is not None, "[Conv2D-CPP-ERROR] no .so library provided"
       print("Initializing c++ function")
-      PICOGRAD_LIB.conv2d.argtypes = [
+      lib.conv2d.argtypes = [
           ctypes.c_int,                    # out_channels
           ctypes.c_int,                    # in_channels
           ctypes.c_int,                    # kernel_size
@@ -264,10 +212,10 @@ class Tensor:
           ctypes.POINTER(ctypes.c_float),  # self.data 
           ctypes.c_int,                    # len(self.data)
       ]
-      PICOGRAD_LIB.conv2d.restype = ctypes.c_int
+      lib.conv2d.restype = ctypes.c_int
 
       print("Calling c++ function")
-      result = PICOGRAD_LIB.conv2d(
+      result = lib.conv2d(
         out_channels, in_channels, kernel_size, padding, H_out, W_out, H, W,
         self.out.data.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), len(self.out.data),
         self.kernel.data.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), len(self.kernel.data),
@@ -295,7 +243,7 @@ class Tensor:
                   self.out.data[out_c][i][j] += self.b.data[out_c]
                 self.out.data[out_c][i][j] += self.data[in_c][i_idx + k][j_idx + l] * self.kernel.data[out_c][k][l] + self.b.data[out_c]
                 if debug:
-                  print(f"OUT ({out_c},{i},{j}), IN ({in_c},{i_idx},{j_idx}) => ({in_c},{i_idx+k},{j_idx+l}), W ({out_c},{k},{l})", end="\t (==)")
+                  print(f"OUT ({out_c},{i},{j}), IN ({in_c},{i_idx},{j_idx}) => ({in_c},{i_idx+k},{j_idx+l}), W ({out_c},{k},{l})", end="\self (==)")
                   print(f"VAL: {self.out.data[out_c][i][j]}")
             if debug:
               print()
@@ -354,7 +302,7 @@ class Tensor:
 
     self.out = Tensor(out_img, "maxpool2d", _children=self._prev.copy())
     self.out._prev.append(self)
-    self.out.prev_op = OPS["MaxPool2D"]
+    self.out.prev_op = OPS.MaxPool2D
 
     # TODO: implement backward
     def _backward():
@@ -382,7 +330,7 @@ class Tensor:
 
     self.out = Tensor(out_img, "avgpool2d", _children=self._prev.copy())
     self.out._prev.append(self)
-    self.out.prev_op = OPS["AvgPool2D"]
+    self.out.prev_op = OPS.AvgPool2D
 
     def _backward():
       self.grad = self.out.grad
@@ -421,7 +369,7 @@ class Tensor:
   def relu(self):
     self.out = Tensor(np.maximum(self.data, np.zeros(self.data.shape)), name="relu_out", _children=self._prev.copy())
     self.out._prev.append(self)
-    self.out.prev_op = OPS["ReLU"]
+    self.out.prev_op = OPS.ReLU
 
     def _backward():
       self.grad += self.out.grad * (self.data > 0)
@@ -433,7 +381,7 @@ class Tensor:
     t = (np.exp(2*self.data) - 1) / (np.exp(2*self.data) + 1)
     self.out = Tensor(t, name="tanh_out", _children=self._prev.copy())
     self.out._prev.append(self)
-    self.out.prev_op = OPS["Tanh"]
+    self.out.prev_op = OPS.Tanh
 
     def _backward():
       self.grad += (1 - t**2) * self.out.grad
@@ -445,7 +393,7 @@ class Tensor:
     t = np.exp(self.data) / (np.exp(self.data) + 1)
     self.out = Tensor(t, name="sigmoid_out", _children=self._prev.copy())
     self.out._prev.append(self)
-    self.out.prev_op = OPS["Sigmoid"]
+    self.out.prev_op = OPS.Sigmoid
 
     def _backward():
       self.grad = t * (1-t) * self.out.grad
@@ -458,7 +406,7 @@ class Tensor:
     probs = exp_val / np.sum(exp_val, axis=1, keepdims=True)
     self.out = Tensor(probs, name="softmax_out", _children=self._prev.copy())
     self.out._prev.append(self)
-    self.out.prev_op = OPS["Softmax"]
+    self.out.prev_op = OPS.Softmax
 
     def _backward():
       #self.grad += probs*(1-probs) * self.out.grad

@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 import numpy as np
-from enum import Enum
+from enum import Enum, auto
 from tensor import Tensor
+from backend.ops import *
 
 class LayerType(Enum):
-  NOLAYER = 0
-  LINEAR = 1
-  CONV2D = 2
-  MAXPOOL2D = 3
-  AVGPOOL2D = 4
+  NOLAYER = auto()
+  LINEAR = auto()
+  CONV2D = auto()
+  MAXPOOL2D = auto()
+  AVGPOOL2D = auto()
 
 # TODO: Sequential
 
@@ -46,7 +47,7 @@ class Layer:
     self.t_out = None
     self.weight = None
     self.bias = None
-    
+
 
 class Linear(Layer):
   def __init__(self, in_feats: int, out_feats: int):
