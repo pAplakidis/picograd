@@ -27,6 +27,12 @@ class Optim:
     self.lr = lr
 
   # not zero_grad since we reset it to ones
+  def zero_grad(self):
+    for i in range(len(self.params)):
+      self.params[i].t_in.grad = np.zeros_like(self.params[i].t_in.grad)
+      self.params[i].t_out.grad = np.zeros_like(self.params[i].t_out.grad)
+    return self.params
+
   def reset_grad(self):
     for i in range(len(self.params)):
       self.params[i].t_in.grad = np.ones_like(self.params[i].t_in.grad)
@@ -38,9 +44,9 @@ class SGD(Optim):
   def step(self):
     for i in range(len(self.params)):
       #self.params[i].weight += -self.lr * self.params[i].weight.grad
-      self.params[i].weight += self.lr * self.params[i].weight.grad
+      self.params[i].weight += Tensor(self.lr * self.params[i].weight.grad)
       #self.params[i].bias += -self.lr * self.params[i].bias.grad
-      self.params[i].bias += self.lr * self.params[i].bias.grad
+      self.params[i].bias += Tensor(self.lr * self.params[i].bias.grad)
 
 # TODO: implement Adam
 class Adam(Optim):

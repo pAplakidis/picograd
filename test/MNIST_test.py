@@ -11,10 +11,11 @@ from tqdm import tqdm
 import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import picograd.nn as nn
 from picograd.tensor import Tensor
 from picograd.loss import *
 from picograd.optim import *
-import picograd.nn as nn
+from picograd.draw_utils import draw_dot
 
 def get_data():
   (X_train, Y_train), (X_test, Y_test) = mnist.load_data()
@@ -48,21 +49,22 @@ if __name__ == '__main__':
   for i in range(epochs):
     print(f"[+] Epoch {i+1}/{epochs}")
     epoch_losses = []
+    # TODO: test batches
     for idx, x in (t := tqdm(enumerate(X_train), total=len(X_train))):
-      t_in = Tensor(np.array([x])).flatten().unsqueeze(0)
+      X = Tensor(np.array([x])).flatten().unsqueeze(0)
       Y = np.zeros((1, 10), dtype=np.float32)
       Y[0][Y_train[idx]] = 1.0
       Y = Tensor(Y)
 
-      out = model(t_in)
-
+      out = model(X)
       loss = CrossEntropyLoss(out, Y)
       losses.append(loss.data[0])
       epoch_losses.append(loss.data[0])
       t.set_description(f"Loss: {loss.data[0]:.2f}")
 
-      optim.reset_grad()
+      optim.zero_grad()
       loss.backward()
+      if idx == 0 and i == 0: draw_dot(loss)
       optim.step()
     print(f"Avg loss: {np.array(epoch_losses).mean()}")
 
@@ -73,12 +75,12 @@ if __name__ == '__main__':
   print("Evaluating ...")
   eval_losses = []
   for idx, x in (t := tqdm(enumerate(X_test), total=len(X_test))):
-    t_in = Tensor(np.array([x])).flatten().unsqueeze(0)
+    X = Tensor(np.array([x])).flatten().unsqueeze(0)
     Y = np.zeros((1, 10), dtype=np.float32)
     Y[0][Y_test[idx]] = 1.0
     Y = Tensor(Y)
 
-    out = model(t_in)
+    out = model(X)
 
     loss = CrossEntropyLoss(out, Y)
     eval_losses.append(loss.data[0])
@@ -91,9 +93,8 @@ if __name__ == '__main__':
   # show results
   for i in range(10):
     idx = random.randint(0, len(X_test))
-    X = X_test[idx]
-    t_in = Tensor(np.array([X])).flatten().unsqueeze(0)
+    X = Tensor(np.array([X_test[idx]])).flatten().unsqueeze(0)
     Y = Y_test[idx]
 
-    out = model(t_in)
+    out = model(X)
     print(f"model: {np.argmax(out.data, axis=1)[0]} - GT: {Y}")

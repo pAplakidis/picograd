@@ -95,9 +95,15 @@ class Tensor():
     out._backward = _backward
     return out
 
-  # TODO: write this
-  def dot(self):
-    return self
+  def dot(self, other):
+    out = Tensor(np.dot(self.data, other.data), _children=(self, other))
+    out.prev_op = OPS.DOT
+
+    def _backward():
+      self.grad += np.dot(out.grad, other.data.T)
+      other.grad += np.dot(self.data.T, out.grad)
+    out._backward = _backward
+    return out
 
   def __neg__(self): return self * Tensor(np.array(-1))
   def __radd__(self, other): return self + other
@@ -107,6 +113,7 @@ class Tensor():
   def __truediv__(self, other): return self * other**-1
   def __rtruediv__(self, other): return other * self**-1
 
+  # FIXME: max recursion depth (use deepwalk?)
   def backward(self):
     # topological order all of the chidren in the graph
     topo = []
@@ -199,7 +206,7 @@ class Tensor():
 
   def linear(self, weight: "Tensor", bias: Optional["Tensor"] = None):
     x = self * weight if len(weight.shape) == 1 else self.dot(weight)
-    return self + bias if bias is not None else x
+    return x + bias if bias is not None else x
 
   # FIXME: padding
   def conv2d(self, weight: np.ndarray, bias: np.ndarray, in_channels: int, out_channels: int, kernel_size: int, stride: int = 1, padding: int = 0, lib=PICOGRAD_LIB, debug=False):
@@ -423,8 +430,7 @@ class Tensor():
   def softmax(self):
     exp_val = np.exp(self.data - np.max(self.data, axis=1, keepdims=True))
     probs = exp_val / np.sum(exp_val, axis=1, keepdims=True)
-    out = Tensor(probs, name="softmax_out", _children=self._prev.copy())
-    out._prev.append(self)
+    out = Tensor(probs, name="softmax_out", _children=(self,))
     out.prev_op = OPS.Softmax
 
     def _backward():

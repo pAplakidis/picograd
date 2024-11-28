@@ -63,8 +63,7 @@ def CrossEntropyLoss(z: Tensor, y: Tensor) -> Tensor:
   # loss_val = -np.log(correct_confidences)
 
   loss_val = -np.sum(y.data * np.log(y_pred_clipped), axis=1)
-  t = Tensor(loss_val, name="crossentropyloss_out", _children=z._prev.copy())
-  t._prev.append(z)
+  t = Tensor(loss_val, name="crossentropyloss_out", _children=(z,))
   t.prev_op = OPS.CrossEntropyLoss
   return t
 
