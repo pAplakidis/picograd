@@ -8,6 +8,7 @@ class OPS(Enum):
   # Binary
   ADD = auto()
   MUL = auto()
+  DOT = auto()
   POW = auto()
 
   Flatten = auto()
