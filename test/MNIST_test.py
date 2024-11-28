@@ -6,10 +6,15 @@ import torchvision.datasets as datasets
 from keras.datasets import mnist
 from tqdm import tqdm
 
-from tensor import Tensor
-from loss import *
-from optim import *
-import nn
+
+# TODO: find a way to import without this
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from picograd.tensor import Tensor
+from picograd.loss import *
+from picograd.optim import *
+import picograd.nn as nn
 
 def get_data():
   (X_train, Y_train), (X_test, Y_test) = mnist.load_data()

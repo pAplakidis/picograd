@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 import numpy as np
 
-from tensor import Tensor
-from loss import *
-from optim import *
-import nn
+from picograd.tensor import Tensor
+from picograd.loss import *
+from picograd.optim import *
+import picograd.nn as nn
 
 # TODO: instead of manuallly passing the layers through ops, just forward them through a net module
 class Testnet(nn.Module):

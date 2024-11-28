@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 import numpy as np
 from enum import Enum, auto
-from tensor import Tensor
-from backend.ops import *
+from picograd.tensor import Tensor
+from picograd.backend.ops import *
 
 class LayerType(Enum):
   NOLAYER = auto()
@@ -10,6 +10,9 @@ class LayerType(Enum):
   CONV2D = auto()
   MAXPOOL2D = auto()
   AVGPOOL2D = auto()
+
+  def __str__(self):
+    return self.name
 
 # TODO: Sequential
 
@@ -51,7 +54,7 @@ class Layer:
 
 class Linear(Layer):
   def __init__(self, in_feats: int, out_feats: int):
-    self.type = LayerType['LINEAR'].value
+    self.type = LayerType.LINEAR
     self.weight = Tensor(0.01 * np.random.rand(in_feats, out_feats), name="weight")
     self.bias = Tensor(np.zeros((1, out_feats)), name="bias")
 
@@ -63,7 +66,7 @@ class Linear(Layer):
 
 class Conv2d(Layer):
   def __init__(self, in_channels: int, out_channels: int, kernel_size: int, stride=1, padding=0):
-    self.type = LayerType['CONV2D'].value
+    self.type = LayerType.CONV2D
 
     self.in_channels = in_channels
     self.out_channels = out_channels
@@ -82,7 +85,7 @@ class Conv2d(Layer):
 
 class MaxPool2D(Layer):
   def __init__(self, filter=(2,2), stride=1):
-    self.type = LayerType['MAXPOOL2D'].value
+    self.type = LayerType.MAXPOOL2D
     
     self.filter = filter
     self.stride = stride
@@ -95,7 +98,7 @@ class MaxPool2D(Layer):
 
 class AvgPool2D(Layer):
   def __init__(self, filter=(2,2), stride=1, padding=0):
-    self.type = LayerType['AVGPOOL2D'].value
+    self.type = LayerType.AVGPOOL2D
     
     self.filter = filter
     self.stride = stride

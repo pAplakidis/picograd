@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 import numpy as np
 
-from tensor import Tensor
-from loss import *
-from optim import *
-import nn
+from picograd.tensor import Tensor
+from picograd.loss import *
+from picograd.optim import *
+import picograd.nn as nn
 
 class TestnetCLF(nn.Module):
   def __init__(self, in_feats, out_feats):

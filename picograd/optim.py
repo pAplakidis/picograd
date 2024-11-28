@@ -1,5 +1,5 @@
 import numpy as np
-from tensor import Tensor
+from picograd.tensor import Tensor
 
 def manual_update(params, lr):
   for i in range(len(params)):

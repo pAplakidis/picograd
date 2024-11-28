@@ -4,11 +4,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
 
-import nn
-from backend.ops import *
-from tensor import Tensor
-from loss import BCELoss
-from optim import *
+import picograd.nn as nn
+from picograd.backend.ops import *
+from picograd.tensor import Tensor
+from picograd.loss import BCELoss
+from picograd.optim import *
 
 classes = {0: "not-cat", 1: "cat"}
 
