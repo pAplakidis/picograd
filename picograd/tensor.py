@@ -113,8 +113,7 @@ class Tensor():
   def __truediv__(self, other): return self * other**-1
   def __rtruediv__(self, other): return other * self**-1
 
-  # FIXME: max recursion depth (use deepwalk?)
-  def backward(self):
+  def backward_recursive(self):
     # topological order all of the chidren in the graph
     topo = []
     visited = set()
@@ -125,6 +124,24 @@ class Tensor():
           build_topo(child)
         topo.append(v)
     build_topo(self)
+
+  def backward(self):
+    topo = []
+    visited = set()
+    stack = [self]
+    while stack:
+      v = stack.pop()
+      if v not in visited:
+        visited.add(v)
+        stack.append(v)
+        for child in v._prev:
+          if child not in visited:
+            stack.append(child)
+      elif v not in topo:
+        topo.append(v)
+
+    for node in reversed(topo):
+      node._backward()
   
   @property
   def T(self): return Tensor(self.data.T)
@@ -374,34 +391,6 @@ class Tensor():
     out._backward = _backward
 
     return out
-
-  # TODO: backward needs to implemented for all tensors in each op (a = b + c => a.back -> b.back and c.back)
-  # that's why deepwalk is implemented
-  def deep_walk(self):
-    def walk(node, visited, nodes):
-      if node._ctx:
-        [walk(i, visited, nodes) for i in node._ctx.parents if i not in visited]
-        nodes.append(node)
-      return nodes
-    return walk(self, set(), [])
-
-  # TODO: maybe implement a backward for each type of op instead of layer??
-  # TODO: do we need reversed?? (double check, since we start from loss and backward)
-  # def backward(self):
-  #   #self.grad = np.ones(self.data.shape)
-  #   if self.verbose:
-  #     print("\n[+] Before backpropagation")
-  #     self.print_graph()
-  #   draw_dot(self)
-
-  #   self._backward()
-  #   for t0 in reversed(list(self._prev)):
-  #     t0._backward()
-
-  #   if self.verbose:
-  #     print("\n[+] After backpropagation")
-  #     self.print_graph()
-  #   draw_dot(self)
 
   def tanh(self):
     t = (np.exp(2*self.data) - 1) / (np.exp(2*self.data) + 1)

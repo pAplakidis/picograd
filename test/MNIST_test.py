@@ -17,6 +17,8 @@ from picograd.loss import *
 from picograd.optim import *
 from picograd.draw_utils import draw_dot
 
+BS = 16
+
 def get_data():
   (X_train, Y_train), (X_test, Y_test) = mnist.load_data()
   return X_train, Y_train, X_test, Y_test
@@ -49,7 +51,21 @@ if __name__ == '__main__':
   for i in range(epochs):
     print(f"[+] Epoch {i+1}/{epochs}")
     epoch_losses = []
-    # TODO: test batches
+
+    # FIXME: support batches
+    # num_batches = len(X_train) // BS + (len(X_train) % BS != 0)
+    # for batch_idx in (t := tqdm(range(num_batches), total=num_batches)):
+    #   batch_start = batch_idx * BS
+    #   batch_end = min(batch_start + BS, len(X_train))
+    #   X_batch = X_train[batch_start:batch_end].reshape(BS, -1)
+    #   Y_batch = Y_train[batch_start:batch_end]
+    #   X = Tensor(np.array(X_batch))
+    #   Y = np.zeros((1, 10), dtype=np.float32)
+    #   Y = np.zeros((len(Y_batch), 10), dtype=np.float32)
+    #   for idx, label in enumerate(Y_batch):
+    #       Y[idx][label] = 1.0
+    #   Y = Tensor(Y)
+
     for idx, x in (t := tqdm(enumerate(X_train), total=len(X_train))):
       X = Tensor(np.array([x])).flatten().unsqueeze(0)
       Y = np.zeros((1, 10), dtype=np.float32)

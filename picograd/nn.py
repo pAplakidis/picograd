@@ -52,6 +52,7 @@ class Layer:
     self.bias = None
 
 
+# TODO: batches + weight initialization
 class Linear(Layer):
   def __init__(self, in_feats: int, out_feats: int):
     self.type = LayerType.LINEAR
