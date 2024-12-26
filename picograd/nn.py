@@ -52,14 +52,20 @@ class Layer:
     self.bias = None
 
 
-# TODO: batches + weight initialization
+# TODO: weight initialization
 class Linear(Layer):
   def __init__(self, in_feats: int, out_feats: int):
     self.type = LayerType.LINEAR
-    self.weight = Tensor(0.01 * np.random.rand(in_feats, out_feats), name="weight")
-    self.bias = Tensor(np.zeros((1, out_feats)), name="bias")
+    self.in_feats = in_feats
+    self.out_feats = out_feats
+    self.weight = None
+    self.bias = None
 
   def __call__(self, x: Tensor):
+    assert len(x.shape) >= 2, "Input Tensor requires batch_size dimension"
+    self.weight = Tensor(0.01 * np.random.rand(self.in_feats, self.out_feats), name="linear-weight")
+    self.bias = Tensor(np.zeros((self.out_feats,)), name="linear-bias")
+
     self.t_in = x
     self.t_out = x.linear(self.weight, self.bias)
     return self.t_out

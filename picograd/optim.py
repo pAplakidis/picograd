@@ -43,10 +43,8 @@ class Optim:
 class SGD(Optim):
   def step(self):
     for i in range(len(self.params)):
-      #self.params[i].weight += -self.lr * self.params[i].weight.grad
-      self.params[i].weight += Tensor(self.lr * self.params[i].weight.grad)
-      #self.params[i].bias += -self.lr * self.params[i].bias.grad
-      self.params[i].bias += Tensor(self.lr * self.params[i].bias.grad)
+      self.params[i].weight.data -= self.lr * self.params[i].weight.grad
+      self.params[i].bias.data -= self.lr * self.params[i].bias.grad
 
 # TODO: implement Adam
 class Adam(Optim):

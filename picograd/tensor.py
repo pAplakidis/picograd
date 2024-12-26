@@ -4,10 +4,13 @@ import numpy as np
 from sys import platform
 from typing import Optional
 
+from picograd.backend.function import *
 from picograd.backend.ops import *
 from picograd.util import *
-from picograd.draw_utils import draw_dot
 
+from .draw_utils import draw_dot
+
+# init c++ library
 if platform == "linux" or platform == "linux2": PICOGRAD_LIB = ctypes.CDLL('./lib/libpicograd.so')  # linux
 elif platform == "darwin":  PICOGRAD_LIB = ctypes.CDLL('./picograd/lib/libpicograd.dylib') # OS X
 elif platform == "win32": PICOGRAD_LIB = ctypes.CDLL('./picograd/lib/libpicograd.dll') # Windows
@@ -29,7 +32,6 @@ class Tensor():
 
     self._prev = set(_children)
     self.prev_op = None
-
     self._backward = lambda: None
 
     self.layer = None
@@ -49,31 +51,19 @@ class Tensor():
 
   def __equal__(self, other): return np.equal(self.data, other.data)
 
-  # TODO: cleanup like this (function + ops)
-  # def __add__(self, other): return self._create_op_tensor(self.add(self.data, other.data))
-  # def __sub__(self, other): return self._create_op_tensor(self.add(self.data, -other.data))
-  # def __mul__(self, other): return self._create_op_tensor(self.mul(self.data, other.data))
-  # def __pow__(self, other): return self._create_op_tensor(self.pow(self.data, other.data))
-  # def __div__(self, other): return self._create_op_tensor(self * (other ** -1))
-
+  # FIXME: graph shows only last bit since we used function.py
   def __add__(self, other):
-    out = Tensor(self.data + other.data, _children=(self, other))
+    self.func = Add()
+    out = Tensor(self.func.forward(self, other), _children=(self, other))
     out.prev_op = OPS.ADD
-
-    def _backward():
-      self.grad += out.grad
-      other.grad += out.grad
-    out._backward = _backward
+    out._backward = lambda: self.func.backward(out.grad)
     return out
 
   def __mul__(self, other):
-    out = Tensor(self.data * other.data, _children=(self, other))
+    self.func = Mul()
+    out = Tensor(self.func.forward(self, other), _children=(self, other))
     out.prev_op = OPS.MUL
-
-    def _backward():
-      self.grad += other.data * out.grad
-      other.grad += self.data * out.grad
-    out._backward = _backward
+    out._backward = lambda: self.func.backward(out.grad)
     return out
 
   def __pow__(self, other):
@@ -96,13 +86,10 @@ class Tensor():
     return out
 
   def dot(self, other):
-    out = Tensor(np.dot(self.data, other.data), _children=(self, other))
+    self.func = Dot()
+    out = Tensor(self.func.forward(self, other), _children=(self, other))
     out.prev_op = OPS.DOT
-
-    def _backward():
-      self.grad += np.dot(out.grad, other.data.T)
-      other.grad += np.dot(self.data.T, out.grad)
-    out._backward = _backward
+    out._backward = lambda: self.func.backward(out.grad)
     return out
 
   def __neg__(self): return self * Tensor(np.array(-1))
@@ -112,18 +99,6 @@ class Tensor():
   def __rmul__(self, other): return self * other
   def __truediv__(self, other): return self * other**-1
   def __rtruediv__(self, other): return other * self**-1
-
-  def backward_recursive(self):
-    # topological order all of the chidren in the graph
-    topo = []
-    visited = set()
-    def build_topo(v):
-      if v not in visited:
-        visited.add(v)
-        for child in v._prev:
-          build_topo(child)
-        topo.append(v)
-    build_topo(self)
 
   def backward(self):
     topo = []
@@ -135,13 +110,9 @@ class Tensor():
         visited.add(v)
         stack.append(v)
         for child in v._prev:
-          if child not in visited:
-            stack.append(child)
-      elif v not in topo:
-        topo.append(v)
-
-    for node in reversed(topo):
-      node._backward()
+          if child not in visited: stack.append(child)
+      elif v not in topo: topo.append(v)
+    for node in reversed(topo): node._backward()
   
   @property
   def T(self): return Tensor(self.data.T)
@@ -162,7 +133,8 @@ class Tensor():
       ret = int(ret[0])
     return ret
 
-  def mean(self): return np.mean(self.data)
+  # TODO: add to ops
+  def mean(self): return Tensor(np.mean(self.data), _children=(self,))
 
   def float(self):
     self.data = self.data.astype(np.float32)
@@ -207,20 +179,25 @@ class Tensor():
     tmp = list(reversed(list(self._prev.copy())))
     tmp.insert(0, self)
 
-    for t0 in tmp:
-      print("[==]", t0)
+    topo = []
+    visited = set()
+    stack = [self]
+    while stack:
+      v = stack.pop()
+      if v not in visited:
+        visited.add(v)
+        stack.append(v)
+        for child in v._prev:
+          if child not in visited: stack.append(child)
+      elif v not in topo: topo.append(v)
+    for node in reversed(topo):
       if verbose:
-        print("[data]\n", t0.data)
-        print("[grad]\n", t0.grad)
-        if t0.w:
-          print("[w_data]\n", t0.w.data)
-          print("[w_grad]\n", t0.w.grad)
-        if t0.b:
-          print("[b_data]\n", t0.b.data)
-          print("[b_grad]\n", t0.b.grad)
-      if t0.prev_op != None:
-        print("====++++****++++====\n[OP]:", t0.prev_op ,"\n====++++****++++====")
+        print("[data]\n", node.data)
+        print("[grad]\n", node.grad)
+      if node.prev_op != None:
+        print("====++++****++++====\n[OP]:", node.prev_op ,"\n====++++****++++====")
 
+  
   def linear(self, weight: "Tensor", bias: Optional["Tensor"] = None):
     x = self * weight if len(weight.shape) == 1 else self.dot(weight)
     return x + bias if bias is not None else x
@@ -406,8 +383,7 @@ class Tensor():
 
   def sigmoid(self):
     t = np.exp(self.data) / (np.exp(self.data) + 1)
-    out = Tensor(t, name="sigmoid_out", _children=self._prev.copy())
-    out._prev.append(self)
+    out = Tensor(t, name="sigmoid_out", _children=(self,))
     out.prev_op = OPS.Sigmoid
 
     def _backward():
@@ -423,13 +399,10 @@ class Tensor():
     out.prev_op = OPS.Softmax
 
     def _backward():
-      #self.grad += probs*(1-probs) * out.grad
-      for i in range(out.data.shape[0]):
-        for j in range(self.data.shape[0]):
-          if i == j:
-            self.grad[i] = (out.data[i] * (1-self.data[i])) * out.grad
-          else:
-            self.grad[i] = (-out.data[i] * self.data[j]) * out.grad
+      self.grad = np.zeros_like(out.data)
+      for i in range(out.shape[0]):
+        s = out.data[i].reshape(-1, 1)
+        jacobian = np.diagflat(s) - np.dot(s, s.T)
+        self.grad[i] = np.dot(jacobian, out.grad[i])
     out._backward = _backward
-
     return out
