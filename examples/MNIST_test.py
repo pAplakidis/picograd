@@ -2,7 +2,6 @@
 import random
 import numpy as np
 import matplotlib.pyplot as plt
-import torchvision.datasets as datasets
 from keras.datasets import mnist
 from tqdm import tqdm
 
@@ -111,3 +110,5 @@ if __name__ == '__main__':
 
     out = model(X)
     print(f"model: {np.argmax(out.data, axis=1)[0]} - GT: {Y}")
+    plt.imshow(X_test[idx], cmap='gray')
+    plt.show()

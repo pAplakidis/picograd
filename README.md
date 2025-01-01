@@ -26,11 +26,13 @@ python3 -m pip install -r requirements.txt
 
 ## TODO
 
-- save/load models - state dict
+- ops.py + function.py
+- Adam
 - conv2d, maxpool, etc
+- save/load models - state dict
 - good unit tests
 - Implement BatchNorm1d and 2d
-- Support CUDA for numpy using CuPy => add device property
+- Support CUDA/GPU - opsgpu.py
 - Low Level Debugging: calculate and print FLOPS
 - Test on actual neural networks (full training and evaluation of simple models)
 - Release (make the project cleaner, more robust and usable)
