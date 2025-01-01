@@ -1,5 +1,5 @@
 import numpy as np
-from tensor import Tensor
+from picograd.tensor import Tensor
 
 def manual_update(params, lr):
   for i in range(len(params)):
@@ -21,20 +21,32 @@ def reset_grad(params):
     params[i].grad = np.ones_like(params[i].grad)
   return params
 
-
-class SGD:
+class Optim:
   def __init__(self, params, lr=1.0):
     self.params = params
     self.lr = lr
 
-  def reset_grad(self):
+  # not zero_grad since we reset it to ones
+  def zero_grad(self):
     for i in range(len(self.params)):
-      self.params[i].grad = np.ones_like(self.params[i].grad)
+      self.params[i].t_in.grad = np.zeros_like(self.params[i].t_in.grad)
+      self.params[i].t_out.grad = np.zeros_like(self.params[i].t_out.grad)
     return self.params
 
+  def reset_grad(self):
+    for i in range(len(self.params)):
+      self.params[i].t_in.grad = np.ones_like(self.params[i].t_in.grad)
+      self.params[i].t_out.grad = np.ones_like(self.params[i].t_out.grad)
+    return self.params
+
+
+class SGD(Optim):
   def step(self):
     for i in range(len(self.params)):
-      #self.params[i].weight += -self.lr * self.params[i].weight.grad
-      self.params[i].weight += self.lr * self.params[i].weight.grad
-      #self.params[i].bias += -self.lr * self.params[i].bias.grad
-      self.params[i].bias += self.lr * self.params[i].bias.grad
+      self.params[i].weight.data -= self.lr * self.params[i].weight.grad
+      self.params[i].bias.data -= self.lr * self.params[i].bias.grad
+
+# TODO: implement Adam
+class Adam(Optim):
+  def step(self):
+    pass

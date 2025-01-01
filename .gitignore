@@ -1,5 +1,8 @@
 .*.swp
+*.so
 __pycache__/
 graphs/
 media/
+lib/
+mnist_data/
 

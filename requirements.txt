@@ -1,0 +1,9 @@
+numpy
+matplotlib
+graphviz
+requests
+torch
+torchvision
+cupy
+tensorflow
+keras
