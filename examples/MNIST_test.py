@@ -21,6 +21,8 @@ BS = 16
 
 def get_data():
   (X_train, Y_train), (X_test, Y_test) = mnist.load_data()
+  X_train = X_train / 255.0
+  X_test = X_test / 255.0
   return X_train, Y_train, X_test, Y_test
 
 
@@ -42,17 +44,16 @@ if __name__ == '__main__':
 
   in_feats = X_train.shape[1] * X_train.shape[2]
   model = Testnet(in_feats, 10)
-  optim = SGD(model.get_params(), lr=1e-4)
+  optim = SGD(model.get_params(), lr=1e-6)
 
   # Training Loop
-  epochs = 10
+  epochs = 4
   losses = []
   print("Training ...")
   for i in range(epochs):
     print(f"[+] Epoch {i+1}/{epochs}")
     epoch_losses = []
 
-    # FIXME: model doesn't learn (probably due to gradients)
     num_batches = len(X_train) // BS + (len(X_train) % BS != 0)
     for batch_idx in (t := tqdm(range(num_batches), total=num_batches)):
       batch_start = batch_idx * BS
@@ -65,11 +66,6 @@ if __name__ == '__main__':
       for idx, label in enumerate(Y_batch):
           Y[idx][label] = 1.0
       Y = Tensor(Y)
-    # for idx, x in (t := tqdm(enumerate(X_train), total=len(X_train))):
-    #   X = Tensor(np.array([x])).flatten().unsqueeze(0)
-    #   Y = np.zeros((1, 10), dtype=np.float32)
-    #   Y[0][Y_train[idx]] = 1.0
-    #   Y = Tensor(Y)
 
       out = model(X)
       loss = CrossEntropyLoss(out, Y)

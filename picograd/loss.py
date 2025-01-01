@@ -49,24 +49,6 @@ def BCELoss(z: Tensor, y: Tensor) -> Tensor:
   t.grad = (z.data - y.data) / (z.data * (1 - y.data))
   return t
 
-# def CrossEntropyLoss(z: Tensor, y: Tensor) -> Tensor:
-#   assert (n := z.shape[0]) == y.shape[0], f"Z Tensor doesn't have the same shape as ground-truth Y: z.shape={str(z.data.shape)}, y.shape={str(y.data.shape)}"
-#   assert (len(y.shape) > 1 and len(z.shape) > 1), f"Dimensionality of tensor and ground-truth must be > 1"
-#   y_pred_clipped = np.clip(z.data, 1e-7, 1 - 1e-7)
-
-#   # if len(y.data.shape) == 1:
-#   #   # correct_confidences = y_pred_clipped[range(n), y.data]
-#   #   correct_confidences = np.sum(y_pred_clipped * y.data)
-#   # elif len(y.data.shape) == 2:
-#   #   correct_confidences = np.sum(y_pred_clipped * y.data, axis=1)
-#   # print(correct_confidences)
-#   # loss_val = -np.log(correct_confidences)
-
-#   loss_val = -np.sum(y.data * np.log(y_pred_clipped), axis=1)
-#   t = Tensor(loss_val, name="crossentropyloss_out", _children=(z,))
-#   t.prev_op = OPS.CrossEntropyLoss
-#   return t
-
 # Categorical Cross Entropy
 def CrossEntropyLoss(z: Tensor, y: Tensor) -> Tensor:
   # FIXME: does that just mitigate the problem?
@@ -78,7 +60,8 @@ def CrossEntropyLoss(z: Tensor, y: Tensor) -> Tensor:
   loss_val = -np.sum(y.data * np.log(y_pred_clipped), axis=1)
   out = Tensor(loss_val, name="crossentropyloss_out", _children=(z,))
   out.prev_op = OPS.CrossEntropyLoss
-  out.grad = z.data - y.data
+  # out.grad = z.data - y.data
+  out.grad = (z.data - y.data) / y.shape[0]
   
   def _backward():
     z.grad = out.grad
