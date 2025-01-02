@@ -43,7 +43,8 @@ if __name__ == '__main__':
 
   in_feats = X_train.shape[1] * X_train.shape[2]
   model = Testnet(in_feats, 10)
-  optim = SGD(model.get_params(), lr=1e-6)
+  # optim = SGD(model.get_params(), lr=1e-6)
+  optim = Adam(model.get_params(), lr=1e-4)
 
   # Training Loop
   epochs = 4

@@ -22,7 +22,7 @@ def reset_grad(params):
   return params
 
 class Optim:
-  def __init__(self, params, lr=1.0):
+  def __init__(self, params, lr=0.001):
     self.params = params
     self.lr = lr
 
@@ -46,7 +46,42 @@ class SGD(Optim):
       self.params[i].weight.data -= self.lr * self.params[i].weight.grad
       self.params[i].bias.data -= self.lr * self.params[i].bias.grad
 
-# TODO: implement Adam
 class Adam(Optim):
+  def __init__(self, params, lr=0.001, b1=0.9, b2=0.999, eps=1e-8):
+    super().__init__(params, lr)
+    self.b1 = b1
+    self.b2 = b2
+    self.eps = eps
+
+    self.mt_1_weight = [None] * len(self.params)
+    self.ut_1_weight = [None] * len(self.params)
+    self.mt_1_bias = [None] * len(self.params)
+    self.ut_1_bias = [None] * len(self.params)
+    for i in range(len(self.params)):
+      self.mt_1_weight[i] = np.zeros_like(self.params[i].weight.grad)
+      self.ut_1_weight[i] = np.zeros_like(self.params[i].weight.grad)
+
+      self.mt_1_bias[i] = np.zeros_like(self.params[i].bias.grad)
+      self.ut_1_bias[i] = np.zeros_like(self.params[i].bias.grad)
+
   def step(self):
-    pass
+    for i in range(len(self.params)):
+      # weight
+      mt_weight = self.b1 * self.mt_1_weight[i] + (1 - self.b1) * self.params[i].weight.grad
+      ut_weight = self.b2 * self.ut_1_weight[i] + (1 - self.b2) * self.params[i].weight.grad**2
+      mt_hat_w = mt_weight / (1 - self.b1)
+      ut_hat_w = ut_weight / (1 - self.b2)
+      self.params[i].weight.data -= self.lr * mt_hat_w / (np.sqrt(ut_hat_w) + self.eps)
+
+      self.mt_1_weight[i] = mt_weight
+      self.ut_1_weight[i] = ut_weight
+
+      # bias
+      mt_bias = self.b1 * self.mt_1_bias[i] + (1 - self.b1) * self.params[i].bias.grad
+      ut_bias = self.b2 * self.ut_1_bias[i] + (1 - self.b2) * self.params[i].bias.grad**2
+      mt_hat_b = mt_bias / (1 - self.b1)
+      ut_hat_b = ut_bias / (1 - self.b2)
+      self.params[i].bias.data -= self.lr * mt_hat_b / (np.sqrt(ut_hat_b) + self.eps)
+
+      self.mt_1_bias[i] = mt_bias
+      self.ut_1_bias[i] = ut_bias
