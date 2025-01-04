@@ -133,7 +133,7 @@ class Tensor():
       ret = int(ret[0])
     return ret
 
-  # TODO: add to ops
+  # TODO: move to ops
   def mean(self): return Tensor(np.mean(self.data), _children=(self,))
 
   def float(self):
@@ -143,6 +143,16 @@ class Tensor():
   def long(self):
     self.data = self.data.astype(np.int64)
     return self
+
+  def reshape(self, *args, **kwargs):
+    out = Tensor(self.data.reshape(*args, **kwargs), _children=(self,))
+    original_shape = self.data.shape
+    out.prev_op = OPS.Reshape
+
+    def _backward():
+      self.grad += out.grad.reshape(original_shape)
+    out._backward = _backward
+    return out
 
   def flatten(self):
     out = Tensor(self.data.flatten(), _children=(self,), name="flattenout")
@@ -202,103 +212,11 @@ class Tensor():
     x = self * weight if len(weight.shape) == 1 else self.dot(weight)
     return x + bias if bias is not None else x
 
-  # FIXME: padding
-  def conv2d(self, weight: np.ndarray, bias: np.ndarray, in_channels: int, out_channels: int, kernel_size: int, stride: int = 1, padding: int = 0, lib=PICOGRAD_LIB, debug=False):
-    assert len(self.data.shape) == 3, "Conv2D input tensor must be 2D-RGB"
-    assert kernel_size % 2 != 0, "Conv2D kenrel_size must be odd"
-
-    self.kernel = weight
-    self.b = bias
-
-    _, H, W = self.data.shape # NOTE: double-check, we assume (c, h, w)
-    H_out = ((H - kernel_size + 2*padding) // stride) + 1
-    W_out = ((W - kernel_size + 2*padding) // stride) + 1
-
-    out = Tensor(np.zeros((out_channels, H_out, W_out)), "conv2d_out", _children=self._prev.copy())
-    out.data = out.data.astype(np.uint8)
-    out._prev.append(self)
+  def conv2d(self, weight: "Tensor", bias: "Tensor", in_channels: int, out_channels: int, stride: int = 1, padding: int = 0, debug=False):
+    self.func = Conv2D()
+    out = Tensor(self.func.forward(self, weight, bias,  in_channels, out_channels, stride, padding), _children=(self, weight, bias))
     out.prev_op = OPS.Conv2D
-
-    self.grad = Tensor(np.zeros_like(self.data))
-    out.grad = Tensor(np.zeros_like(out))
-
-    def conv2d_cpp():
-      assert lib is not None, "[Conv2D-CPP-ERROR] no .so library provided"
-      print("Initializing c++ function")
-      lib.conv2d.argtypes = [
-          ctypes.c_int,                    # out_channels
-          ctypes.c_int,                    # in_channels
-          ctypes.c_int,                    # kernel_size
-          ctypes.c_int,                    # padding
-          ctypes.c_int,                    # H_out
-          ctypes.c_int,                    # W_out
-          ctypes.c_int,                    # H
-          ctypes.c_int,                    # W
-          ctypes.POINTER(ctypes.c_float),  # out.data
-          ctypes.c_int,                    # len(out.data)
-          ctypes.POINTER(ctypes.c_float),  # kernel.data 
-          ctypes.c_int,                    # len(kernel.data)
-          ctypes.POINTER(ctypes.c_float),  # b.data 
-          ctypes.c_int,                    # len(b.data)
-          ctypes.POINTER(ctypes.c_float),  # self.data 
-          ctypes.c_int,                    # len(self.data)
-      ]
-      lib.conv2d.restype = ctypes.c_int
-
-      print("Calling c++ function")
-      result = lib.conv2d(
-        out_channels, in_channels, kernel_size, padding, H_out, W_out, H, W,
-        out.data.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), len(out.data),
-        self.kernel.data.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), len(self.kernel.data),
-        self.b.data.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), len(self.b.data),
-        self.data.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), len(self.data)
-      )
-      print(result)
-      return result
-
-    # conv2d_cpp()
-    # print("[+] C++ finished")
-
-    for out_c in range(out_channels):
-      for in_c in range(in_channels):
-        i_idx = 0 - padding
-        for i in range(H_out):
-          j_idx = 0 - padding
-          for j in range(W_out):
-            # TODO: use something more simplified like this:
-            # regn = padded_input[i_c, h:h + kernel_size, w:w + kernel_size]
-            for k in range(kernel_size):
-              for l in range(kernel_size):
-                # handle padding
-                if i_idx + k < 0 or j_idx + l < 0 or i_idx + k >= H or j_idx + l >= W:
-                  out.data[out_c][i][j] += self.b.data[out_c]
-                out.data[out_c][i][j] += self.data[in_c][i_idx + k][j_idx + l] * self.kernel.data[out_c][k][l] + self.b.data[out_c]
-                if debug:
-                  print(f"OUT ({out_c},{i},{j}), IN ({in_c},{i_idx},{j_idx}) => ({in_c},{i_idx+k},{j_idx+l}), W ({out_c},{k},{l})", end="(==)")
-                  print(f"VAL: {out.data[out_c][i][j]}")
-            if debug:
-              print()
-            j_idx += stride
-          if debug:
-            print()
-          i_idx += stride
-        if debug:
-          print(f"IN_C {in_c}")
-      if debug:
-        print(f"OUT_C {out_c}")
-
-    def _backward():
-      # out.grad = np.ones_like(out.data)
-      self.grad = np.zeros_like(self.data)
-      self.kernel.grad = np.zeros_like(self.kernel.data)
-      self.b.grad = np.sum(out.grad)
-
-      for i in range(0, H, stride):
-        for j in range(0, W, stride):
-          self.grad[i:i+kernel_size, j:j+kernel_size] += out.grad * self.kernel.data
-          self.kernel.grad = out.grad * self.data[i:i+kernel_size, j:j+kernel_size]
-      out._backward = _backward
-
+    out._backward = lambda: self.func.backward(out.grad)
     return out
 
   def batchnorm1d(self):

@@ -38,8 +38,23 @@ class Dot(Function):
     self.a, self.b = a, b
     return a.data @ b.data
 
-  # TODO: this is different (?)
   def backward(self, grad_out: "Tensor") -> None:
     if self.a.requires_grad: self.a.grad += grad_out @ self.b.data.T
     if self.b.requires_grad: self.b.grad += self.a.data.T @ grad_out
 
+class Conv2D(Function):
+  def forward(self, a: "Tensor", w: "Tensor", b: "Tensor",
+              in_channels: int, out_channels: int, stride: int = 1, padding: int = 0) -> "Tensor":
+    self.a, self.w, self.b = a, w, b
+    return BinaryOps.conv2d(a.data, w.data, b.data, in_channels, out_channels, stride, padding)
+  
+  def backward(self, grad_out: "Tensor") -> None:
+    # self.grad = np.zeros_like(self.data)
+    # self.kernel.grad = np.zeros_like(self.kernel.data)
+    # self.b.grad = np.sum(out.grad)
+
+    # for i in range(0, H, stride):
+    #   for j in range(0, W, stride):
+    #     self.grad[i:i+kernel_size, j:j+kernel_size] += out.grad * self.kernel.data
+    #     self.kernel.grad = out.grad * self.data[i:i+kernel_size, j:j+kernel_size]
+    pass

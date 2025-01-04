@@ -26,6 +26,7 @@ class OPS(Enum):
   MaxPool2D = auto()
   AvgPool2D = auto()
 
+  Reshape = auto()
   Flatten = auto()
   Unsqueeze = auto()
 
@@ -42,6 +43,32 @@ class BinaryOps:
 
   @staticmethod
   def dot(a: np.ndarray, b: np.ndarray) -> np.ndarray: return a @ b
+
+  @staticmethod
+  def conv2d(a: np.ndarray, w: np.ndarray, b: np.array,
+             in_channels: int, out_channels: int, stride: int = 1, padding: int = 0,
+             debug=False) -> np.ndarray:
+    # TODO: c + cbuild()
+    # TODO: use C instead of in_channels
+    BS, C, H, W = a.shape
+    kernel_size = w.shape[1]
+    H_out = ((H - kernel_size + 2*padding) // stride) + 1
+    W_out = ((W - kernel_size + 2*padding) // stride) + 1
+    out = np.zeros((BS, out_channels, H_out, W_out))
+
+    for batch in range(BS):
+      for out_c in range(out_channels):
+        for in_c in range(in_channels):
+          i_idx = 0 - padding
+          for i in range(H_out):
+            j_idx = 0 - padding
+            for j in range(W_out):
+              for k in range(kernel_size):
+                for l in range(kernel_size):
+                  if i_idx + k >= 0 and j_idx + l >= 0 and i_idx + k < H and j_idx + l < W:
+                    out[batch][out_c][i][j] += b[batch][out_c]
+                  out[batch][out_c][i][j] += a[batch][in_c][i_idx + k][j_idx + l] * w[batch][out_c][k][l] + b[batch][out_c]
+    return out
 
 class UnaryOps:
   @staticmethod

@@ -52,16 +52,18 @@ class Layer:
     self.bias = None
 
 
-# TODO: weight initialization
 class Linear(Layer):
-  def __init__(self, in_feats: int, out_feats: int):
+  def __init__(self, in_feats: int, out_feats: int, initialization: str = 'gaussian'):
     self.type = LayerType.LINEAR
     self.in_feats = in_feats
     self.out_feats = out_feats
-    # Gaussian initialization
-    # self.weight = Tensor(0.01 * np.random.randn(self.in_feats, self.out_feats), name="linear-weight")
-    # Xavier initialization
-    self.weight = Tensor(np.random.randn(self.in_feats, self.out_feats) * np.sqrt(2. / (self.in_feats + self.out_feats)), name="linear-weight")
+
+    if initialization == "gaussian":
+      self.weight = Tensor(0.01 * np.random.randn(self.in_feats, self.out_feats), name="linear-weight")
+    elif initialization == "Xavier":
+      self.weight = Tensor(np.random.randn(self.in_feats, self.out_feats) * np.sqrt(2. / (self.in_feats + self.out_feats)), name="linear-weight")
+    else:
+      raise ValueError("Invalid initialization method")
     self.bias = Tensor(np.zeros((self.out_feats,)), name="linear-bias")
 
   def __call__(self, x: Tensor):
@@ -81,12 +83,24 @@ class Conv2d(Layer):
     self.stride = stride
     self.padding = padding
 
-    self.weight = Tensor(np.random.randint(0, 255, (out_channels, kernel_size, kernel_size), dtype=np.uint8), "conv2D_kernel")  # weight
-    self.bias = Tensor(np.zeros((out_channels, 1, 1)), name="bias")
+    self.batch_size = None
+    self.weight = None
+    self.bias = None
 
   def __call__(self, x: Tensor):
     self.t_in = x
-    self.t_out = x.conv2d(self.weight, self.bias, self.in_channels, self.out_channels, self.kernel_size, self.stride, self.padding, debug=False)
+    # TODO: assert supported shapes
+    assert self.kernel_size % 2 != 0, "Conv2D kenrel_size must be odd"
+
+    # FIXME: initializing this here causes error on Adam's init
+    if self.batch_size is None:
+      self.batch_size = x.shape[0]
+    if self.weight is None:
+      self.weight = Tensor(np.random.randint(0, 255, (self.batch_size, self.out_channels, self.kernel_size, self.kernel_size), dtype=np.uint8), "conv2D_kernel")
+    if self.bias is None:
+      self.bias = Tensor(np.zeros((self.batch_size, self.out_channels, 1, 1)), name="bias")
+
+    self.t_out = x.conv2d(self.weight, self.bias, self.in_channels, self.out_channels, self.stride, self.padding, debug=False)
     return self.t_out
 
 
