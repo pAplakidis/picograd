@@ -66,10 +66,36 @@ class BinaryOps:
               for k in range(kernel_size):
                 for l in range(kernel_size):
                   if i_idx + k >= 0 and j_idx + l >= 0 and i_idx + k < H and j_idx + l < W:
-                    out[batch][out_c][i][j] += b[batch][out_c]
-                  out[batch][out_c][i][j] += a[batch][in_c][i_idx + k][j_idx + l] * w[batch][out_c][k][l] + b[batch][out_c]
+                    out[batch][out_c][i][j] += b[out_c]
+                  out[batch][out_c][i][j] += a[batch][in_c][i_idx + k][j_idx + l] * w[out_c][k][l] + b[out_c]
     return out
 
+  @staticmethod
+  def conv2d_backward(a: np.ndarray, grad_out: np.ndarray, w: np.ndarray, b: np.ndarray,
+                      in_channels: int, out_channels: int, stride: int = 1, padding: int = 0):
+    BS, C, H, W = a.shape
+    kernel_size = w.shape[1]
+    H_out = ((H - kernel_size + 2*padding) // stride) + 1
+    W_out = ((W - kernel_size + 2*padding) // stride) + 1
+
+    grad_a = np.zeros_like(a)
+    grad_w = np.zeros_like(w)
+    grad_b = np.zeros_like(b)
+
+    for batch in range(BS):
+      for out_c in range(out_channels):
+        for in_c in range(in_channels):
+          i_idx = 0 - padding
+          for i in range(H_out):
+            j_idx = 0 - padding
+            for j in range(W_out):
+              for k in range(kernel_size):
+                for l in range(kernel_size):
+                  if i_idx + k >= 0 and j_idx + l >= 0 and i_idx + k < H and j_idx + l < W:
+                    grad_a[batch][in_c][i_idx + k][j_idx + l] += grad_out[batch][out_c][i][j] * w[out_c][k][l]
+                    grad_w[out_c][k][l] += grad_out[batch][out_c][i][j] * a[batch][in_c][i_idx + k][j_idx + l]
+                    grad_b[out_c] += grad_out[batch][out_c][i][j]
+    return grad_a, grad_w, grad_b
 class UnaryOps:
   @staticmethod
   def relu(a: np.ndarray) -> np.ndarray: return np.maximum(a, np.zeros_like(a))

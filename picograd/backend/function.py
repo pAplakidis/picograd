@@ -46,15 +46,11 @@ class Conv2D(Function):
   def forward(self, a: "Tensor", w: "Tensor", b: "Tensor",
               in_channels: int, out_channels: int, stride: int = 1, padding: int = 0) -> "Tensor":
     self.a, self.w, self.b = a, w, b
+    self.stride, self.padding = stride, padding
     return BinaryOps.conv2d(a.data, w.data, b.data, in_channels, out_channels, stride, padding)
   
   def backward(self, grad_out: "Tensor") -> None:
-    # self.grad = np.zeros_like(self.data)
-    # self.kernel.grad = np.zeros_like(self.kernel.data)
-    # self.b.grad = np.sum(out.grad)
-
-    # for i in range(0, H, stride):
-    #   for j in range(0, W, stride):
-    #     self.grad[i:i+kernel_size, j:j+kernel_size] += out.grad * self.kernel.data
-    #     self.kernel.grad = out.grad * self.data[i:i+kernel_size, j:j+kernel_size]
-    pass
+    grad_a, grad_w, grad_b = BinaryOps.conv2d_backward(self.a.data, grad_out, self.w.data, self.b.data, self.a.shape[1], self.w.shape[0], self.stride, self.padding)
+    if self.a.requires_grad: self.a.grad = grad_a
+    if self.w.requires_grad: self.w.grad = grad_w
+    if self.b.requires_grad: self.b.grad = grad_b

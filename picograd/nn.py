@@ -76,30 +76,20 @@ class Linear(Layer):
 class Conv2d(Layer):
   def __init__(self, in_channels: int, out_channels: int, kernel_size: int, stride=1, padding=0):
     self.type = LayerType.CONV2D
-
     self.in_channels = in_channels
     self.out_channels = out_channels
     self.kernel_size = kernel_size
     self.stride = stride
     self.padding = padding
 
-    self.batch_size = None
-    self.weight = None
-    self.bias = None
+    self.weight = Tensor(np.random.uniform(0.0, 1.0, (self.out_channels, kernel_size, kernel_size)), "conv2D_kernel")
+    self.bias = Tensor(np.zeros((out_channels, 1, 1)), name="bias")
+
+    # TODO: assert supported shapes as well
+    assert self.kernel_size % 2 != 0, "Conv2D kenrel_size must be odd"
 
   def __call__(self, x: Tensor):
     self.t_in = x
-    # TODO: assert supported shapes
-    assert self.kernel_size % 2 != 0, "Conv2D kenrel_size must be odd"
-
-    # FIXME: initializing this here causes error on Adam's init
-    if self.batch_size is None:
-      self.batch_size = x.shape[0]
-    if self.weight is None:
-      self.weight = Tensor(np.random.randint(0, 255, (self.batch_size, self.out_channels, self.kernel_size, self.kernel_size), dtype=np.uint8), "conv2D_kernel")
-    if self.bias is None:
-      self.bias = Tensor(np.zeros((self.batch_size, self.out_channels, 1, 1)), name="bias")
-
     self.t_out = x.conv2d(self.weight, self.bias, self.in_channels, self.out_channels, self.stride, self.padding, debug=False)
     return self.t_out
 

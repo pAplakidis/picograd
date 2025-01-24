@@ -18,7 +18,7 @@ class MSELoss(Loss):
 def MSELoss(z: Tensor, y: Tensor) -> Tensor:
   assert (n := z.shape[0]) == y.shape[0], f"Z Tensor doesn't have the same shape as ground-truth Y: z.shape={str(z.data.shape)}, y.shape={str(y.data.shape)}"
   loss_val = 1/n * np.sum((z.data-y.data) ** 2)
-  t = Tensor(loss_val, name="mseloss_out",  _children=(z,))
+  t = Tensor(loss_val, name="mseloss_out",  _prev=(z,))
   t._prev.append(z)
   t.prev_op = OPS.MSELoss
   t.grad = 2 * (z.data - y.data) / y.shape[0]
@@ -28,7 +28,7 @@ def MSELoss(z: Tensor, y: Tensor) -> Tensor:
 def MAELoss(z: Tensor, y: Tensor) -> Tensor:
   assert (n := z.shape[0]) == y.shape[0], f"Z Tensor doesn't have the same shape as ground-truth Y: z.shape={str(z.data.shape)}, y.shape={str(y.data.shape)}"
   loss_val = 1/n * np.sum(np.abs(z.data-y.data))
-  t = Tensor(loss_val, name="maeloss_out", _children=(z,))
+  t = Tensor(loss_val, name="maeloss_out", _prev=(z,))
   t._prev.append(z)
   t.prev_op = OPS.MAELoss
   return t
@@ -44,7 +44,7 @@ def BCELoss(z: Tensor, y: Tensor) -> Tensor:
   term_0 = (1 - y.data) * np.log(1 - y_pred_clipped + 1e-7)
   term_1 = y.data * np.log(y_pred_clipped + 1e-7)
   loss_val = -np.mean(term_0+term_1, axis=0)
-  t = Tensor(loss_val, name="bceloss_out",  _children=(z,))
+  t = Tensor(loss_val, name="bceloss_out",  _prev=(z,))
   t.prev_op = OPS.BCELoss
   t.grad = (z.data - y.data) / (z.data * (1 - y.data))
   return t
@@ -58,7 +58,7 @@ def CrossEntropyLoss(z: Tensor, y: Tensor) -> Tensor:
 
   y_pred_clipped = np.clip(z.data, 1e-7, 1 - 1e-7)
   loss_val = -np.sum(y.data * np.log(y_pred_clipped), axis=1)
-  out = Tensor(loss_val, name="crossentropyloss_out", _children=(z,))
+  out = Tensor(loss_val, name="crossentropyloss_out", _prev=(z,))
   out.prev_op = OPS.CrossEntropyLoss
   # out.grad = z.data - y.data
   out.grad = (z.data - y.data) / y.shape[0]

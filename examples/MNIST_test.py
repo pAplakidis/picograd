@@ -26,10 +26,10 @@ def get_data():
 
 
 class Testnet(nn.Module):
-  def __init__(self, in_feats, out_feats):
+  def __init__(self, out_feats):
     super(Testnet, self).__init__()
     self.conv = nn.Conv2d(1, 1, 3)
-    self.fc = nn.Linear(in_feats, out_feats)
+    self.fc = nn.Linear(676, out_feats)
 
   def forward(self, x):
     x = self.conv(x).relu()
@@ -42,9 +42,8 @@ if __name__ == '__main__':
   X_train, Y_train, X_test, Y_test = get_data()
 
   in_feats = X_train.shape[1] * X_train.shape[2]
-  model = Testnet(in_feats, 10)
-  optim = SGD(model.get_params(), lr=1e-6)
-  # optim = Adam(model.get_params(), lr=1e-4) # FIXME: errors with Conv2D
+  model = Testnet(10)
+  optim = Adam(model.get_params(), lr=1e-4)
 
   # Training Loop
   epochs = 4
@@ -72,13 +71,12 @@ if __name__ == '__main__':
       loss = CrossEntropyLoss(out, Y)
       losses.append(loss.data[0])
       epoch_losses.append(loss.mean().item)
-      exit(0)
 
       optim.zero_grad()
       loss.backward()
       optim.step()
 
-      if batch_idx == 0 and i == 0: draw_dot(loss, path="graphs/mnist", verbose=True)
+      if batch_idx == 0 and i == 0: draw_dot(loss, path="graphs/mnist")
       # if idx == 0: draw_dot(loss, path="graphs/mnist")
       t.set_description(f"Loss: {loss.mean().item:.2f}")
     print(f"Avg loss: {np.array(epoch_losses).mean()}")

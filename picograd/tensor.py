@@ -18,7 +18,7 @@ else: PICOGRAD_LIB = None
 
 
 class Tensor():
-  def __init__(self, data: np.array, name: str = "t", _children: set = (), requires_grad: bool = True, verbose: bool = False):
+  def __init__(self, data: np.array, name: str = "t", _prev: set = (), requires_grad: bool = True, verbose: bool = False):
     super().__init__()
 
     self._ctx = None  # TODO: use context like pytorch
@@ -30,7 +30,7 @@ class Tensor():
     self.requires_grad = requires_grad
     self.grad = np.zeros(self.data.shape) if self.requires_grad else None
 
-    self._prev = set(_children)
+    self._prev = set(_prev)
     self.prev_op = None
     self._backward = lambda: None
 
@@ -54,21 +54,21 @@ class Tensor():
   # FIXME: graph shows only last bit since we used function.py
   def __add__(self, other):
     self.func = Add()
-    out = Tensor(self.func.forward(self, other), _children=(self, other))
+    out = Tensor(self.func.forward(self, other), _prev=(self, other))
     out.prev_op = OPS.ADD
     out._backward = lambda: self.func.backward(out.grad)
     return out
 
   def __mul__(self, other):
     self.func = Mul()
-    out = Tensor(self.func.forward(self, other), _children=(self, other))
+    out = Tensor(self.func.forward(self, other), _prev=(self, other))
     out.prev_op = OPS.MUL
     out._backward = lambda: self.func.backward(out.grad)
     return out
 
   def __pow__(self, other):
     assert isinstance(other, (int, float)), "only supporting int/float powers for now"
-    out = Tensor(self.data**other, _children=(self,))
+    out = Tensor(self.data**other, _prev=(self,))
     out.prev_op = OPS.POW
 
     def _backward():
@@ -77,7 +77,7 @@ class Tensor():
     return out
 
   def relu(self):
-    out = Tensor(np.maximum(self.data, np.zeros(self.data.shape)),  _children=(self,))
+    out = Tensor(np.maximum(self.data, np.zeros(self.data.shape)),  _prev=(self,))
     out.prev_op = OPS.ReLU
 
     def _backward():
@@ -87,7 +87,7 @@ class Tensor():
 
   def dot(self, other):
     self.func = Dot()
-    out = Tensor(self.func.forward(self, other), _children=(self, other))
+    out = Tensor(self.func.forward(self, other), _prev=(self, other))
     out.prev_op = OPS.DOT
     out._backward = lambda: self.func.backward(out.grad)
     return out
@@ -134,7 +134,7 @@ class Tensor():
     return ret
 
   # TODO: move to ops
-  def mean(self): return Tensor(np.mean(self.data), _children=(self,))
+  def mean(self): return Tensor(np.mean(self.data), _prev=(self,))
 
   def float(self):
     self.data = self.data.astype(np.float32)
@@ -145,7 +145,7 @@ class Tensor():
     return self
 
   def reshape(self, *args, **kwargs):
-    out = Tensor(self.data.reshape(*args, **kwargs), _children=(self,))
+    out = Tensor(self.data.reshape(*args, **kwargs), _prev=(self,))
     original_shape = self.data.shape
     out.prev_op = OPS.Reshape
 
@@ -155,7 +155,7 @@ class Tensor():
     return out
 
   def flatten(self):
-    out = Tensor(self.data.flatten(), _children=(self,), name="flattenout")
+    out = Tensor(self.data.flatten(), _prev=(self,), name="flattenout")
     original_shape = self.data.shape
     out.prev_op = OPS.Flatten
 
@@ -165,7 +165,7 @@ class Tensor():
     return out
 
   def unsqueeze(self, axis):
-    out = Tensor(np.expand_dims(self.data, axis), _children=(self,))
+    out = Tensor(np.expand_dims(self.data, axis), _prev=(self,))
     out.prev_op = "UNSQUEEZE"
 
     def _backward():
@@ -175,7 +175,7 @@ class Tensor():
     return out
 
   def squeeze(self, axis=0):
-    out = Tensor(np.squeeze(self.data, axis=axis), _children=(self,), name="squeeze_out")
+    out = Tensor(np.squeeze(self.data, axis=axis), _prev=(self,), name="squeeze_out")
     original_shape = self.data.shape
     out.prev_op = OPS.Unsqueeze
 
@@ -214,7 +214,7 @@ class Tensor():
 
   def conv2d(self, weight: "Tensor", bias: "Tensor", in_channels: int, out_channels: int, stride: int = 1, padding: int = 0, debug=False):
     self.func = Conv2D()
-    out = Tensor(self.func.forward(self, weight, bias,  in_channels, out_channels, stride, padding), _children=(self, weight, bias))
+    out = Tensor(self.func.forward(self, weight, bias,  in_channels, out_channels, stride, padding), _prev=(self, weight, bias))
     out.prev_op = OPS.Conv2D
     out._backward = lambda: self.func.backward(out.grad)
     return out
@@ -249,7 +249,7 @@ class Tensor():
         out_img[:, i, j] = max_values[:, 0, 0]
         mask[:, h_start:h_end, w_start:w_end] = (x_slice == max_values)
 
-    out = Tensor(out_img, "maxpool2d", _children=self._prev.copy())
+    out = Tensor(out_img, "maxpool2d", _prev=self._prev.copy())
     out._prev.append(self)
     out.prev_op = OPS.MaxPool2D
 
@@ -277,7 +277,7 @@ class Tensor():
             tmp.append(out_img[i*stride+n][j*stride+m])
         out_img[i][j] = np.array(tmp).mean()
 
-    out = Tensor(out_img, "avgpool2d", _children=self._prev.copy())
+    out = Tensor(out_img, "avgpool2d", _prev=self._prev.copy())
     out._prev.append(self)
     out.prev_op = OPS.AvgPool2D
 
@@ -289,7 +289,7 @@ class Tensor():
 
   def tanh(self):
     t = (np.exp(2*self.data) - 1) / (np.exp(2*self.data) + 1)
-    out = Tensor(t, name="tanh_out", _children=self._prev.copy())
+    out = Tensor(t, name="tanh_out", _prev=self._prev.copy())
     out._prev.append(self)
     out.prev_op = OPS.Tanh
 
@@ -301,7 +301,7 @@ class Tensor():
 
   def sigmoid(self):
     t = np.exp(self.data) / (np.exp(self.data) + 1)
-    out = Tensor(t, name="sigmoid_out", _children=(self,))
+    out = Tensor(t, name="sigmoid_out", _prev=(self,))
     out.prev_op = OPS.Sigmoid
 
     def _backward():
@@ -313,7 +313,7 @@ class Tensor():
   def softmax(self):
     exp_val = np.exp(self.data - np.max(self.data, axis=1, keepdims=True))
     probs = exp_val / np.sum(exp_val, axis=1, keepdims=True)
-    out = Tensor(probs, name="softmax_out", _children=(self,))
+    out = Tensor(probs, name="softmax_out", _prev=(self,))
     out.prev_op = OPS.Softmax
 
     def _backward():
