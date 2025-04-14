@@ -2,6 +2,7 @@ import numpy as np
 from enum import Enum, auto
 
 from picograd.util import *
+from picograd.backend.device import Device
 
 
 class OPS(Enum):
@@ -33,21 +34,26 @@ class OPS(Enum):
   def __str__(self): return self.name
 
 
+# FIXME: add dummy manager to match cuda ops interface
 # TODO: create @jit decorator that uses jit.compile() to execute the op
 class BinaryOps:
   @staticmethod
-  def add(a: np.ndarray, b: np.ndarray) -> np.ndarray: return a + b
+  def add(a: "Tensor", b: "Tensor", manager: Device = None) -> np.ndarray: return a.data + b.data
 
   @staticmethod
-  def mul(a: np.ndarray, b: np.ndarray) -> np.ndarray: return a * b
+  def mul(a: "Tensor", b: "Tensor", manager: Device = None) -> np.ndarray: return a.data * b.data
 
   @staticmethod
-  def dot(a: np.ndarray, b: np.ndarray) -> np.ndarray: return a @ b
+  def dot(a: "Tensor", b: "Tensor", manager: Device = None) -> np.ndarray: return a.data @ b.data
 
   @staticmethod
-  def conv2d(a: np.ndarray, w: np.ndarray, b: np.array,
+  def conv2d(A: "Tensor", W: "Tensor", B: "Tensor",
              in_channels: int, out_channels: int, stride: int = 1, padding: int = 0,
-             debug=False) -> np.ndarray:
+             debug=False, manager: Device = None) -> np.ndarray:
+    a = A.data
+    w = W.data
+    b = B.data
+
     # TODO: c + cbuild()
     # TODO: use C instead of in_channels
     BS, C, H, W = a.shape
@@ -71,8 +77,12 @@ class BinaryOps:
     return out
 
   @staticmethod
-  def conv2d_backward(a: np.ndarray, grad_out: np.ndarray, w: np.ndarray, b: np.ndarray,
-                      in_channels: int, out_channels: int, stride: int = 1, padding: int = 0):
+  def conv2d_backward(a: "Tensor", grad_out: np.ndarray, w: "Tensor", b: "Tensor",
+                      in_channels: int, out_channels: int, stride: int = 1, padding: int = 0, manager: Device = None):
+    a = a.data
+    w = w.data
+    b = b.data
+
     BS, C, H, W = a.shape
     kernel_size = w.shape[1]
     H_out = ((H - kernel_size + 2*padding) // stride) + 1
@@ -96,36 +106,37 @@ class BinaryOps:
                     grad_w[out_c][k][l] += grad_out[batch][out_c][i][j] * a[batch][in_c][i_idx + k][j_idx + l]
                     grad_b[out_c] += grad_out[batch][out_c][i][j]
     return grad_a, grad_w, grad_b
+
 class UnaryOps:
   @staticmethod
-  def relu(a: np.ndarray) -> np.ndarray: return np.maximum(a, np.zeros_like(a))
+  def relu(a: "Tensor") -> np.ndarray: return np.maximum(a, np.zeros_like(a))
   
   @staticmethod
-  def sigmoid(a: np.ndarray) -> np.ndarray: pass
+  def sigmoid(a: "Tensor") -> np.ndarray: pass
   
   @staticmethod
-  def tanh(a: np.ndarray) -> np.ndarray: pass
+  def tanh(a: "Tensor") -> np.ndarray: pass
   
   @staticmethod
-  def abs(a: np.ndarray) -> np.ndarray: pass
+  def abs(a: "Tensor") -> np.ndarray: pass
   
   @staticmethod
-  def neg(a: np.ndarray) -> np.ndarray: pass
+  def neg(a: "Tensor") -> np.ndarray: pass
   
   @staticmethod
-  def sqrt(a: np.ndarray) -> np.ndarray: pass
+  def sqrt(a: "Tensor") -> np.ndarray: pass
   
   @staticmethod
-  def exp(a: np.ndarray) -> np.ndarray: pass
+  def exp(a: "Tensor") -> np.ndarray: pass
   
   @staticmethod
-  def log(a: np.ndarray) -> np.ndarray: pass
+  def log(a: "Tensor") -> np.ndarray: pass
   
   @staticmethod
-  def normalize(a: np.ndarray) -> np.ndarray: pass
+  def normalize(a: "Tensor") -> np.ndarray: pass
   
   @staticmethod
-  def softmax(a: np.ndarray) -> np.ndarray: pass
+  def softmax(a: "Tensor") -> np.ndarray: pass
   
   @staticmethod
   def batchnorm(a: np.ndarray) -> np.ndarray: pass

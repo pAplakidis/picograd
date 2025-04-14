@@ -1,34 +1,51 @@
 #!/usr/bin/env python3
+import os
 import ctypes
 import numpy as np
 from sys import platform
 from typing import Optional
 
+from picograd.print_utils import *
 from picograd.backend.function import *
-from picograd.backend.ops import *
+from picograd.backend.cpu.ops import *
 from picograd.util import *
+from picograd.backend.device import Device
+
+from picograd.backend.cuda.utils import tensor_to_cuda, free_device_tensor
 
 from .draw_utils import draw_dot
 
+DEBUG = int(os.getenv("DEBUG", 0))
+VERBOSE = int(os.getenv("VERBOSE", 0))
+
 # init c++ library
-if platform == "linux" or platform == "linux2": PICOGRAD_LIB = ctypes.CDLL('./lib/libpicograd.so')  # linux
-elif platform == "darwin":  PICOGRAD_LIB = ctypes.CDLL('./picograd/lib/libpicograd.dylib') # OS X
-elif platform == "win32": PICOGRAD_LIB = ctypes.CDLL('./picograd/lib/libpicograd.dll') # Windows
-else: PICOGRAD_LIB = None
+# if platform == "linux" or platform == "linux2": PICOGRAD_LIB = ctypes.CDLL('./lib/libpicograd.so')  # linux
+# elif platform == "darwin":  PICOGRAD_LIB = ctypes.CDLL('./picograd/lib/libpicograd.dylib') # OS X
+# elif platform == "win32": PICOGRAD_LIB = ctypes.CDLL('./picograd/lib/libpicograd.dll') # Windows
+# else: PICOGRAD_LIB = None
 
 
-class Tensor():
-  def __init__(self, data: np.array, name: str = "t", _prev: set = (), requires_grad: bool = True, verbose: bool = False):
-    super().__init__()
+class Tensor:
+  _dev_manager = None  # shared accross all tensors
 
+  def __init__(
+      self,
+      data: np.array,
+      name: str = "t",
+      _prev: set = (),
+      requires_grad: bool = True,
+      device: Optional[Device] = Device.CPU
+    ):
+    self.device= device
     self._ctx = None  # TODO: use context like pytorch
 
     self.name = name
     self.data = data
-    self.verbose = verbose
+    self.debug = DEBUG
+    self.verbose = bool(VERBOSE)
 
     self.requires_grad = requires_grad
-    self.grad = np.zeros(self.data.shape) if self.requires_grad else None
+    self.grad = np.zeros(self.shape) if self.requires_grad else None
 
     self._prev = set(_prev)
     self.prev_op = None
@@ -37,11 +54,48 @@ class Tensor():
     self.layer = None
     self.w, self.b = None, None
 
+    self.device_data = None
+    if device != Device.CPU: self.to(device)
+
+  def get_device_memory(self):
+    """Returns the device memory of a tensor."""
+
+    if self.device_data is None:
+      print("Tensor is not on the CUDA device.")
+      return
+
+    size = self.data.nbytes
+    host_buffer = np.empty(self.shape, dtype=self.data.dtype) # Create a host buffer to copy the data back to
+    self.manager.memcpy_dtoh(
+        host_buffer.ctypes.data,
+        self.device_data,
+        size
+    )
+    return host_buffer
+
+  def to(self, device: Device):
+    """Tranfers tensor to the specified device."""
+
+    self.device = device
+
+    if device == Device.CPU:
+      return  # TODO: CUDA to CPU + free from CUDA
+    elif device == Device.CUDA:
+      if not Tensor._dev_manager: Tensor._dev_manager = CudaDevice(debug=self.debug)
+      self.manager = Tensor._dev_manager
+      self.device_data = tensor_to_cuda(self, self.manager) # TODO: if result of CUDA op, no need to reallocate memory
+
+    return self
+
   def __repr__(self):
     if self.verbose:
-      return f"Tensor(name={self.name}, shape={str(self.shape)}, data={str(self.data)}, grad={self.grad}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
+      return f"{color_yellow("Tensor")} (name={self.name}, shape={str(self.shape)}, device={str(self.device)}, data={str(self.data)}, grad={self.grad}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
     else:
-      return f"Tensor(name={self.name}, shape={str(self.shape)}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
+      return f"{color_yellow("Tensor")} (name={self.name}, shape={str(self.shape)}, device={str(self.device)}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
+    
+  # TODO: if CUDA, free
+  def __del__(self):
+    pass
 
   def __getitem__(self, indices):
     return self.data[indices]
@@ -51,16 +105,16 @@ class Tensor():
 
   def __equal__(self, other): return np.equal(self.data, other.data)
 
-  # FIXME: graph shows only last bit since we used function.py
+  # FIXME: pass self.manager
   def __add__(self, other):
-    self.func = Add()
+    self.func = Add(device=self.device, manager=self.manager)
     out = Tensor(self.func.forward(self, other), _prev=(self, other))
     out.prev_op = OPS.ADD
     out._backward = lambda: self.func.backward(out.grad)
     return out
 
   def __mul__(self, other):
-    self.func = Mul()
+    self.func = Mul(device=self.device, manager=self.manager)
     out = Tensor(self.func.forward(self, other), _prev=(self, other))
     out.prev_op = OPS.MUL
     out._backward = lambda: self.func.backward(out.grad)
@@ -77,7 +131,7 @@ class Tensor():
     return out
 
   def relu(self):
-    out = Tensor(np.maximum(self.data, np.zeros(self.data.shape)),  _prev=(self,))
+    out = Tensor(np.maximum(self.data, np.zeros(self.shape)),  _prev=(self,))
     out.prev_op = OPS.ReLU
 
     def _backward():
@@ -86,7 +140,7 @@ class Tensor():
     return out
 
   def dot(self, other):
-    self.func = Dot()
+    self.func = Dot(device=self.device, manager=self.manager)
     out = Tensor(self.func.forward(self, other), _prev=(self, other))
     out.prev_op = OPS.DOT
     out._backward = lambda: self.func.backward(out.grad)
@@ -146,7 +200,7 @@ class Tensor():
 
   def reshape(self, *args, **kwargs):
     out = Tensor(self.data.reshape(*args, **kwargs), _prev=(self,))
-    original_shape = self.data.shape
+    original_shape = self.shape
     out.prev_op = OPS.Reshape
 
     def _backward():
@@ -156,7 +210,7 @@ class Tensor():
 
   def flatten(self):
     out = Tensor(self.data.flatten(), _prev=(self,), name="flattenout")
-    original_shape = self.data.shape
+    original_shape = self.shape
     out.prev_op = OPS.Flatten
 
     def _backward():
@@ -176,7 +230,7 @@ class Tensor():
 
   def squeeze(self, axis=0):
     out = Tensor(np.squeeze(self.data, axis=axis), _prev=(self,), name="squeeze_out")
-    original_shape = self.data.shape
+    original_shape = self.shape
     out.prev_op = OPS.Unsqueeze
 
     def _backward():
@@ -213,7 +267,7 @@ class Tensor():
     return x + bias if bias is not None else x
 
   def conv2d(self, weight: "Tensor", bias: "Tensor", in_channels: int, out_channels: int, stride: int = 1, padding: int = 0, debug=False):
-    self.func = Conv2D()
+    self.func = Conv2D(device=self.device, manager=self.manager)
     out = Tensor(self.func.forward(self, weight, bias,  in_channels, out_channels, stride, padding), _prev=(self, weight, bias))
     out.prev_op = OPS.Conv2D
     out._backward = lambda: self.func.backward(out.grad)
@@ -228,7 +282,7 @@ class Tensor():
   def maxpool2d(self, filter=(2,2), stride=1):
     # TODO: assert dimensionality
     # TODO: double-check and test
-    channels, height, width = self.data.shape
+    channels, height, width = self.shape
     out_height = (height - filter[0]) // stride + 1
     out_width = (width - filter[1]) // stride + 1
     out_img = np.zeros((channels, out_height, out_width))
@@ -267,9 +321,9 @@ class Tensor():
     # TODO: double-check if stride is used correctly
 
     # pooling out_dim = (((input_dim - filter_dim) / stride) + 1) * channels
-    out_img = np.ones(((self.data.shape[0] - filter[0] // stride) + 1, (self.data.shape[1] - filter[1] // stride) + 1))
-    for i in range(0, self.data.shape[0]-filter[0], filter[0]):
-      for j in range(0, self.data.shape[1]-filter[0], filter[1]):
+    out_img = np.ones(((self.shape[0] - filter[0] // stride) + 1, (self.shape[1] - filter[1] // stride) + 1))
+    for i in range(0, self.shape[0]-filter[0], filter[0]):
+      for j in range(0, self.shape[1]-filter[0], filter[1]):
         tmp = []
         for n in range(filter[0]):
           for m in range(filter[1]):

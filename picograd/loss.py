@@ -16,7 +16,7 @@ class MSELoss(Loss):
 # z: network output, y: ground truth
 # Mean Squared Error Loss
 def MSELoss(z: Tensor, y: Tensor) -> Tensor:
-  assert (n := z.shape[0]) == y.shape[0], f"Z Tensor doesn't have the same shape as ground-truth Y: z.shape={str(z.data.shape)}, y.shape={str(y.data.shape)}"
+  assert (n := z.shape[0]) == y.shape[0], f"Z Tensor doesn't have the same shape as ground-truth Y: z.shape={str(z.shape)}, y.shape={str(y.shape)}"
   loss_val = 1/n * np.sum((z.data-y.data) ** 2)
   t = Tensor(loss_val, name="mseloss_out",  _prev=(z,))
   t._prev.append(z)
@@ -26,7 +26,7 @@ def MSELoss(z: Tensor, y: Tensor) -> Tensor:
 
 # Mean Absolute Error Loss
 def MAELoss(z: Tensor, y: Tensor) -> Tensor:
-  assert (n := z.shape[0]) == y.shape[0], f"Z Tensor doesn't have the same shape as ground-truth Y: z.shape={str(z.data.shape)}, y.shape={str(y.data.shape)}"
+  assert (n := z.shape[0]) == y.shape[0], f"Z Tensor doesn't have the same shape as ground-truth Y: z.shape={str(z.shape)}, y.shape={str(y.shape)}"
   loss_val = 1/n * np.sum(np.abs(z.data-y.data))
   t = Tensor(loss_val, name="maeloss_out", _prev=(z,))
   t._prev.append(z)
@@ -37,8 +37,8 @@ def MAELoss(z: Tensor, y: Tensor) -> Tensor:
 # Binary Cross Entropy Loss
 def BCELoss(z: Tensor, y: Tensor) -> Tensor:
   # FIXME: assert all dimensions
-  assert (n := z.shape[0]) == y.shape[0], f"Z Tensor doesn't have the same shape as ground-truth Y: z.shape={str(z.data.shape)}, y.shape={str(y.data.shape)}"
-  samples = z.data.shape[0]
+  assert (n := z.shape[0]) == y.shape[0], f"Z Tensor doesn't have the same shape as ground-truth Y: z.shape={str(z.shape)}, y.shape={str(y.shape)}"
+  samples = z.shape[0]
   y_pred_clipped = np.clip(z.data, 1e-7, 1 - 1e-7)
 
   term_0 = (1 - y.data) * np.log(1 - y_pred_clipped + 1e-7)
@@ -53,7 +53,7 @@ def BCELoss(z: Tensor, y: Tensor) -> Tensor:
 def CrossEntropyLoss(z: Tensor, y: Tensor) -> Tensor:
   # FIXME: does that just mitigate the problem?
   if len(z.shape) == 3 and z.shape[0] == 1: z = Tensor(z.data[0])
-  assert (n := z.shape[0]) == y.shape[0], f"Z Tensor doesn't have the same shape as ground-truth Y: z.shape={str(z.data.shape)}, y.shape={str(y.data.shape)}"
+  assert (n := z.shape[0]) == y.shape[0], f"Z Tensor doesn't have the same shape as ground-truth Y: z.shape={str(z.shape)}, y.shape={str(y.shape)}"
   assert len(y.shape) > 1 and len(z.shape) > 1, "Dimensionality of tensor and ground-truth must be > 1"
 
   y_pred_clipped = np.clip(z.data, 1e-7, 1 - 1e-7)

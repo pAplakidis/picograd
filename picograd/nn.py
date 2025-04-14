@@ -2,7 +2,7 @@
 import numpy as np
 from enum import Enum, auto
 from picograd.tensor import Tensor
-from picograd.backend.ops import *
+from picograd.backend.cpu.ops import *
 
 class LayerType(Enum):
   NOLAYER = auto()
