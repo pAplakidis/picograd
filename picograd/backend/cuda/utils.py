@@ -51,3 +51,7 @@ def prep_kargs(
     ctypes.c_int(dim2),
     ctypes.c_int(dim3)
   ]
+
+def compute_gflops(num_elements: int, milliseconds: int):
+  seconds = milliseconds / 1000.0
+  return num_elements / (seconds * 1e9)

@@ -15,6 +15,8 @@ DEBUG = int(os.getenv("DEBUG", 0))
 
 
 # TODO: use unittest
+# FIXME: mul when shape = (100,)
+# FIXME: mul segfaults undeterministically
 if __name__ == "__main__":
   device = Device(Devices.CUDA, debug=DEBUG)
   print("[*] Using device", device.name)

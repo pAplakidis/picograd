@@ -1,9 +1,10 @@
 import os
 import ctypes
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 
 from picograd.print_utils import *
 from .error import CUDA_ERRORS
+from .utils import *
 from .types import *
 
 try:
@@ -131,13 +132,22 @@ class CudaDevice:
       kfunc: CUfunction,
       grid: Tuple[int, int, int],
       block: Tuple[int, int, int],
-      args: List[ctypes.c_void_p]
+      args: List[ctypes.c_void_p],
+      n_flops: Optional[int] = None
     ):
     """Launches a CUDA kernel with the given grid and block dimensions and arguments."""
 
     if self.debug >= 1:
       print(f"{color_green("[Cuda]")} Launching kernel {kfunc} with grid {grid} and block {block}")
 
+    # event-based profiling
+    start_event = ctypes.c_void_p()
+    end_event = ctypes.c_void_p()
+    self.check_cuda(cuda.cuEventCreate(ctypes.byref(start_event), 0), "cuEventCreate")
+    self.check_cuda(cuda.cuEventCreate(ctypes.byref(end_event), 0), "cuEventCreate")
+    self.check_cuda(cuda.cuEventRecord(start_event, 0), "cuEventRecord (start)")
+
+    # launch kernel
     arg_buff = (ctypes.c_void_p * len(args))(*[ctypes.addressof(a) for a in args])
     self.check_cuda(cuda.cuLaunchKernel(
       kfunc,
@@ -146,3 +156,19 @@ class CudaDevice:
       0, 0,                           # shared mem and stream
       arg_buff, 0
     ), "cuLaunchKernel")
+
+    # profiling results
+    self.check_cuda(cuda.cuEventRecord(end_event, 0), "cuEventRecord (end)")
+    self.check_cuda(cuda.cuEventSynchronize(end_event), "cuEventSynchronize")
+    elapsed_ms = ctypes.c_float()
+    self.check_cuda(cuda.cuEventElapsedTime(ctypes.byref(elapsed_ms), start_event, end_event), "cuEventElapsedTime")
+
+    # compute GFLOPs
+    if n_flops is not None:
+      elapsed_s = elapsed_ms.value / 1000.0
+      gflops = n_flops / (elapsed_s * 1e9)
+      if self.debug >= 2:
+        print(f"{color_yellow("[Cuda-Perf]")} Kernel time: {elapsed_ms.value:.3f} ms — GFLOPs: {gflops:.2f}")
+    else:
+      if self.debug >= 2:
+        print(f"{color_yellow('[Cuda-Perf]')} Kernel time: {elapsed_ms.value:.3f} ms")

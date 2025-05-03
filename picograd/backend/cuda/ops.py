@@ -61,8 +61,9 @@ class BinaryOps:
     )
 
     # Kernel launch and copy result back to host
+    n_flops = dim1 * dim2 * dim3
     args = prep_kargs(a.device_data, b.device_data, d_C, dim1, dim2, dim3)
-    a.device.manager.launch_kernel(a.device.manager.kfunc, grid, block_size, args)
+    a.device.manager.launch_kernel(a.device.manager.kfunc, grid, block_size, args, n_flops)
     a.device.manager.memcpy_dtoh(C_flat.ctypes.data, d_C, C_flat.nbytes)
 
     # TODO: these belong in tensor.to(cpu)
@@ -94,8 +95,9 @@ class BinaryOps:
     )
 
     # Kernel launch and copy result back to host
+    n_flops = dim1 * dim2 * dim3
     args = prep_kargs(a.device_data, b.device_data, d_C, dim1, dim2, dim3)
-    a.device.manager.launch_kernel(a.device.manager.kfunc, grid, block_size, args)
+    a.device.manager.launch_kernel(a.device.manager.kfunc, grid, block_size, args, n_flops)
     a.device.manager.memcpy_dtoh(C_flat.ctypes.data, d_C, C_flat.nbytes)
 
     # TODO: these belong in tensor.to(cpu)
