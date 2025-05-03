@@ -1,6 +1,6 @@
 from enum import Enum, auto
 
-class Device(Enum):
+class Devices(Enum):
   CPU = auto()
   CUDA = auto()
 
@@ -16,3 +16,21 @@ class Device(Enum):
   # XLA_JIT = auto()
 
   def __str__(self): return self.name
+
+class Device:
+  def __init__(self, name: Devices, debug: int = 0):
+    self.name = name
+    self.debug = debug
+
+    if name == Devices.CPU:
+      self.manager = None
+    elif name == Devices.CUDA:
+      from picograd.backend.cuda.cuda import CudaDevice
+      self.manager = CudaDevice(debug=debug)
+    else:
+      raise NotImplementedError(f"Device {name} not implemented")
+
+  def __str__(self): return str(self.name)
+
+  def __repr__(self): return f"Device({self.name})"
+

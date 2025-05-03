@@ -71,16 +71,21 @@ class CudaDevice:
     program = nvrtcProgram()
     nvrtc.nvrtcCreateProgram.restype = nvrtcResult
     nvrtc.nvrtcCreateProgram(
-                ctypes.byref(program),
-                ctypes.c_char_p(src.encode()),
-                ctypes.c_char_p(f"{kernel_name.decode()}.cu".encode()),
-                0,
-                None,
-                None
-            )
+              ctypes.byref(program),
+              ctypes.c_char_p(src.encode()),
+              ctypes.c_char_p(f"{kernel_name.decode()}.cu".encode()),
+              0,
+              None,
+              None
+    )
 
     # compile to PTX
-    opts = [b"--fmad=false", b"--gpu-architecture=compute_75"]
+    opts = [
+      b"--fmad=false",
+      b"--gpu-architecture=compute_75"
+      # b"--device-debug",
+      # b"--generate-line-info"
+    ]
     # nvrtc.nvrtcCompileProgram(program, len(opts), (ctypes.c_char_p * len(opts))(*opts))
     compile_result = nvrtc.nvrtcCompileProgram(program, len(opts), (ctypes.c_char_p * len(opts))(*opts))
     self.check_nvrtc(compile_result, "nvrtcCompileProgram")

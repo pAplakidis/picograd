@@ -9,7 +9,7 @@ from picograd.print_utils import *
 from picograd.backend.function import *
 from picograd.backend.cpu.ops import *
 from picograd.util import *
-from picograd.backend.device import Device
+from picograd.backend.device import Devices, Device
 
 from picograd.backend.cuda.utils import tensor_to_cuda, free_device_tensor
 
@@ -26,17 +26,15 @@ VERBOSE = int(os.getenv("VERBOSE", 0))
 
 
 class Tensor:
-  _dev_manager = None  # shared accross all tensors
-
   def __init__(
       self,
       data: np.array,
       name: str = "t",
       _prev: set = (),
       requires_grad: bool = True,
-      device: Optional[Device] = Device.CPU
+      device: Optional[Device] = Device(Devices.CPU, debug=DEBUG),
     ):
-    self.device= device
+    self.device= list(_prev)[0].device if len(list(_prev)) > 0 else device
     self._ctx = None  # TODO: use context like pytorch
 
     self.name = name
@@ -55,7 +53,7 @@ class Tensor:
     self.w, self.b = None, None
 
     self.device_data = None
-    if device != Device.CPU: self.to(device)
+    if device.name != Devices.CPU: self.to(device)
 
   def get_device_memory(self):
     """Returns the device memory of a tensor."""
@@ -66,7 +64,7 @@ class Tensor:
 
     size = self.data.nbytes
     host_buffer = np.empty(self.shape, dtype=self.data.dtype) # Create a host buffer to copy the data back to
-    self.manager.memcpy_dtoh(
+    self.device.manager.memcpy_dtoh(
         host_buffer.ctypes.data,
         self.device_data,
         size
@@ -78,20 +76,19 @@ class Tensor:
 
     self.device = device
 
-    if device == Device.CPU:
-      return  # TODO: CUDA to CPU + free from CUDA
-    elif device == Device.CUDA:
-      if not Tensor._dev_manager: Tensor._dev_manager = CudaDevice(debug=self.debug)
-      self.manager = Tensor._dev_manager
-      self.device_data = tensor_to_cuda(self, self.manager) # TODO: if result of CUDA op, no need to reallocate memory
+    # TODO: if device == CPU, free device memory
+    if device.name == Devices.CUDA:
+      # TODO: if result of CUDA op, no need to reallocate memory (op should return d_C as well)
+      self.data = self.data.astype(np.float32)
+      self.device_data = tensor_to_cuda(self)
 
     return self
 
   def __repr__(self):
     if self.verbose:
-      return f"{color_yellow("Tensor")} (name={self.name}, shape={str(self.shape)}, device={str(self.device)}, data={str(self.data)}, grad={self.grad}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
+      return f"{color_yellow("Tensor")} (name={self.name}, shape={str(self.shape)}, device={str(self.device.name)}, data=\n{str(self.data)}\n, grad={self.grad}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
     else:
-      return f"{color_yellow("Tensor")} (name={self.name}, shape={str(self.shape)}, device={str(self.device)}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
+      return f"{color_yellow("Tensor")} (name={self.name}, shape={str(self.shape)}, device={str(self.device.name)}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
     
   # TODO: if CUDA, free
   def __del__(self):
@@ -107,14 +104,14 @@ class Tensor:
 
   # FIXME: pass self.manager
   def __add__(self, other):
-    self.func = Add(device=self.device, manager=self.manager)
+    self.func = Add(self.device.name)
     out = Tensor(self.func.forward(self, other), _prev=(self, other))
     out.prev_op = OPS.ADD
     out._backward = lambda: self.func.backward(out.grad)
     return out
 
   def __mul__(self, other):
-    self.func = Mul(device=self.device, manager=self.manager)
+    self.func = Mul(self.device.name)
     out = Tensor(self.func.forward(self, other), _prev=(self, other))
     out.prev_op = OPS.MUL
     out._backward = lambda: self.func.backward(out.grad)
@@ -140,7 +137,7 @@ class Tensor:
     return out
 
   def dot(self, other):
-    self.func = Dot(device=self.device, manager=self.manager)
+    self.func = Dot(self.device.name)
     out = Tensor(self.func.forward(self, other), _prev=(self, other))
     out.prev_op = OPS.DOT
     out._backward = lambda: self.func.backward(out.grad)
@@ -267,7 +264,7 @@ class Tensor:
     return x + bias if bias is not None else x
 
   def conv2d(self, weight: "Tensor", bias: "Tensor", in_channels: int, out_channels: int, stride: int = 1, padding: int = 0, debug=False):
-    self.func = Conv2D(device=self.device, manager=self.manager)
+    self.func = Conv2D()
     out = Tensor(self.func.forward(self, weight, bias,  in_channels, out_channels, stride, padding), _prev=(self, weight, bias))
     out.prev_op = OPS.Conv2D
     out._backward = lambda: self.func.backward(out.grad)

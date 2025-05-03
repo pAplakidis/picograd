@@ -36,22 +36,21 @@ class OPS(Enum):
 
 
 class BinaryOps:
-  # FIXME: pass tensors (?)
   @staticmethod
-  def add(a: "Tensor", b: "Tensor", manager: CudaDevice, block_size: Tuple = (8, 8, 8)) -> np.ndarray:
+  def add(a: "Tensor", b: "Tensor", block_size: Tuple = (8, 8, 8)) -> np.ndarray: # type: ignore
     """Add two homogeneous tensors of any dimension (1D, 2D, 3D) using CUDA."""
     assert a.shape == b.shape, "Tensors must have the same shape"
 
     # TODO: check if kernel is already loaded (use manager.kernels dict)
-    kernel_code = manager.load_kernel("add.cu")
-    manager.compile_kernel(kernel_code, b"add_kernel")
+    kernel_code = a.device.manager.load_kernel("add.cu")
+    a.device.manager.compile_kernel(kernel_code, b"add_kernel")
 
     dims = a.shape
     padded_dims = dims + (1,) * (3 - len(dims))  # Pad to 3D
     dim1, dim2, dim3 = padded_dims[:3]
 
     C_flat = np.empty_like(a.data.ravel())
-    d_C = allocate_device_memory(manager, C_flat)
+    d_C = allocate_device_memory(a.device.manager, C_flat)
 
     # TODO: double check and study this
     # Define grid and block sizes
@@ -63,19 +62,48 @@ class BinaryOps:
 
     # Kernel launch and copy result back to host
     args = prep_kargs(a.device_data, b.device_data, d_C, dim1, dim2, dim3)
-    manager.launch_kernel(manager.kfunc, grid, block_size, args)
+    a.device.manager.launch_kernel(a.device.manager.kfunc, grid, block_size, args)
+    a.device.manager.memcpy_dtoh(C_flat.ctypes.data, d_C, C_flat.nbytes)
 
     # TODO: these belong in tensor.to(cpu)
-    # manager.memcpy_dtoh(C_flat.ctypes.data, d_C, C_flat.nbytes)
     # free_device_tensor(manager, a.device_data)
     # free_device_tensor(manager, b.device_data)
     # free_device_tensor(manager, d_C)
 
-    # FIXME: wrong result (as if it did 0 + b)
     return C_flat.reshape(dims)
 
   @staticmethod
-  def mul(a: "Tensor", b: "Tensor") -> np.ndarray: raise NotImplementedError("BinaryOps.mul is not implemented yet")
+  def mul(a: "Tensor", b: "Tensor", block_size: Tuple = (8, 8, 8)) -> np.ndarray:
+    assert a.shape == b.shape, "Tensors must have the same shape"
+
+    kernel_code = a.device.manager.load_kernel("mul.cu")
+    a.device.manager.compile_kernel(kernel_code, b"mul_kernel")
+
+    dims = a.shape
+    padded_dims = dims + (1,) * (3 - len(dims))  # Pad to 3D
+    dim1, dim2, dim3 = padded_dims[:3]
+
+    C_flat = np.empty_like(a.data.ravel())
+    d_C = allocate_device_memory(a.device.manager, C_flat)
+
+    # Define grid and block sizes
+    grid = (
+      (dim3 + block_size[0] - 1) // block_size[0],
+      (dim2 + block_size[1] - 1) // block_size[1],
+      (dim1 + block_size[2] - 1) // block_size[2],
+    )
+
+    # Kernel launch and copy result back to host
+    args = prep_kargs(a.device_data, b.device_data, d_C, dim1, dim2, dim3)
+    a.device.manager.launch_kernel(a.device.manager.kfunc, grid, block_size, args)
+    a.device.manager.memcpy_dtoh(C_flat.ctypes.data, d_C, C_flat.nbytes)
+
+    # TODO: these belong in tensor.to(cpu)
+    # free_device_tensor(manager, a.device_data)
+    # free_device_tensor(manager, b.device_data)
+    # free_device_tensor(manager, d_C)
+
+    return C_flat.reshape(dims)
 
   @staticmethod
   def dot(a: "Tensor", b: "Tensor") -> np.ndarray: raise NotImplementedError("BinaryOps.dot is not implemented yet")

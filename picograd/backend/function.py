@@ -1,16 +1,14 @@
 import importlib
 import numpy as np
 
-from .device import Device
-from .cuda.cuda import CudaDevice
+from .device import Devices
 
 
 class Function:
-  def __init__(self, device: Device = Device.CPU, manager: CudaDevice = None):
+  def __init__(self, device: Devices = Devices.CPU):
     self.device = device
-    self. manager = manager
 
-    if device == Device.CPU:
+    if device == Devices.CPU:
       module_path = "picograd.backend.cpu.ops"
     else:
       module_path = "picograd.backend.cuda.ops"
@@ -39,7 +37,7 @@ class Function:
 class Add(Function):
   def forward(self, a: "Tensor", b: "Tensor") -> "Tensor":
     self.a, self.b = a, b
-    return self.BinaryOps.add(a, b, self.manager)
+    return self.BinaryOps.add(a, b)
 
   def backward(self, grad_out: "Tensor") -> None:
     if self.a.requires_grad: self.a.grad += grad_out

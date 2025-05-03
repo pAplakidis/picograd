@@ -23,13 +23,13 @@ def free_device_tensor(manager: CudaDevice, d_T: ctypes.c_void_p):
   """Free tensor from device memory."""
   manager.cuda_free(d_T)
 
-def tensor_to_cuda(tensor: "Tensor", manager: CudaDevice) -> "Tensor":
+def tensor_to_cuda(tensor: "Tensor") -> "Tensor":
   start_time = time.time()
   T_flat = flatten_tensor(tensor.data)
-  d_T = allocate_device_memory(manager, T_flat)
-  copy_data_to_device(manager, d_T, T_flat)
+  d_T = allocate_device_memory(tensor.device.manager, T_flat)
+  copy_data_to_device(tensor.device.manager, d_T, T_flat)
 
-  if manager.debug == 2:
+  if tensor.device.manager.debug == 2:
     print(f"{color_green("[Cuda]")} Tensor data copied to device - {tensor.data.nbytes} bytes - {(time.time() - start_time) * 1000:.4f} ms")
 
   return d_T

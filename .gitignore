@@ -1,4 +1,5 @@
 .*.swp
+.vscode/
 *.so
 __pycache__/
 graphs/

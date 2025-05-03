@@ -2,7 +2,6 @@ import numpy as np
 from enum import Enum, auto
 
 from picograd.util import *
-from picograd.backend.device import Device
 
 
 class OPS(Enum):
@@ -34,22 +33,21 @@ class OPS(Enum):
   def __str__(self): return self.name
 
 
-# FIXME: add dummy manager to match cuda ops interface
 # TODO: create @jit decorator that uses jit.compile() to execute the op
 class BinaryOps:
   @staticmethod
-  def add(a: "Tensor", b: "Tensor", manager: Device = None) -> np.ndarray: return a.data + b.data
+  def add(a: "Tensor", b: "Tensor") -> np.ndarray: return a.data + b.data
 
   @staticmethod
-  def mul(a: "Tensor", b: "Tensor", manager: Device = None) -> np.ndarray: return a.data * b.data
+  def mul(a: "Tensor", b: "Tensor") -> np.ndarray: return a.data * b.data
 
   @staticmethod
-  def dot(a: "Tensor", b: "Tensor", manager: Device = None) -> np.ndarray: return a.data @ b.data
+  def dot(a: "Tensor", b: "Tensor") -> np.ndarray: return a.data @ b.data
 
   @staticmethod
   def conv2d(A: "Tensor", W: "Tensor", B: "Tensor",
              in_channels: int, out_channels: int, stride: int = 1, padding: int = 0,
-             debug=False, manager: Device = None) -> np.ndarray:
+             debug=False) -> np.ndarray:
     a = A.data
     w = W.data
     b = B.data
@@ -78,7 +76,7 @@ class BinaryOps:
 
   @staticmethod
   def conv2d_backward(a: "Tensor", grad_out: np.ndarray, w: "Tensor", b: "Tensor",
-                      in_channels: int, out_channels: int, stride: int = 1, padding: int = 0, manager: Device = None):
+                      in_channels: int, out_channels: int, stride: int = 1, padding: int = 0):
     a = a.data
     w = w.data
     b = b.data
