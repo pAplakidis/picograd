@@ -6,6 +6,8 @@ from typing import List
 from picograd.print_utils import color_green
 from .cuda import CudaDevice
 
+TILE_SIZE = 16
+
 def flatten_tensor(T: np.ndarray) -> np.ndarray:
   """Flatten tensor while preserving memory order."""
   return T.ravel()

@@ -108,7 +108,33 @@ class BinaryOps:
     return C_flat.reshape(dims)
 
   @staticmethod
-  def dot(a: "Tensor", b: "Tensor") -> np.ndarray: raise NotImplementedError("BinaryOps.dot is not implemented yet")
+  def dot(a: "Tensor", b: "Tensor", block_size: Tuple = (8, 8, 1)) -> np.ndarray:
+    """Matrix multiplication using CUDA."""
+    assert a.shape[1] == b.shape[0], "Inner dimensions must match"
+
+    kernel_code = a.device.manager.load_kernel("matmul.cu")
+    a.device.manager.compile_kernel(kernel_code, b"matmul_tiled_kernel")
+
+    M, K = a.shape
+    _, N = b.shape[0], b.shape[1]
+
+    C = np.zeros((M, N), dtype=np.float32)
+    d_C = allocate_device_memory(a.device.manager, C)
+
+    grid = (
+      (N + TILE_SIZE - 1) // TILE_SIZE,
+      (M + TILE_SIZE - 1) // TILE_SIZE,
+      1,
+    )
+    block_size = (TILE_SIZE, TILE_SIZE, 1)
+
+    num_flops = 2 * M * N * K
+    args = prep_kargs(a.device_data, b.device_data, d_C, M, N, K)
+    a.device.manager.launch_kernel(a.device.manager.kfunc, grid, block_size, args, num_flops)
+    a.device.manager.memcpy_dtoh(C.ctypes.data, d_C, C.nbytes)
+    # TODO: free device tensors (?)
+
+    return C
 
   @staticmethod
   def conv2d(a: "Tensor", w: "Tensor", b:"Tensor",
