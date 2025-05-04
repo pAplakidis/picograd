@@ -71,7 +71,7 @@ class BinaryOps:
     # free_device_tensor(manager, b.device_data)
     # free_device_tensor(manager, d_C)
 
-    return C_flat.reshape(dims)
+    return C_flat.reshape(dims), d_C
 
   @staticmethod
   def mul(a: "Tensor", b: "Tensor", block_size: Tuple = (8, 8, 8)) -> np.ndarray:
@@ -105,7 +105,7 @@ class BinaryOps:
     # free_device_tensor(manager, b.device_data)
     # free_device_tensor(manager, d_C)
 
-    return C_flat.reshape(dims)
+    return C_flat.reshape(dims), d_C
 
   @staticmethod
   def dot(a: "Tensor", b: "Tensor", block_size: Tuple = (8, 8, 1)) -> np.ndarray:
@@ -134,7 +134,7 @@ class BinaryOps:
     a.device.manager.memcpy_dtoh(C.ctypes.data, d_C, C.nbytes)
     # TODO: free device tensors (?)
 
-    return C
+    return C, d_C
 
   @staticmethod
   def conv2d(a: "Tensor", w: "Tensor", b:"Tensor",
@@ -152,31 +152,31 @@ class UnaryOps:
   def relu(a: "Tensor") -> np.ndarray: return np.maximum(a, np.zeros_like(a))
   
   @staticmethod
-  def sigmoid(a: "Tensor") -> np.ndarray: pass
+  def sigmoid(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
   
   @staticmethod
-  def tanh(a: "Tensor") -> np.ndarray: pass
+  def tanh(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
   
   @staticmethod
-  def abs(a: "Tensor") -> np.ndarray: pass
+  def abs(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
   
   @staticmethod
-  def neg(a: "Tensor") -> np.ndarray: pass
+  def neg(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
   
   @staticmethod
-  def sqrt(a: "Tensor") -> np.ndarray: pass
+  def sqrt(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
   
   @staticmethod
-  def exp(a: "Tensor") -> np.ndarray: pass
+  def exp(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
   
   @staticmethod
-  def log(a: "Tensor") -> np.ndarray: pass
+  def log(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
   
   @staticmethod
-  def normalize(a: "Tensor") -> np.ndarray: pass
+  def normalize(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
   
   @staticmethod
-  def softmax(a: "Tensor") -> np.ndarray: pass
+  def softmax(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
   
   @staticmethod
-  def batchnorm(a: "Tensor") -> np.ndarray: pass
+  def batchnorm(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")

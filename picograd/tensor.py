@@ -33,6 +33,7 @@ class Tensor:
       _prev: set = (),
       requires_grad: bool = True,
       device: Optional[Device] = Device(Devices.CPU, debug=DEBUG),
+      device_data: Optional[ctypes.c_void_p] = None,
     ):
     self.device= list(_prev)[0].device if len(list(_prev)) > 0 else device
     self._ctx = None  # TODO: use context like pytorch
@@ -52,7 +53,7 @@ class Tensor:
     self.layer = None
     self.w, self.b = None, None
 
-    self.device_data = None
+    self.device_data = device_data
     if device.name != Devices.CPU: self.to(device)
 
   def get_device_memory(self):
@@ -81,6 +82,11 @@ class Tensor:
       # TODO: if result of CUDA op, no need to reallocate memory (op should return d_C as well)
       self.data = self.data.astype(np.float32)
       self.device_data = tensor_to_cuda(self)
+    elif device.name == Devices.CPU:
+      # self.data = self.get_device_memory()
+      if self.device_data is not None:
+        free_device_tensor(self.device.manager, self.device_data)
+        self.device_data = None
 
     return self
 
@@ -102,21 +108,40 @@ class Tensor:
 
   def __equal__(self, other): return np.equal(self.data, other.data)
 
-  # FIXME: pass self.manager
   def __add__(self, other):
     self.func = Add(self.device.name)
-    out = Tensor(self.func.forward(self, other), _prev=(self, other))
+    if self.device.name == Devices.CPU:
+      out = Tensor(self.func.forward(self, other), _prev=(self, other))
+    else:
+      res, device_res = self.func.forward(self, other)
+      out = Tensor(res, _prev=(self, other), device_data=device_res)
     out.prev_op = OPS.ADD
     out._backward = lambda: self.func.backward(out.grad)
     return out
 
   def __mul__(self, other):
     self.func = Mul(self.device.name)
-    out = Tensor(self.func.forward(self, other), _prev=(self, other))
+    if self.device.name == Devices.CPU:
+      out = Tensor(self.func.forward(self, other), _prev=(self, other))
+    else:
+      res, device_res = self.func.forward(self, other)
+      out = Tensor(res, _prev=(self, other), device_data=device_res)
     out.prev_op = OPS.MUL
     out._backward = lambda: self.func.backward(out.grad)
     return out
 
+  def dot(self, other):
+    self.func = Dot(self.device.name)
+    if self.device.name == Devices.CPU:
+      out = Tensor(self.func.forward(self, other), _prev=(self, other))
+    else:
+      res, device_res = self.func.forward(self, other)
+      out = Tensor(res, _prev=(self, other), device_data=device_res)
+    out.prev_op = OPS.DOT
+    out._backward = lambda: self.func.backward(out.grad)
+    return out
+
+  # TODO: implement these in ops (cpu and cuda)
   def __pow__(self, other):
     assert isinstance(other, (int, float)), "only supporting int/float powers for now"
     out = Tensor(self.data**other, _prev=(self,))
@@ -134,13 +159,6 @@ class Tensor:
     def _backward():
       self.grad += (out.data > 0) * out.grad
     out._backward = _backward
-    return out
-
-  def dot(self, other):
-    self.func = Dot(self.device.name)
-    out = Tensor(self.func.forward(self, other), _prev=(self, other))
-    out.prev_op = OPS.DOT
-    out._backward = lambda: self.func.backward(out.grad)
     return out
 
   def __neg__(self): return self * Tensor(np.array(-1))
