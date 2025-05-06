@@ -3,7 +3,7 @@ import ctypes
 import numpy as np
 from typing import List
 
-from picograd.print_utils import color_green
+from picograd.print_utils import *
 from .cuda import CudaDevice
 
 TILE_SIZE = 16
@@ -31,8 +31,8 @@ def tensor_to_cuda(tensor: "Tensor") -> "Tensor":
   d_T = allocate_device_memory(tensor.device.manager, T_flat)
   copy_data_to_device(tensor.device.manager, d_T, T_flat)
 
-  if tensor.device.manager.debug == 2:
-    print(f"{color_green("[Cuda]")} Tensor data copied to device - {tensor.data.nbytes} bytes - {(time.time() - start_time) * 1000:.4f} ms")
+  if tensor.device.manager.debug >= 1:
+    print(f"{color_green("[Cuda]")} Tensor data copied to device - {color_red(f"{tensor.data.nbytes} bytes")} - {color_red(f"{(time.time() - start_time) * 1000:.4f} ms")}")
 
   return d_T
 

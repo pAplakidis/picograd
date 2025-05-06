@@ -21,10 +21,19 @@ class CudaDevice:
     self.debug = debug  # debug levels: 0: no debug, 1: basic debug, 2: kernel level
     self.ctx = CUcontext()
     self.module = None
+    self.kernels = {}
     self.init_cuda()
+
+    self.start_event = CUevent()
+    self.end_event = CUevent()
+    self.check_cuda(cuda.cuEventCreate(ctypes.byref(self.start_event), 0), "cuEventCreate (start)")
+    self.check_cuda(cuda.cuEventCreate(ctypes.byref(self.end_event), 0), "cuEventCreate (end)")
 
   # FIXME: doesn't work with tensors yet: RuntimeError: [CUDA ERROR] cuCtxDestroy failed: CUDA_ERROR_INVALID_SOURCE (code 201)
   def __del__(self):
+    self.check_cuda(cuda.cuEventDestroy(self.start_event), "cuEventDestroy (start)")
+    self.check_cuda(cuda.cuEventDestroy(self.end_event), "cuEventDestroy (end)")
+
     if self.module: self.check_cuda(cuda.cuModuleUnload(self.module), "cuModuleUnload")
     self.check_cuda(cuda.cuCtxDestroy(self.ctx), "cuCtxDestroy")
 
@@ -57,7 +66,7 @@ class CudaDevice:
   def  init_cuda(self):
     """Gets CUDA device and context, then initializes CUDA driver API."""
 
-    if self.debug >= 1:
+    if self.debug >= 2:
       print(f"{color_green("[Cuda]")} Initializing...")
 
     self.check_cuda(cuda.cuInit(0), "cuInit")
@@ -66,8 +75,13 @@ class CudaDevice:
     self.check_cuda(cuda.cuCtxCreate(ctypes.byref(self.ctx), 0, device), "cuCtxCreate")
 
   def compile_kernel(self, src: str, kernel_name: str):
-    if self.debug >= 1:
-      print(f"{color_green("[Cuda]")} Compiling kernel {kernel_name}")
+    if kernel_name in self.kernels:
+      if self.debug >= 2:
+        print(f"{color_green('[Cuda]')} Fetching compiled kernel {color_green(kernel_name)}.")
+      return self.kernels[kernel_name]
+
+    if self.debug >= 2:
+      print(f"{color_green("[Cuda]")} Compiling kernel {color_green(kernel_name)}")
 
     program = nvrtcProgram()
     nvrtc.nvrtcCreateProgram.restype = nvrtcResult
@@ -103,10 +117,10 @@ class CudaDevice:
     nvrtc.nvrtcDestroyProgram(ctypes.byref(program))
 
     # get kernel function
-    self.kfunc = CUfunction()
-    self.check_cuda(cuda.cuModuleGetFunction(ctypes.byref(self.kfunc), self.module, ctypes.c_char_p(kernel_name)), "cuModuleGetFunction")
-    if self.debug >= 1:
-      print(f"{color_green("[Cuda]")} Kernel function pointer:", self.kfunc)
+    kfunc = CUfunction()
+    self.check_cuda(cuda.cuModuleGetFunction(ctypes.byref(kfunc), self.module, ctypes.c_char_p(kernel_name)), "cuModuleGetFunction")
+    self.kernels[kernel_name] = kfunc
+    return kfunc
 
   def cuda_malloc(self, size: int) -> CUdeviceptr:
     """Allocates device memory and returns a pointer to it."""
@@ -138,14 +152,11 @@ class CudaDevice:
     """Launches a CUDA kernel with the given grid and block dimensions and arguments."""
 
     if self.debug >= 1:
-      print(f"{color_green("[Cuda]")} Launching kernel {kfunc} with grid {grid} and block {block}")
+      print(f"{color_green("[Cuda]")} Launching kernel {color_yellow(kfunc)} with grid {color_yellow(grid)} and block {color_yellow(block)}")
 
+    # FIXME: start_event and end_event cause Segmentation fault (undeterministically)
     # event-based profiling
-    start_event = ctypes.c_void_p()
-    end_event = ctypes.c_void_p()
-    self.check_cuda(cuda.cuEventCreate(ctypes.byref(start_event), 0), "cuEventCreate")
-    self.check_cuda(cuda.cuEventCreate(ctypes.byref(end_event), 0), "cuEventCreate")
-    self.check_cuda(cuda.cuEventRecord(start_event, 0), "cuEventRecord (start)")
+    # self.check_cuda(cuda.cuEventRecord(self.start_event, 0), "cuEventRecord (start)")
 
     # launch kernel
     arg_buff = (ctypes.c_void_p * len(args))(*[ctypes.addressof(a) for a in args])
@@ -157,18 +168,18 @@ class CudaDevice:
       arg_buff, 0
     ), "cuLaunchKernel")
 
-    # profiling results
-    self.check_cuda(cuda.cuEventRecord(end_event, 0), "cuEventRecord (end)")
-    self.check_cuda(cuda.cuEventSynchronize(end_event), "cuEventSynchronize")
-    elapsed_ms = ctypes.c_float()
-    self.check_cuda(cuda.cuEventElapsedTime(ctypes.byref(elapsed_ms), start_event, end_event), "cuEventElapsedTime")
+    # # profiling results
+    # self.check_cuda(cuda.cuEventRecord(self.end_event, 0), "cuEventRecord (end)")
+    # self.check_cuda(cuda.cuEventSynchronize(self.end_event), "cuEventSynchronize")
+    # elapsed_ms = ctypes.c_float()
+    # self.check_cuda(cuda.cuEventElapsedTime(ctypes.byref(elapsed_ms), self.start_event, self.end_event), "cuEventElapsedTime")
 
-    # compute GFLOPs
-    if n_flops is not None:
-      elapsed_s = elapsed_ms.value / 1000.0
-      gflops = n_flops / (elapsed_s * 1e9)
-      if self.debug >= 2:
-        print(f"{color_yellow("[Cuda-Perf]")} Kernel time: {elapsed_ms.value:.3f} ms — GFLOPs: {gflops:.2f}")
-    else:
-      if self.debug >= 2:
-        print(f"{color_yellow('[Cuda-Perf]')} Kernel time: {elapsed_ms.value:.3f} ms")
+    # # compute GFLOPs
+    # if n_flops is not None:
+    #   elapsed_s = elapsed_ms.value / 1000.0
+    #   gflops = n_flops / (elapsed_s * 1e9)
+    #   if self.debug >= 1:
+    #     print(f"{color_yellow("[Cuda-Perf]")} Kernel time: {color_red(f"{elapsed_ms.value:.3f} ms — GFLOPs: {gflops:.2f}")}")
+    # else:
+    #   if self.debug >= 1:
+    #     print(f"{color_yellow('[Cuda-Perf]')} Kernel time: {elapsed_ms.value:.3f} ms")

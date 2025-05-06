@@ -43,7 +43,7 @@ class BinaryOps:
 
     # TODO: check if kernel is already loaded (use manager.kernels dict)
     kernel_code = a.device.manager.load_kernel("add.cu")
-    a.device.manager.compile_kernel(kernel_code, b"add_kernel")
+    kfunc = a.device.manager.compile_kernel(kernel_code, b"add_kernel")
 
     dims = a.shape
     padded_dims = dims + (1,) * (3 - len(dims))  # Pad to 3D
@@ -63,7 +63,7 @@ class BinaryOps:
     # Kernel launch and copy result back to host
     n_flops = dim1 * dim2 * dim3
     args = prep_kargs(a.device_data, b.device_data, d_C, dim1, dim2, dim3)
-    a.device.manager.launch_kernel(a.device.manager.kfunc, grid, block_size, args, n_flops)
+    a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops)
     a.device.manager.memcpy_dtoh(C_flat.ctypes.data, d_C, C_flat.nbytes)
 
     # TODO: these belong in tensor.to(cpu)
@@ -78,7 +78,7 @@ class BinaryOps:
     assert a.shape == b.shape, "Tensors must have the same shape"
 
     kernel_code = a.device.manager.load_kernel("mul.cu")
-    a.device.manager.compile_kernel(kernel_code, b"mul_kernel")
+    kfunc = a.device.manager.compile_kernel(kernel_code, b"mul_kernel")
 
     dims = a.shape
     padded_dims = dims + (1,) * (3 - len(dims))  # Pad to 3D
@@ -97,7 +97,7 @@ class BinaryOps:
     # Kernel launch and copy result back to host
     n_flops = dim1 * dim2 * dim3
     args = prep_kargs(a.device_data, b.device_data, d_C, dim1, dim2, dim3)
-    a.device.manager.launch_kernel(a.device.manager.kfunc, grid, block_size, args, n_flops)
+    a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops)
     a.device.manager.memcpy_dtoh(C_flat.ctypes.data, d_C, C_flat.nbytes)
 
     # TODO: these belong in tensor.to(cpu)
@@ -113,7 +113,7 @@ class BinaryOps:
     assert a.shape[1] == b.shape[0], "Inner dimensions must match"
 
     kernel_code = a.device.manager.load_kernel("matmul.cu")
-    a.device.manager.compile_kernel(kernel_code, b"matmul_tiled_kernel")
+    kfunc = a.device.manager.compile_kernel(kernel_code, b"matmul_tiled_kernel")
 
     M, K = a.shape
     _, N = b.shape[0], b.shape[1]
@@ -130,7 +130,7 @@ class BinaryOps:
 
     num_flops = 2 * M * N * K
     args = prep_kargs(a.device_data, b.device_data, d_C, M, N, K)
-    a.device.manager.launch_kernel(a.device.manager.kfunc, grid, block_size, args, num_flops)
+    a.device.manager.launch_kernel(kfunc, grid, block_size, args, num_flops)
     a.device.manager.memcpy_dtoh(C.ctypes.data, d_C, C.nbytes)
     # TODO: free device tensors (?)
 

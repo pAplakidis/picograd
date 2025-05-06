@@ -14,8 +14,7 @@ from picograd.backend.cuda.utils import *
 DEBUG = int(os.getenv("DEBUG", 0))
 
 device = Device(Devices.CUDA, debug=DEBUG) if is_cuda_available() else Device(Devices.CPU, debug=DEBUG)
-print("[*] Using device", device.name)
-print()
+print("[*] Using device", device.name, "\n")
 
 
 class TestOps(unittest.TestCase):
@@ -36,9 +35,9 @@ class TestOps(unittest.TestCase):
       tensor3 = tensor1 + tensor2
       assert np.allclose(tensor3.data, tensor1.data + tensor2.data), "tensor addition failed"
 
-      print("[+] addition test passed")
+      print("[+] Addition test passed\n")
     except Exception as e:
-      self.fail(f"Addition test failed: {e}")
+      self.fail(f"[!] Addition test failed: {e}\n")
 
   def test_mul(self):
     try:
@@ -57,9 +56,9 @@ class TestOps(unittest.TestCase):
       tensor3 = tensor1 * tensor2
       assert np.allclose(tensor3.data, tensor1.data * tensor2.data), "tensor elementwise multiplication failed"
 
-      print("[+] Elementwise multiplication test passed")
+      print("[+] Elementwise multiplication test passed\n")
     except Exception as e:
-      self.fail(f"Elementwise multiplication test failed: {e}")
+      self.fail(f"[!] Elementwise multiplication test failed: {e}\n")
 
   def test_linear_layer(self):
     try:
@@ -73,9 +72,9 @@ class TestOps(unittest.TestCase):
       e = c + d
       assert np.allclose(e.data, c.data + d.data), "addition failed"
 
-      print("[+] Linear layer op OK")
+      print("[+] Linear layer op OK\n")
     except Exception as e:
-      self.fail(f"Linear layer test failed: {e}")
+      self.fail(f"[!] Linear layer test failed: {e}\n")
 
 
 # FIXME: device ops cannot be consecutive - segfaults undeterministically (probably due to memory management or graph computation)
