@@ -77,7 +77,6 @@ class TestOps(unittest.TestCase):
       self.fail(f"[!] Linear layer test failed: {e}\n")
 
 
-# FIXME: device ops cannot be consecutive - segfaults undeterministically (probably due to memory management or graph computation)
 if __name__ == "__main__":
   unittest.main()
   print("[+] Cuda test OK")

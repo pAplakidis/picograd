@@ -1,8 +1,9 @@
+import time
 import importlib
 import numpy as np
 
 from .device import Devices
-
+from picograd.print_utils import *
 
 class Function:
   def __init__(self, device: Devices = Devices.CPU):
@@ -24,6 +25,16 @@ class Function:
       return method(self, *args, **kwargs)
     return wrapper
 
+  @staticmethod
+  def log_time(method):
+    def wrapper(self, *args, **kwargs):
+      start_time = time.time()
+      result = method(self, *args, **kwargs)
+      end_time = time.time()
+      print(f"{color_yellow(f"[Function-Perf]")} {self.__class__.__name__}.{method.__name__} - {(end_time - start_time) * 1000.0:.4f} ms")
+      return result
+    return wrapper
+
   # TODO: check if both tensors are on the same device
   def forward(self, *args, **kwargs): raise NotImplementedError(f"forward not implemented for {type(self)}")
   def backward(self, *args, **kwargs): raise NotImplementedError(f"backward not implemented for {type(self)}")
@@ -33,6 +44,14 @@ class Function:
       cls.forward = Function.check_same_device(cls.forward)
     if 'backward' in cls.__dict__:
       cls.backward = Function.check_same_device(cls.backward)
+
+    for method_name in ['forward', 'backward']:
+      if method_name in cls.__dict__:
+        method = getattr(cls, method_name)
+        # Wrap first with check_same_device, then with log_time
+        method = Function.check_same_device(method)
+        method = cls.log_time(method)
+        setattr(cls, method_name, method)
 
 class Add(Function):
   def forward(self, a: "Tensor", b: "Tensor") -> "Tensor":

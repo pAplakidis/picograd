@@ -1,4 +1,5 @@
 import os
+import time
 import ctypes
 from typing import Tuple, List, Optional
 
@@ -154,32 +155,38 @@ class CudaDevice:
     if self.debug >= 1:
       print(f"{color_green("[Cuda]")} Launching kernel {color_yellow(kfunc)} with grid {color_yellow(grid)} and block {color_yellow(block)}")
 
-    # FIXME: start_event and end_event cause Segmentation fault (undeterministically)
+    # FIXME: start_event and end_event cause Segmentation fault (undeterministically) for consecutive kernel launches
     # event-based profiling
     # self.check_cuda(cuda.cuEventRecord(self.start_event, 0), "cuEventRecord (start)")
+    start = time.time()
 
     # launch kernel
     arg_buff = (ctypes.c_void_p * len(args))(*[ctypes.addressof(a) for a in args])
     self.check_cuda(cuda.cuLaunchKernel(
       kfunc,
-      grid[0], grid[1], grid[2],      # grid dimensions
-      block[0], block[1], block[2],   # block dimensions
+      grid[0], grid[1], grid[2],      # grid dimensions (blocks)
+      block[0], block[1], block[2],   # block dimensions (threas per block)
       0, 0,                           # shared mem and stream
       arg_buff, 0
     ), "cuLaunchKernel")
 
-    # # profiling results
+    # profiling results
     # self.check_cuda(cuda.cuEventRecord(self.end_event, 0), "cuEventRecord (end)")
     # self.check_cuda(cuda.cuEventSynchronize(self.end_event), "cuEventSynchronize")
     # elapsed_ms = ctypes.c_float()
     # self.check_cuda(cuda.cuEventElapsedTime(ctypes.byref(elapsed_ms), self.start_event, self.end_event), "cuEventElapsedTime")
+    end = time.time()
+    elapsed_ms = (end - start) * 1000.0
 
-    # # compute GFLOPs
-    # if n_flops is not None:
-    #   elapsed_s = elapsed_ms.value / 1000.0
-    #   gflops = n_flops / (elapsed_s * 1e9)
-    #   if self.debug >= 1:
-    #     print(f"{color_yellow("[Cuda-Perf]")} Kernel time: {color_red(f"{elapsed_ms.value:.3f} ms — GFLOPs: {gflops:.2f}")}")
-    # else:
-    #   if self.debug >= 1:
-    #     print(f"{color_yellow('[Cuda-Perf]')} Kernel time: {elapsed_ms.value:.3f} ms")
+    # compute GFLOPs
+    if n_flops is not None:
+      # elapsed_s = elapsed_ms.value / 1000.0
+      elapsed_s = elapsed_ms / 1000.0
+      gflops = n_flops / (elapsed_s * 1e9)
+      if self.debug >= 1:
+        # print(f"{color_yellow("[Cuda-Perf]")} Kernel time: {color_red(f"{elapsed_ms.value:.3f} ms — GFLOPs: {gflops:.2f}")}")
+        print(f"{color_yellow("[Cuda-Perf]")} Kernel time: {color_red(f"{elapsed_ms:.4f} ms — GFLOPs: {gflops:.2f}")}")
+    else:
+      if self.debug >= 1:
+        # print(f"{color_yellow('[Cuda-Perf]')} Kernel time: {elapsed_ms.value:.3f} ms")
+        print(f"{color_yellow('[Cuda-Perf]')} Kernel time: {elapsed_ms:.4f} ms")
