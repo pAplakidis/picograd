@@ -1,9 +1,12 @@
+import os
 import time
 import importlib
 import numpy as np
 
 from .device import Devices
 from picograd.print_utils import *
+
+DEBUG = int(os.getenv("DEBUG", 0))
 
 class Function:
   def __init__(self, device: Devices = Devices.CPU):
@@ -31,11 +34,11 @@ class Function:
       start_time = time.time()
       result = method(self, *args, **kwargs)
       end_time = time.time()
-      print(f"{color_yellow(f"[Function-Perf]")} {self.__class__.__name__}.{method.__name__} - {(end_time - start_time) * 1000.0:.4f} ms")
+      if DEBUG >= 2:
+        print(f"{color_yellow(f"[Function-Perf]")} {self.__class__.__name__}.{method.__name__} - {(end_time - start_time) * 1000.0:.4f} ms")
       return result
     return wrapper
 
-  # TODO: check if both tensors are on the same device
   def forward(self, *args, **kwargs): raise NotImplementedError(f"forward not implemented for {type(self)}")
   def backward(self, *args, **kwargs): raise NotImplementedError(f"backward not implemented for {type(self)}")
 
@@ -58,33 +61,24 @@ class Add(Function):
     self.a, self.b = a, b
     return self.BinaryOps.add(a, b)
 
-  def backward(self, grad_out: "Tensor") -> None:
-    if self.a.requires_grad: self.a.grad += grad_out
-    # if self.b.requires_grad: self.b.grad += grad_out
-    # TODO: double check this
-    if self.b.requires_grad: 
-      if self.b.grad.shape != grad_out.shape:
-        self.b.grad += np.sum(grad_out, axis=0)
-      else:
-        self.b.grad += grad_out
+  def backward(self, grad_out: "Tensor"):
+    self.BinaryOps().add_back(self.a, self.b, grad_out)
 
 class Mul(Function):
   def forward(self, a: "Tensor", b: "Tensor") -> "Tensor":
     self.a, self.b = a, b
     return self.BinaryOps.mul(a, b)
 
-  def backward(self, grad_out: "Tensor") -> None:
-    if self.a.requires_grad: self.a.grad += self.b.data * grad_out
-    if self.b.requires_grad: self.b.grad += self.a.data * grad_out
+  def backward(self, grad_out: "Tensor"):
+    self.BinaryOps().mul_back(self.a, self.b, grad_out)
 
 class Dot(Function):
   def forward(self, a: "Tensor", b: "Tensor") -> "Tensor":
     self.a, self.b = a, b
     return self.BinaryOps.dot(a, b)
 
-  def backward(self, grad_out: "Tensor") -> None:
-    if self.a.requires_grad: self.a.grad += grad_out @ self.b.data.T
-    if self.b.requires_grad: self.b.grad += self.a.data.T @ grad_out
+  def backward(self, grad_out: "Tensor"):
+    self.BinaryOps().dot_back(self.a, self.b, grad_out)
 
 class Conv2D(Function):
   def forward(self, a: "Tensor", w: "Tensor", b: "Tensor",
@@ -93,7 +87,7 @@ class Conv2D(Function):
     self.stride, self.padding = stride, padding
     return self.BinaryOps.conv2d(a, w, b, in_channels, out_channels, stride, padding)
   
-  def backward(self, grad_out: "Tensor") -> None:
+  def backward(self, grad_out: "Tensor"):
     grad_a, grad_w, grad_b = self.BinaryOps.conv2d_backward(self.a.data, grad_out, self.w.data, self.b.data, self.a.shape[1], self.w.shape[0], self.stride, self.padding)
     if self.a.requires_grad: self.a.grad = grad_a
     if self.w.requires_grad: self.w.grad = grad_w

@@ -33,16 +33,35 @@ class OPS(Enum):
   def __str__(self): return self.name
 
 
-# TODO: create @jit decorator that uses jit.compile() to execute the op
+# TODO: create @jit decorator that uses jit.compile() to execute the op (LLVM)
 class BinaryOps:
   @staticmethod
   def add(a: "Tensor", b: "Tensor") -> np.ndarray: return a.data + b.data
 
   @staticmethod
+  def add_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray):
+    if a.requires_grad: a.grad += grad_out
+    if b.requires_grad: 
+      if b.grad.shape != grad_out.shape:
+        b.grad += np.sum(grad_out, axis=0)
+      else:
+        b.grad += grad_out
+
+  @staticmethod
   def mul(a: "Tensor", b: "Tensor") -> np.ndarray: return a.data * b.data
 
   @staticmethod
+  def mul_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray):
+    if a.requires_grad: a.grad += b.data * grad_out
+    if b.requires_grad: b.grad += a.data * grad_out
+
+  @staticmethod
   def dot(a: "Tensor", b: "Tensor") -> np.ndarray: return a.data @ b.data
+
+  @staticmethod
+  def dot_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray):
+    if a.requires_grad: a.grad += grad_out @ b.data.T
+    if b.requires_grad: b.grad += a.data.T @ grad_out
 
   @staticmethod
   def conv2d(A: "Tensor", W: "Tensor", B: "Tensor",

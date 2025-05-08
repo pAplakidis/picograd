@@ -1,5 +1,4 @@
 .*.swp
-.vscode/
 .gdb_history
 *.so
 __pycache__/

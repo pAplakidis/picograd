@@ -4,6 +4,7 @@ from typing import Tuple
 
 from picograd.util import *
 from .utils import *
+from .math import *
 
 
 class OPS(Enum):
@@ -35,13 +36,11 @@ class OPS(Enum):
   def __str__(self): return self.name
 
 
+# TODO: backward ops should keep gradients in the device memory
 class BinaryOps:
   @staticmethod
   def add(a: "Tensor", b: "Tensor", block_size: Tuple = (8, 8, 8)) -> np.ndarray: # type: ignore
     """Add two homogeneous tensors of any dimension (1D, 2D, 3D) using CUDA."""
-    assert a.shape == b.shape, "Tensors must have the same shape"
-
-    # TODO: check if kernel is already loaded (use manager.kernels dict)
     kernel_code = a.device.manager.load_kernel("add.cu")
     kfunc = a.device.manager.compile_kernel(kernel_code, b"add_kernel")
 
@@ -52,7 +51,6 @@ class BinaryOps:
     C_flat = np.empty_like(a.data.ravel())
     d_C = allocate_device_memory(a.device.manager, C_flat)
 
-    # TODO: double check and study this
     # Define grid and block sizes
     grid = (
       (dim3 + block_size[0] - 1) // block_size[0],
@@ -72,6 +70,15 @@ class BinaryOps:
     # free_device_tensor(manager, d_C)
 
     return C_flat.reshape(dims), d_C
+
+  @staticmethod
+  def add_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray) -> np.ndarray:
+    if a.requires_grad: a.grad = cuda_add(a.data, grad_out, a.device.manager)
+    if b.requires_grad:
+      if b.grad.shape != grad_out.shape:
+        b.grad = cuda_add(b.grad, np.sum(grad_out, axis=0), b.device.manager) # TODO: move sum to CUDA (?)
+      else:
+        b.grad = cuda_add(b.grad, grad_out, b.device.manager)
 
   @staticmethod
   def mul(a: "Tensor", b: "Tensor", block_size: Tuple = (8, 8, 8)) -> np.ndarray:
@@ -108,6 +115,12 @@ class BinaryOps:
     return C_flat.reshape(dims), d_C
 
   @staticmethod
+  def mul_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray) -> np.ndarray:
+    if a.requires_grad: a.grad = cuda_add(a.grad, cuda_mul(b.data, grad_out, a.device.manager), a.device.manager)
+    if b.requires_grad: b.grad += a.data * grad_out
+    if b.requires_grad: b.grad = cuda_add(b.grad, cuda_mul(a.data, grad_out, b.device.manager), b.device.manager)
+
+  @staticmethod
   def dot(a: "Tensor", b: "Tensor", block_size: Tuple = (8, 8, 1)) -> np.ndarray:
     """Matrix multiplication using CUDA."""
     assert a.shape[1] == b.shape[0], "Inner dimensions must match"
@@ -135,6 +148,11 @@ class BinaryOps:
     # TODO: free device tensors (?)
 
     return C, d_C
+
+  @staticmethod
+  def dot_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray) -> np.ndarray:
+    if a.requires_grad: a.grad = cuda_add(a.grad, cuda_gemm(grad_out, b.data.T, a.device.manager), a.device.manager)
+    if b.requires_grad: b.grad = cuda_add(b.grad, cuda_gemm(a.data.T, grad_out, b.device.manager), b.device.manager)
 
   @staticmethod
   def conv2d(a: "Tensor", w: "Tensor", b:"Tensor",
