@@ -64,11 +64,6 @@ class BinaryOps:
     a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops)
     a.device.manager.memcpy_dtoh(C_flat.ctypes.data, d_C, C_flat.nbytes)
 
-    # TODO: these belong in tensor.to(cpu)
-    # free_device_tensor(manager, a.device_data)
-    # free_device_tensor(manager, b.device_data)
-    # free_device_tensor(manager, d_C)
-
     return C_flat.reshape(dims), d_C
 
   @staticmethod
@@ -107,11 +102,6 @@ class BinaryOps:
     a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops)
     a.device.manager.memcpy_dtoh(C_flat.ctypes.data, d_C, C_flat.nbytes)
 
-    # TODO: these belong in tensor.to(cpu)
-    # free_device_tensor(manager, a.device_data)
-    # free_device_tensor(manager, b.device_data)
-    # free_device_tensor(manager, d_C)
-
     return C_flat.reshape(dims), d_C
 
   @staticmethod
@@ -145,7 +135,6 @@ class BinaryOps:
     args = prep_kargs(a.device_data, b.device_data, d_C, M, N, K)
     a.device.manager.launch_kernel(kfunc, grid, block_size, args, num_flops)
     a.device.manager.memcpy_dtoh(C.ctypes.data, d_C, C.nbytes)
-    # TODO: free device tensors (?)
 
     return C, d_C
 

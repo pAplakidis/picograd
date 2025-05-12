@@ -1,4 +1,7 @@
+import os
 from enum import Enum, auto
+
+DEBUG = int(os.getenv("DEBUG", 0))
 
 class Devices(Enum):
   CPU = auto()
@@ -18,7 +21,7 @@ class Devices(Enum):
   def __str__(self): return self.name
 
 class Device:
-  def __init__(self, name: Devices, debug: int = 0):
+  def __init__(self, name: Devices, debug: int = DEBUG):
     self.name = name
     self.debug = debug
 

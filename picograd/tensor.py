@@ -11,11 +11,11 @@ from picograd.backend.cpu.ops import *
 from picograd.util import *
 from picograd.backend.device import Devices, Device
 
-from picograd.backend.cuda.utils import tensor_to_cuda, free_device_tensor
+# TODO: device abstraction layer
+from picograd.backend.cuda.utils import tensor_to_cuda, free_device_tensor, copy_data_to_device
 
 from .draw_utils import draw_dot
 
-DEBUG = int(os.getenv("DEBUG", 0))
 VERBOSE = int(os.getenv("VERBOSE", 0))
 
 # init c++ library
@@ -32,14 +32,14 @@ class Tensor:
       name: str = "t",
       _prev: set = (),
       requires_grad: bool = True,
-      device: Optional[Device] = Device(Devices.CPU, debug=DEBUG),
+      device: Optional[Device] = Device(Devices.CPU),
       device_data: Optional[ctypes.c_void_p] = None,
     ):
     self.device= list(_prev)[0].device if len(list(_prev)) > 0 else device
     self._ctx = None  # TODO: use context like pytorch
 
     self.name = name
-    self.data = data
+    self._data = data
     self.debug = DEBUG
     self.verbose = bool(VERBOSE)
 
@@ -55,6 +55,18 @@ class Tensor:
 
     self.device_data = device_data
     if device.name != Devices.CPU: self.to(device)
+
+  @property
+  def data(self):
+    return self._data
+  
+  @data.setter
+  def data(self, value):
+    self._data = value
+    if self.device.name != Devices.CPU:
+      if self.device_data is not None:
+        copy_data_to_device(self.device.manager, self.device_data, self._data)
+      
 
   def get_device_memory(self):
     """Returns the device memory of a tensor."""
@@ -77,7 +89,6 @@ class Tensor:
 
     self.device = device
 
-    # TODO: if device == CPU, free device memory
     if device.name == Devices.CUDA:
       # TODO: if result of CUDA op, no need to reallocate memory (op should return d_C as well)
       self.data = self.data.astype(np.float32)
@@ -92,13 +103,14 @@ class Tensor:
 
   def __repr__(self):
     if self.verbose:
-      return f"{color_yellow("Tensor")} (name={self.name}, shape={str(self.shape)}, device={str(self.device.name)}, data=\n{str(self.data)}\n, grad={self.grad}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
+      return f"{color_yellow("Tensor")} (name={self.name}, shape={str(self.shape)}, device={str(self.device.name)}, data=\n{str(self.data)}\n, grad=\n{self.grad}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
     else:
       return f"{color_yellow("Tensor")} (name={self.name}, shape={str(self.shape)}, device={str(self.device.name)}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
     
-  # TODO: if CUDA, free
   def __del__(self):
-    pass
+    if self.device_data is not None:
+      free_device_tensor(self.device.manager, self.device_data)
+      self.device_data = None
 
   def __getitem__(self, indices):
     return self.data[indices]
@@ -144,7 +156,7 @@ class Tensor:
   # TODO: implement these in ops (cpu and cuda)
   def __pow__(self, other):
     assert isinstance(other, (int, float)), "only supporting int/float powers for now"
-    out = Tensor(self.data**other, _prev=(self,))
+    out = Tensor(self.data**other, _prev=(self,), device=self.device)
     out.prev_op = OPS.POW
 
     def _backward():
@@ -153,7 +165,7 @@ class Tensor:
     return out
 
   def relu(self):
-    out = Tensor(np.maximum(self.data, np.zeros(self.shape)),  _prev=(self,))
+    out = Tensor(np.maximum(self.data, np.zeros(self.shape)),  _prev=(self,), device=self.device)
     out.prev_op = OPS.ReLU
 
     def _backward():
@@ -161,7 +173,7 @@ class Tensor:
     out._backward = _backward
     return out
 
-  def __neg__(self): return self * Tensor(np.array(-1))
+  def __neg__(self): return self * Tensor(np.array(-1), device=self.device)
   def __radd__(self, other): return self + other
   def __sub__(self, other): return self + (-other)
   def __rsub__(self, other): return other + (-self)
@@ -184,7 +196,7 @@ class Tensor:
     for node in reversed(topo): node._backward()
   
   @property
-  def T(self): return Tensor(self.data.T)
+  def T(self): return Tensor(self.data.T, _prev=(self,), device=self.device)
 
   @property
   def item(self): return self.data
@@ -270,6 +282,7 @@ class Tensor:
           if child not in visited: stack.append(child)
       elif v not in topo: topo.append(v)
     for node in reversed(topo):
+      print(node)
       if verbose:
         print("[data]\n", node.data)
         print("[grad]\n", node.grad)

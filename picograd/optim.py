@@ -42,6 +42,12 @@ class Optim:
 
 class SGD(Optim):
   def step(self):
+    # gradient clipping
+    max_grad_norm = 1.0
+    for param in self.params:
+      np.clip(param.weight.grad, -max_grad_norm, max_grad_norm, out=param.weight.grad)
+      np.clip(param.bias.grad, -max_grad_norm, max_grad_norm, out=param.bias.grad)
+
     for i in range(len(self.params)):
       self.params[i].weight.data -= self.lr * self.params[i].weight.grad
       self.params[i].bias.data -= self.lr * self.params[i].bias.grad
@@ -65,6 +71,12 @@ class Adam(Optim):
       self.ut_1_bias[i] = np.zeros_like(self.params[i].bias.grad)
 
   def step(self):
+    # gradient clipping
+    max_grad_norm = 1.0
+    for param in self.params:
+      np.clip(param.weight.grad, -max_grad_norm, max_grad_norm, out=param.weight.grad)
+      np.clip(param.bias.grad, -max_grad_norm, max_grad_norm, out=param.bias.grad)
+
     for i in range(len(self.params)):
       # weight
       mt_weight = self.b1 * self.mt_1_weight[i] + (1 - self.b1) * self.params[i].weight.grad

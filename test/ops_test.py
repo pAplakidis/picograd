@@ -12,10 +12,9 @@ from picograd.backend.device import Devices, Device
 from picograd.backend.cuda.utils import *
 from picograd.draw_utils import draw_dot
 
-DEBUG = int(os.getenv("DEBUG", 0))
 
-# device = Device(Devices.CPU, debug=DEBUG)
-device = Device(Devices.CUDA, debug=DEBUG) if is_cuda_available() else Device(Devices.CPU, debug=DEBUG)
+# device = Device(Devices.CPU)
+device = Device(Devices.CUDA) if is_cuda_available() else Device(Devices.CPU)
 print("[*] Using device", device.name, "\n")
 
 

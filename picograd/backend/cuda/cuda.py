@@ -12,7 +12,8 @@ try:
   cuda = ctypes.CDLL('libcuda.so')
   nvrtc = ctypes.CDLL('libnvrtc.so')
 except OSError as e:
-  raise RuntimeError("Could not load CUDA libraries. Make sure CUDA is installed and the libraries are in your library path.") from e
+  # raise RuntimeError("Could not load CUDA libraries. Make sure CUDA is installed and the libraries are in your library path.") from e
+  print("Could not load CUDA libraries. Make sure CUDA is installed and the libraries are in your library path.")
 
 KERNELS_PATH = "picograd/backend/cuda/kernels"
 
