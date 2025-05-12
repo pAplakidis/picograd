@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 
 import picograd.nn as nn
-from picograd.backend.ops import *
+from picograd.backend.cpu.ops import *
 from picograd.tensor import Tensor
 from picograd.loss import BCELoss
 from picograd.optim import *
@@ -29,7 +29,7 @@ def train(t_in, gt):
     t3 = t2.relu()
 #
     t4 = t3.flatten()
-    fc = nn.Linear(t4.data.shape[0], 1)
+    fc = nn.Linear(t4.shape[0], 1)
     t4.layer = fc
     t5 = fc(t4)
 
@@ -65,7 +65,7 @@ def manual_test(t_in, gt):
   # TODO: add ReLU
 
   t1.flatten()
-  fc = nn.Linear(t1.data.shape[0], 1)
+  fc = nn.Linear(t1.shape[0], 1)
   t1.layer = fc
   t2 = fc(t1)
   print("t2:", t2)

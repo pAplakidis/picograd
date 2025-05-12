@@ -1,8 +1,8 @@
 .*.swp
+.gdb_history
 *.so
 __pycache__/
 graphs/
 media/
 lib/
 mnist_data/
-

@@ -1,0 +1,33 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    
+    {
+      "name": "CUDA Python Debug (cuda-gdb)",
+      "type": "cuda-gdb",
+      "request": "launch",
+      "program": "/usr/bin/python3",
+      "args": ["./test/ops_test.py"],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "env": {"DEBUG": "2"},
+      "externalConsole": false,
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
+      "name": "Python: Current File",
+      "type": "python",
+      "request": "launch",
+      "program": "${file}",
+      "env": {"DEBUG": "2"},
+      "console": "integratedTerminal"
+    }
+  ]
+}
