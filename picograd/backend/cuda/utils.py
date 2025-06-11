@@ -20,6 +20,10 @@ def copy_data_to_device(manager: CudaDevice, d_T: ctypes.c_void_p, T_flat: np.nd
   """Copy data from host to device."""
   manager.memcpy_htod(d_T, T_flat.ctypes.data, T_flat.nbytes)
 
+def copy_data_to_host(manager: CudaDevice, d_T: ctypes.c_void_p, T_flat: np.ndarray):
+  """Copy data from device to host."""
+  manager.memcpy_dtoh(T_flat.ctypes.data, d_T, T_flat.nbytes)
+
 # TODO: to be used for to(Device.CPU) from cuda
 def free_device_tensor(manager: CudaDevice, d_T: ctypes.c_void_p):
   """Free tensor from device memory."""
@@ -31,28 +35,19 @@ def tensor_to_cuda(tensor: "Tensor") -> "Tensor":
   d_T = allocate_device_memory(tensor.device.manager, T_flat)
   copy_data_to_device(tensor.device.manager, d_T, T_flat)
 
+  grad_flat = flatten_tensor(tensor.grad)
+  d_grad = allocate_device_memory(tensor.device.manager, grad_flat)
+  copy_data_to_device(tensor.device.manager, d_grad, grad_flat)
+
   if tensor.device.manager.debug >= 1:
-    print(f"{color_green("[Cuda]")} Tensor data copied to device - {color_red(f"{tensor.data.nbytes} bytes")} - {color_red(f"{(time.time() - start_time) * 1000:.4f} ms")}")
+    print(f"{color_green("[Cuda]")} Tensor data and gradient copied to device - {color_red(f"{tensor.data.nbytes} bytes, {tensor.grad.nbytes} bytes")} - {color_red(f"{(time.time() - start_time) * 1000:.4f} ms")}")
 
-  return d_T
+  return d_T, d_grad
 
-def prep_kargs(
-  d_A: ctypes.c_void_p,
-  d_B: ctypes.c_void_p,
-  d_C: ctypes.c_void_p,
-  dim1: int,
-  dim2: int,
-  dim3: int
-) -> List[ctypes.c_void_p]:
-  """"Prepare kernel arguments."""
-  return [
-    ctypes.c_void_p(d_A.value),
-    ctypes.c_void_p(d_B.value),
-    ctypes.c_void_p(d_C.value),
-    ctypes.c_int(dim1),
-    ctypes.c_int(dim2),
-    ctypes.c_int(dim3)
-  ]
+@staticmethod
+def prep_kargs(*args, **kwargs) -> List[ctypes.c_void_p]:
+  """Prepare kernel arguments."""
+  return [ctypes.c_void_p(arg.value) if isinstance(arg, ctypes.c_void_p) else ctypes.c_int(arg) for arg in args]
 
 def compute_gflops(num_elements: int, milliseconds: int):
   seconds = milliseconds / 1000.0

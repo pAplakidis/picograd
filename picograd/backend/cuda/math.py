@@ -6,6 +6,7 @@ from picograd.backend.cuda.cuda import CudaDevice
 
 # Generic math operations for CUDA, using NumPy arrays
 
+# FIXME: no need to allocate device memeory for gradients (creates memory leaks)
 def cuda_add(A: np.ndarray, B: np.ndarray, dev_manager: CudaDevice, block_size: Tuple = (8, 8, 8)) -> np.ndarray:
   """CUDA - Add two 1D, 2D or 3D arrays."""
   assert A.shape == B.shape, "Tensors must have the same shape"

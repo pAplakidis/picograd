@@ -20,24 +20,51 @@ python3 -m pip install -r requirements.txt
 
 ## Give it a try
 
-```
+Examples
+
+```bash
 ./examples/MNIST_test.py
+./examples/MNIST_simple.py
+```
+
+Tests
+
+```bash
+./test/ops_test.py
+```
+
+Code
+
+```python
+from picograd import Tensor
+from picograd.draw_utils import draw_dot
+
+a = Tensor(np.random.randn(100, 50), device=device)
+b = Tensor(np.random.randn(50, 100)).to(device)
+c = a.dot(b)
+d = Tensor(np.random.randn(100, 100), device=device)
+e = c + d
+e.backward()
+draw_dot(e, path="graphs/test")
 ```
 
 ## TODO
-
-- ops.py + function.py
-- conv2d, maxpool, etc
-- save/load models - state dict
-- good unit tests
-- Implement BatchNorm1d and 2d
-- Support CUDA/GPU - opsgpu.py
-- Low Level Debugging: calculate and print FLOPS
+- Implement BatchNorm1D and 2D
+- debug & optimize CUDA
+- cuda conv-net
+- device data should not be moved to host in ops
 - Test on actual neural networks, efficientnet, etc (full training and evaluation of simple models)
 - Release (make the project cleaner, more robust and usable)
 
 ### DONE
 
+
+- ops.py + function.py
+- conv2d, maxpool, etc
+- save/load models - state dict
+- good unit tests
+- Support CUDA/GPU
+- Low Level Debugging: calculate and print FLOPS
 - Adam
 - debug MNIST
 - ops should be MUL, ADD, etc, instead of Linear
@@ -55,9 +82,5 @@ python3 -m pip install -r requirements.txt
 
 ## Backlog:
 
-### Custom backend:
-
-- C using ctypes
-- custom cuda ops
-- cuda driver
-- GPU driver
+- GEMM with tensorcores
+- OpenCL ops

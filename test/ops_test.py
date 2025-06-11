@@ -18,6 +18,7 @@ device = Device(Devices.CUDA) if is_cuda_available() else Device(Devices.CPU)
 print("[*] Using device", device.name, "\n")
 
 
+# TODO: move tensor to CPU at the end of each test
 class TestOps(unittest.TestCase):
   def test_add(self):
     try:
@@ -85,6 +86,20 @@ class TestOps(unittest.TestCase):
       print("[+] Linear layer op OK\n")
     except Exception as e:
       self.fail(f"[!] Linear layer test failed: {e}\n")
+
+  def test_conv2d_layer(self):
+    try:
+      a = Tensor(np.random.randn(1, 3, 32, 32), device=device)  # (batch_size, channels, height, width)
+      w = Tensor(np.random.randn(16, 3, 3, 3), device=device)  # (out_channels, kernel_height, kernel_width)
+      b = Tensor(np.zeros((16,)), device=device)  # (out_channels,)
+
+      c = a.conv2d(w, b, 3, 16)
+      c.backward()
+      # TODO: assert results
+      print("[+] Conv2D OK\n")
+
+    except Exception as e:
+      self.fail(f"[!] Conv2D layer test failed: {e}\n")
 
 
 if __name__ == "__main__":

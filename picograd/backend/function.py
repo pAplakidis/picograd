@@ -91,7 +91,4 @@ class Conv2D(Function):
     return self.BinaryOps.conv2d(a, w, b, in_channels, out_channels, stride, padding)
   
   def backward(self, grad_out: "Tensor"):
-    grad_a, grad_w, grad_b = self.BinaryOps.conv2d_backward(self.a.data, grad_out, self.w.data, self.b.data, self.a.shape[1], self.w.shape[0], self.stride, self.padding)
-    if self.a.requires_grad: self.a.grad = grad_a
-    if self.w.requires_grad: self.w.grad = grad_w
-    if self.b.requires_grad: self.b.grad = grad_b
+    self.BinaryOps.conv2d_back(self.a, grad_out, self.w, self.b, self.a.shape[1], self.w.shape[0], self.stride, self.padding)

@@ -146,8 +146,8 @@ class CudaDevice:
   def launch_kernel(
       self,
       kfunc: CUfunction,
-      grid: Tuple[int, int, int],
-      block: Tuple[int, int, int],
+      grid: Tuple,
+      block: Tuple,
       args: List[ctypes.c_void_p],
       n_flops: Optional[int] = None
     ):
@@ -162,14 +162,27 @@ class CudaDevice:
     start = time.time()
 
     # launch kernel
-    arg_buff = (ctypes.c_void_p * len(args))(*[ctypes.addressof(a) for a in args])
-    self.check_cuda(cuda.cuLaunchKernel(
-      kfunc,
-      grid[0], grid[1], grid[2],      # grid dimensions (blocks)
-      block[0], block[1], block[2],   # block dimensions (threas per block)
-      0, 0,                           # shared mem and stream
-      arg_buff, 0
-    ), "cuLaunchKernel")
+    if len(grid) == 3 and len(block) == 3:
+      arg_buff = (ctypes.c_void_p * len(args))(*[ctypes.addressof(a) for a in args])
+      self.check_cuda(cuda.cuLaunchKernel(
+        kfunc,
+        grid[0], grid[1], grid[2],      # grid dimensions (blocks)
+        block[0], block[1], block[2],   # block dimensions (threas per block)
+        0, 0,                           # shared mem and stream
+        arg_buff, 0
+      ), "cuLaunchKernel")
+    elif len(grid) == 2 and len(block) == 2:
+      arg_buff = (ctypes.c_void_p * len(args))(*[ctypes.addressof(a) for a in args])
+      self.check_cuda(cuda.cuLaunchKernel(
+        kfunc,
+        grid[0], grid[1],               # grid dimensions (blocks)
+        block[0], block[1],             # block dimensions (threas per block)
+        0, 0,                           # shared mem and stream
+        arg_buff, 0
+      ), "cuLaunchKernel")
+    else:
+      raise ValueError(f"Unsupported grid/block dimensions: grid={grid}, block={block}. Must be 2D or 3D.")
+
 
     # profiling results
     # self.check_cuda(cuda.cuEventRecord(self.end_event, 0), "cuEventRecord (end)")

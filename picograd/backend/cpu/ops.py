@@ -1,5 +1,6 @@
 import numpy as np
 from enum import Enum, auto
+from typing import Tuple
 
 from picograd.util import *
 
@@ -64,65 +65,110 @@ class BinaryOps:
     if b.requires_grad: b.grad += a.data.T @ grad_out
 
   @staticmethod
-  def conv2d(A: "Tensor", W: "Tensor", B: "Tensor",
+  def conv2d(A: "Tensor", Weight: "Tensor", Bias: "Tensor",
              in_channels: int, out_channels: int, stride: int = 1, padding: int = 0,
              debug=False) -> np.ndarray:
     a = A.data
-    w = W.data
-    b = B.data
+    w = Weight.data
+    b = Bias.data
 
-    # TODO: c + cbuild()
-    # TODO: use C instead of in_channels
-    BS, C, H, W = a.shape
-    kernel_size = w.shape[1]
+    assert a.shape[1] == in_channels, "Input channels do not match"
+    assert len(a.shape) == 4, "Input must be 4D (B, C, H, W)"
+    assert len(w.shape) == 4, "Kernel must be 4D (C_out, C_in, H, W)"
+    assert w.shape[2] == w.shape[3], "Kernel must be square"
+    assert w.shape[1] % 2 == 1, "Kernel dimensions must be odd"
+    assert a.shape[2] >= w.shape[1] and a.shape[3] >= w.shape[2], "Input must be larger than or equal to kernel dimensions"
+
+    BS, C_in, H, W = a.shape
+    C_out, _, kernel_size, _ = w.shape
+
+    # init output
     H_out = ((H - kernel_size + 2*padding) // stride) + 1
     W_out = ((W - kernel_size + 2*padding) // stride) + 1
     out = np.zeros((BS, out_channels, H_out, W_out))
 
+    # add padding
+    if padding > 0:
+      a_padded = np.pad(a, ((0, 0), (0, 0), (padding, padding), (padding, padding)), mode='constant')
+    else:
+      a_padded = a
+
     for batch in range(BS):
       for out_c in range(out_channels):
-        for in_c in range(in_channels):
-          i_idx = 0 - padding
-          for i in range(H_out):
-            j_idx = 0 - padding
-            for j in range(W_out):
-              for k in range(kernel_size):
-                for l in range(kernel_size):
-                  if i_idx + k >= 0 and j_idx + l >= 0 and i_idx + k < H and j_idx + l < W:
-                    out[batch][out_c][i][j] += b[out_c]
-                  out[batch][out_c][i][j] += a[batch][in_c][i_idx + k][j_idx + l] * w[out_c][k][l] + b[out_c]
+        for i in range(H_out):
+          for j in range(W_out):
+            val = b[out_c]  # add bias once per output element
+            for in_c in range(in_channels):
+              # sliding window start indices
+              h_start = i * stride
+              w_start = j * stride
+
+              # convolution sum for this position
+              window = a_padded[batch, in_c, h_start:h_start+kernel_size, w_start:w_start+kernel_size]
+              val += np.sum(window * w[out_c, in_c])
+            out[batch, out_c, i, j] = val
     return out
 
   @staticmethod
-  def conv2d_backward(a: "Tensor", grad_out: np.ndarray, w: "Tensor", b: "Tensor",
-                      in_channels: int, out_channels: int, stride: int = 1, padding: int = 0):
-    a = a.data
-    w = w.data
-    b = b.data
+  def conv2d_back(
+    A: "Tensor", grad_out: np.ndarray, Weight: "Tensor", Bias: "Tensor",
+    in_channels: int, out_channels: int, stride: int = 1, padding: int = 0
+  ):
+    a = A.data
+    w = Weight.data
+    b = Bias.data
 
-    BS, C, H, W = a.shape
-    kernel_size = w.shape[1]
-    H_out = ((H - kernel_size + 2*padding) // stride) + 1
-    W_out = ((W - kernel_size + 2*padding) // stride) + 1
+    assert a.shape[1] == in_channels, "Input channels do not match"
+    assert w.shape[0] == out_channels, "Output channels do not match"
+    assert len(a.shape) == 4, "Input must be 4D (B, C, H, W)"
+    assert len(w.shape) == 4, "Kernel must be 4D (C_out, C_in, H, W)"
+    assert w.shape[2] == w.shape[3], "Kernel must be square"
+    assert w.shape[1] % 2 == 1, "Kernel dimensions must be odd"
+    assert a.shape[2] >= w.shape[1] and a.shape[3] >= w.shape[2], "Input must be larger than or equal to kernel dimensions"
+
+    BS, C_in, H, W = a.shape
+    C_out, _, kernel_size, _ = w.shape
+    _, _, H_out, W_out = grad_out.shape
 
     grad_a = np.zeros_like(a)
     grad_w = np.zeros_like(w)
     grad_b = np.zeros_like(b)
 
+    # Pad input and dA
+    a_padded = np.pad(a, ((0,0), (0,0), (padding,padding), (padding,padding)), mode='constant')
+    grad_a_padded = np.pad(grad_a, ((0,0), (0,0), (padding,padding), (padding,padding)), mode='constant')
+
     for batch in range(BS):
-      for out_c in range(out_channels):
-        for in_c in range(in_channels):
-          i_idx = 0 - padding
-          for i in range(H_out):
-            j_idx = 0 - padding
-            for j in range(W_out):
-              for k in range(kernel_size):
-                for l in range(kernel_size):
-                  if i_idx + k >= 0 and j_idx + l >= 0 and i_idx + k < H and j_idx + l < W:
-                    grad_a[batch][in_c][i_idx + k][j_idx + l] += grad_out[batch][out_c][i][j] * w[out_c][k][l]
-                    grad_w[out_c][k][l] += grad_out[batch][out_c][i][j] * a[batch][in_c][i_idx + k][j_idx + l]
-                    grad_b[out_c] += grad_out[batch][out_c][i][j]
-    return grad_a, grad_w, grad_b
+      for out_c in range(C_out):
+        for i in range(H_out):
+          for j in range(W_out):
+            h_start = i * stride
+            w_start = j * stride
+            h_end = h_start + kernel_size
+            w_end = w_start + kernel_size
+
+            grad_out_val = grad_out[batch, out_c, i, j]
+            for in_c in range(C_in):
+              input_patch = a_padded[batch, in_c, h_start:h_end, w_start:w_end]
+
+              # ∂L/∂W
+              grad_w[out_c, in_c, :, :] += input_patch * grad_out_val
+
+              # ∂L/∂A
+              grad_a_padded[batch, in_c, h_start:h_end, w_start:w_end] += w[out_c, in_c, :, :] * grad_out_val
+
+            # ∂L/∂b
+            grad_b[out_c] += grad_out_val
+
+    # Remove padding from dA
+    if padding > 0:
+      grad_a = grad_a_padded[:, :, padding:-padding, padding:-padding]
+    else:
+      grad_a = grad_a_padded 
+
+    if A.requires_grad: A.grad = grad_a
+    if Weight.requires_grad: Weight.grad = grad_w
+    if Bias.requires_grad: Bias.grad = grad_b
 
 class UnaryOps:
   @staticmethod

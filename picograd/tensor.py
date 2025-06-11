@@ -12,7 +12,7 @@ from picograd.util import *
 from picograd.backend.device import Devices, Device
 
 # TODO: device abstraction layer
-from picograd.backend.cuda.utils import tensor_to_cuda, free_device_tensor, copy_data_to_device
+from picograd.backend.cuda.utils import tensor_to_cuda, free_device_tensor, copy_data_to_device, copy_data_to_host
 
 from .draw_utils import draw_dot
 
@@ -27,14 +27,14 @@ VERBOSE = int(os.getenv("VERBOSE", 0))
 
 class Tensor:
   def __init__(
-      self,
-      data: np.array,
-      name: str = "t",
-      _prev: set = (),
-      requires_grad: bool = True,
-      device: Optional[Device] = Device(Devices.CPU),
-      device_data: Optional[ctypes.c_void_p] = None,
-    ):
+    self,
+    data: np.array,
+    name: str = "t",
+    _prev: set = (),
+    requires_grad: bool = True,
+    device: Optional[Device] = Device(Devices.CPU),
+    device_data: Optional[ctypes.c_void_p] = None,
+  ):
     self.device= list(_prev)[0].device if len(list(_prev)) > 0 else device
     self._ctx = None  # TODO: use context like pytorch
 
@@ -44,7 +44,7 @@ class Tensor:
     self.verbose = bool(VERBOSE)
 
     self.requires_grad = requires_grad
-    self.grad = np.zeros(self.shape) if self.requires_grad else None
+    self._grad = np.zeros(self._data.shape) if self.requires_grad else None
 
     self._prev = set(_prev)
     self.prev_op = None
@@ -54,19 +54,56 @@ class Tensor:
     self.w, self.b = None, None
 
     self.device_data = device_data
+    self.device_grad = None
     if device.name != Devices.CPU: self.to(device)
 
+  # FIXME: using data and grad internally (ops.py) causes cura errors
+  # TODO: check what copy_data_to_host affects (data is moved when realized, so _data.shape might not be reliable)
   @property
-  def data(self):
+  def data(self) -> np.ndarray:
+    if self.device.name != Devices.CPU and self.device_data is not None:
+      copy_data_to_host(self.device.manager, self.device_data, self._data)
+
+    if not isinstance(self._data, np.ndarray):
+      self._data = np.array(self._data)
     return self._data
   
   @data.setter
   def data(self, value):
     self._data = value
-    if self.device.name != Devices.CPU:
-      if self.device_data is not None:
-        copy_data_to_device(self.device.manager, self.device_data, self._data)
-      
+    if self.device.name != Devices.CPU and self.device_data is not None:
+      copy_data_to_device(self.device.manager, self.device_data, self._data)
+
+  @property
+  def grad(self):
+    if self.device.name != Devices.CPU and self.device_grad is not None:
+      copy_data_to_host(self.device.manager, self.device_grad, self._data)
+    return self._grad
+
+  @grad.setter
+  def grad(self, value):
+    self._grad = value
+    if self.device.name != Devices.CPU and self.device_grad is not None:
+      copy_data_to_device(self.device.manager, self.device_grad , self._grad)
+
+  @property
+  def T(self): return Tensor(self.data.T, _prev=(self,), device=self.device)
+
+  @property
+  def item(self): return self.data
+
+  @property
+  def shape(self, idxs=None):
+    if idxs is None:
+      return self._data.shape
+    ret = []
+    shp = self._data.shape
+    for idx in idxs:
+      ret.append(shp[idx])
+    
+    if len(ret) == 1:
+      ret = int(ret[0])
+    return ret
 
   def get_device_memory(self):
     """Returns the device memory of a tensor."""
@@ -87,17 +124,24 @@ class Tensor:
   def to(self, device: Device):
     """Tranfers tensor to the specified device."""
 
-    self.device = device
+    if device.name == Devices.CPU:
+      if self.device_data is not None:
+        copy_data_to_host(self.device.manager, self.device_data, self._data)
 
+        free_device_tensor(self.device.manager, self.device_data)
+        self.device_data = None
+        free_device_tensor(self.device.manager, self.device_grad)
+        self.device_grad = None
+
+      self.device = device
+      return self
+
+    self.device = device
     if device.name == Devices.CUDA:
       # TODO: if result of CUDA op, no need to reallocate memory (op should return d_C as well)
       self.data = self.data.astype(np.float32)
-      self.device_data = tensor_to_cuda(self)
-    elif device.name == Devices.CPU:
-      # self.data = self.get_device_memory()
-      if self.device_data is not None:
-        free_device_tensor(self.device.manager, self.device_data)
-        self.device_data = None
+      self.grad = self.grad.astype(np.float32)
+      self.device_data, self.device_grad = tensor_to_cuda(self)
 
     return self
 
@@ -108,9 +152,12 @@ class Tensor:
       return f"{color_yellow("Tensor")} (name={self.name}, shape={str(self.shape)}, device={str(self.device.name)}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
     
   def __del__(self):
-    if self.device_data is not None:
-      free_device_tensor(self.device.manager, self.device_data)
-      self.device_data = None
+    # if self.device_data is not None:
+    #   free_device_tensor(self.device.manager, self.device_data)
+    #   self.device_data = None
+    #   free_device_tensor(self.device.manager, self.device_grad)
+    #   self.device_grad = None
+    pass
 
   def __getitem__(self, indices):
     return self.data[indices]
@@ -195,25 +242,6 @@ class Tensor:
       elif v not in topo: topo.append(v)
     for node in reversed(topo): node._backward()
   
-  @property
-  def T(self): return Tensor(self.data.T, _prev=(self,), device=self.device)
-
-  @property
-  def item(self): return self.data
-
-  @property
-  def shape(self, idxs=None):
-    if idxs is None:
-      return self.data.shape
-    ret = []
-    shp = self.data.shape
-    for idx in idxs:
-      ret.append(shp[idx])
-    
-    if len(ret) == 1:
-      ret = int(ret[0])
-    return ret
-
   # TODO: move to ops
   def mean(self): return Tensor(np.mean(self.data), _prev=(self,))
 
@@ -288,15 +316,18 @@ class Tensor:
         print("[grad]\n", node.grad)
       if node.prev_op != None:
         print("====++++****++++====\n[OP]:", node.prev_op ,"\n====++++****++++====")
-
   
   def linear(self, weight: "Tensor", bias: Optional["Tensor"] = None):
     x = self * weight if len(weight.shape) == 1 else self.dot(weight)
     return x + bias if bias is not None else x
 
   def conv2d(self, weight: "Tensor", bias: "Tensor", in_channels: int, out_channels: int, stride: int = 1, padding: int = 0, debug=False):
-    self.func = Conv2D()
-    out = Tensor(self.func.forward(self, weight, bias,  in_channels, out_channels, stride, padding), _prev=(self, weight, bias))
+    self.func = Conv2D(self.device.name)
+    if self.device.name == Devices.CPU:
+      out = Tensor(self.func.forward(self, weight, bias,  in_channels, out_channels, stride, padding), _prev=(self, weight, bias))
+    else:
+      res, device_res = self.func.forward(self, weight, bias,  in_channels, out_channels, stride, padding)
+      out = Tensor(res, _prev=(self, weight, bias), device_data=device_res)
     out.prev_op = OPS.Conv2D
     out._backward = lambda: self.func.backward(out.grad)
     return out

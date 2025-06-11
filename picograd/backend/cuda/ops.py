@@ -48,7 +48,7 @@ class BinaryOps:
     padded_dims = dims + (1,) * (3 - len(dims))  # Pad to 3D
     dim1, dim2, dim3 = padded_dims[:3]
 
-    C_flat = np.empty_like(a.data.ravel())
+    C_flat = np.empty_like(a._data.ravel())
     d_C = allocate_device_memory(a.device.manager, C_flat)
 
     # Define grid and block sizes
@@ -68,12 +68,12 @@ class BinaryOps:
 
   @staticmethod
   def add_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray) -> np.ndarray:
-    if a.requires_grad: a.grad = cuda_add(a.data, grad_out, a.device.manager)
+    if a.requires_grad: a._grad = cuda_add(a._data, grad_out, a.device.manager)
     if b.requires_grad:
-      if b.grad.shape != grad_out.shape:
-        b.grad = cuda_add(b.grad, np.sum(grad_out, axis=0), b.device.manager) # TODO: move sum to CUDA (?)
+      if b._grad.shape != grad_out.shape:
+        b._grad = cuda_add(b._grad, np.sum(grad_out, axis=0), b.device.manager) # TODO: move sum to CUDA (?)
       else:
-        b.grad = cuda_add(b.grad, grad_out, b.device.manager)
+        b._grad = cuda_add(b._grad, grad_out, b.device.manager)
 
   @staticmethod
   def mul(a: "Tensor", b: "Tensor", block_size: Tuple = (8, 8, 8)) -> np.ndarray:
@@ -86,7 +86,7 @@ class BinaryOps:
     padded_dims = dims + (1,) * (3 - len(dims))  # Pad to 3D
     dim1, dim2, dim3 = padded_dims[:3]
 
-    C_flat = np.empty_like(a.data.ravel())
+    C_flat = np.empty_like(a._data.ravel())
     d_C = allocate_device_memory(a.device.manager, C_flat)
 
     # Define grid and block sizes
@@ -106,9 +106,9 @@ class BinaryOps:
 
   @staticmethod
   def mul_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray) -> np.ndarray:
-    if a.requires_grad: a.grad = cuda_add(a.grad, cuda_mul(b.data, grad_out, a.device.manager), a.device.manager)
-    if b.requires_grad: b.grad += a.data * grad_out
-    if b.requires_grad: b.grad = cuda_add(b.grad, cuda_mul(a.data, grad_out, b.device.manager), b.device.manager)
+    if a.requires_grad: a._grad = cuda_add(a._grad, cuda_mul(b._data, grad_out, a.device.manager), a.device.manager)
+    if b.requires_grad: b._grad += a._data * grad_out
+    if b.requires_grad: b._grad = cuda_add(b._grad, cuda_mul(a._data, grad_out, b.device.manager), b.device.manager)
 
   @staticmethod
   def dot(a: "Tensor", b: "Tensor", block_size: Tuple = (8, 8, 1)) -> np.ndarray:
@@ -140,19 +140,102 @@ class BinaryOps:
 
   @staticmethod
   def dot_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray) -> np.ndarray:
-    if a.requires_grad: a.grad = cuda_add(a.grad, cuda_gemm(grad_out, b.data.T, a.device.manager), a.device.manager)
-    if b.requires_grad: b.grad = cuda_add(b.grad, cuda_gemm(a.data.T, grad_out, b.device.manager), b.device.manager)
+    if a.requires_grad: a._grad = cuda_add(a._grad, cuda_gemm(grad_out, b._data.T, a.device.manager), a.device.manager)
+    if b.requires_grad: b._grad = cuda_add(b._grad, cuda_gemm(a._data.T, grad_out, b.device.manager), b.device.manager)
+
+  # TODO: this is naive conv2d
+  @staticmethod
+  def conv2d(
+    a: "Tensor", w: "Tensor", b:"Tensor",
+    in_channels: int, out_channels: int, stride: int = 1, padding: int = 0,
+    block_size: Tuple = (256, 1, 1)
+  ) -> np.ndarray:
+    assert len(a.shape) == 4, "Input must be 4D (B, C, H, W)"
+    assert a.shape[1] == in_channels, "Input channels do not match"
+    assert len(w.shape) == 4, "Kernel must be 4D (C_out, C_in, H, W)"
+    assert w.shape[2] == w.shape[3], "Kernel must be square"
+    assert w.shape[1] % 2 == 1, "Kernel dimensions must be odd"
+    assert a.shape[2] >= w.shape[1] and a.shape[3] >= w.shape[2], "Input must be larger than or equal to kernel dimensions"
+
+    kernel_code = a.device.manager.load_kernel("conv2d.cu")
+    kfunc = a.device.manager.compile_kernel(kernel_code, b"conv2d_kernel")
+
+    BS, C_in, H, W = a.shape
+    C_out, C_in, kernel_size, kernel_size = w.shape
+    H_out = ((H - kernel_size + 2*padding) // stride) + 1
+    W_out = ((W - kernel_size + 2*padding) // stride) + 1
+
+    # FIXME: a_padded
+
+    C = np.zeros((BS, out_channels, H_out, W_out))
+    d_C = allocate_device_memory(a.device.manager, C)
+
+    grid = (BS, out_channels, 4)
+    num_flops = BS * out_channels * H_out * W_out * in_channels * kernel_size * kernel_size * 2
+    args = prep_kargs(
+      a.device_data, w.device_data, b.device_data, d_C,
+      BS, in_channels, H, W,
+      out_channels, kernel_size, kernel_size,
+      H_out, W_out,
+      stride, padding
+    )
+    a.device.manager.launch_kernel(kfunc, grid, block_size, args, num_flops)
+    a.device.manager.memcpy_dtoh(C.ctypes.data, d_C, C.nbytes)
+
+    return C, d_C
 
   @staticmethod
-  def conv2d(a: "Tensor", w: "Tensor", b:"Tensor",
-             in_channels: int, out_channels: int, stride: int = 1, padding: int = 0,
-             debug=False) -> np.ndarray:
-    raise NotImplementedError("BinaryOps.conv2d is not implemented yet")
+  def conv2d_back(
+    a: "Tensor", grad_out: np.ndarray, w: "Tensor", b: "Tensor",
+    in_channels: int, out_channels: int, stride: int = 1, padding: int = 0,
+    block_size: Tuple = (256, 1, 1)
+  ):
+    assert a.shape[1] == in_channels, "Input channels do not match"
+    assert w.shape[0] == out_channels, "Output channels do not match"
+    assert len(a.shape) == 4, "Input must be 4D (B, C, H, W)"
+    assert len(w.shape) == 4, "Kernel must be 4D (C_out, C_in, H, W)"
+    assert w.shape[2] == w.shape[3], "Kernel must be square"
+    assert w.shape[1] % 2 == 1, "Kernel dimensions must be odd"
+    assert a.shape[2] >= w.shape[1] and a.shape[3] >= w.shape[2], "Input must be larger than or equal to kernel dimensions"
 
-  @staticmethod
-  def conv2d_backward(a: "Tensor", grad_out: np.ndarray, w: "Tensor", b: "Tensor",
-                      in_channels: int, out_channels: int, stride: int = 1, padding: int = 0):
-    raise NotImplementedError("BinaryOps.conv2d_backward is not implemented yet")
+    kernel_code = a.device.manager.load_kernel("conv2d_back.cu")
+    kfunc = a.device.manager.compile_kernel(kernel_code, b"conv2d_backward_kernel")
+
+    BS, C_in, H, W = a.shape
+    C_out, _, kernel_size, _ = w.shape
+    _, _, H_out, W_out = grad_out.shape
+
+    grad_a = np.zeros_like(a)
+    d_grad_a = allocate_device_memory(a.device.manager, grad_a)
+    grad_w = np.zeros_like(w)
+    d_grad_w = allocate_device_memory(a.device.manager, grad_w)
+    grad_b = np.zeros_like(b)
+    d_grad_b = allocate_device_memory(a.device.manager, grad_b)
+    d_grad_out = allocate_device_memory(a.device.manager, grad_out)
+
+    # FIXME: a_padded + grad_a_padded
+
+    grid = (BS, out_channels, 4)
+    num_flops = BS * out_channels * H_out * W_out * in_channels * kernel_size * kernel_size * 2
+    args = prep_kargs(
+      a.device_data, w.device_data,
+      d_grad_out, d_grad_a, d_grad_w, d_grad_b,
+      BS, in_channels, out_channels,
+      H, W,
+      H_out, W_out,
+      H_out, W_out,
+      kernel_size,
+      stride,
+      padding
+    )
+    a.device.manager.launch_kernel(kfunc, grid, block_size, args, num_flops)
+
+    a.device.manager.memcpy_dtoh(grad_a.ctypes.data, d_grad_a, grad_a.nbytes)
+    a.device.manager.memcpy_dtoh(grad_w.ctypes.data, d_grad_w, grad_w.nbytes)
+    a.device.manager.memcpy_dtoh(grad_b.ctypes.data, d_grad_b, grad_b.nbytes)
+    if a.requires_grad: a.grad = grad_a
+    if w.requires_grad: w.grad = grad_w
+    if b.requires_grad: b.grad = grad_b
 
 class UnaryOps:
   @staticmethod
