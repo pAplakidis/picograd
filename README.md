@@ -49,16 +49,23 @@ draw_dot(e, path="graphs/test")
 ```
 
 ## TODO
+
+- Implement CUDA activation functions (and other unary ops)
+- Implement CUDA pooling
 - Implement BatchNorm1D and 2D
-- debug & optimize CUDA
-- cuda conv-net
-- device data should not be moved to host in ops
+- debug & optimize CUDA and memory leaks (device data should not be moved to host in ops)
+- cudaMallocManaged
+
 - Test on actual neural networks, efficientnet, etc (full training and evaluation of simple models)
-- Release (make the project cleaner, more robust and usable)
+- Unit tests
+
+## BUGS
+
+- CUDA MNIST not learning
 
 ### DONE
 
-
+- cuda conv-net
 - ops.py + function.py
 - conv2d, maxpool, etc
 - save/load models - state dict

@@ -39,7 +39,7 @@ class OPS(Enum):
 # TODO: backward ops should keep gradients in the device memory
 class BinaryOps:
   @staticmethod
-  def add(a: "Tensor", b: "Tensor", block_size: Tuple = (8, 8, 8)) -> np.ndarray: # type: ignore
+  def add(a: "Tensor", b: "Tensor", block_size: Tuple[int] = (8, 8, 8)) -> np.ndarray: # type: ignore
     """Add two homogeneous tensors of any dimension (1D, 2D, 3D) using CUDA."""
     kernel_code = a.device.manager.load_kernel("add.cu")
     kfunc = a.device.manager.compile_kernel(kernel_code, b"add_kernel")
@@ -62,21 +62,40 @@ class BinaryOps:
     n_flops = dim1 * dim2 * dim3
     args = prep_kargs(a.device_data, b.device_data, d_C, dim1, dim2, dim3)
     a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops)
-    a.device.manager.memcpy_dtoh(C_flat.ctypes.data, d_C, C_flat.nbytes)
-
-    return C_flat.reshape(dims), d_C
+    return d_C
 
   @staticmethod
-  def add_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray) -> np.ndarray:
-    if a.requires_grad: a._grad = cuda_add(a._data, grad_out, a.device.manager)
+  def add_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray, block_size: Tuple[int] = (8, 8, 8)) -> np.ndarray:
+    """Backward pass for addition operation."""
+
+    if not a.requires_grad and not b.requires_grad: return
+
+    kernel_code = a.device.manager.load_kernel("add.cu")
+    kfunc = a.device.manager.compile_kernel(kernel_code, b"add_kernel")
+
+    dims = a.shape
+    padded_dims = dims + (1,) * (3 - len(dims))  # Pad to 3D
+    dim1, dim2, dim3 = padded_dims[:3]
+
+    _, d_grad_out = np_to_device(grad_out, a.device.manager)
+
+    grid = (
+      (dim3 + block_size[0] - 1) // block_size[0],
+      (dim2 + block_size[1] - 1) // block_size[1],
+      (dim1 + block_size[2] - 1) // block_size[2],
+    )
+
+    n_flops = (int(a.requires_grad) + int(b.requires_grad)) * dim1 * dim2 * dim3
+    if a.requires_grad:
+      args = prep_kargs(a.device_data, d_grad_out, a.device_grad, dim1, dim2, dim3)
+      a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops)
     if b.requires_grad:
-      if b._grad.shape != grad_out.shape:
-        b._grad = cuda_add(b._grad, np.sum(grad_out, axis=0), b.device.manager) # TODO: move sum to CUDA (?)
-      else:
-        b._grad = cuda_add(b._grad, grad_out, b.device.manager)
+      args = prep_kargs(b.device_data, d_grad_out, b.device_grad, dim1, dim2, dim3)
+      a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops)
 
   @staticmethod
-  def mul(a: "Tensor", b: "Tensor", block_size: Tuple = (8, 8, 8)) -> np.ndarray:
+  def mul(a: "Tensor", b: "Tensor", block_size: Tuple[int] = (8, 8, 8)) -> np.ndarray:
+    """Pointwise multiplication"""
     assert a.shape == b.shape, "Tensors must have the same shape"
 
     kernel_code = a.device.manager.load_kernel("mul.cu")
@@ -100,19 +119,63 @@ class BinaryOps:
     n_flops = dim1 * dim2 * dim3
     args = prep_kargs(a.device_data, b.device_data, d_C, dim1, dim2, dim3)
     a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops)
-    a.device.manager.memcpy_dtoh(C_flat.ctypes.data, d_C, C_flat.nbytes)
-
-    return C_flat.reshape(dims), d_C
+    return d_C
 
   @staticmethod
-  def mul_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray) -> np.ndarray:
-    if a.requires_grad: a._grad = cuda_add(a._grad, cuda_mul(b._data, grad_out, a.device.manager), a.device.manager)
-    if b.requires_grad: b._grad += a._data * grad_out
-    if b.requires_grad: b._grad = cuda_add(b._grad, cuda_mul(a._data, grad_out, b.device.manager), b.device.manager)
+  def mul_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray,  block_size=(8, 8, 8)) -> np.ndarray:
+    """Backward pass for pointwise multiplication operation."""
+    if not a.requires_grad and not b.requires_grad: return
+
+    add_kernel_code = a.device.manager.load_kernel("add.cu")
+    add_kfunc = a.device.manager.compile_kernel(add_kernel_code, b"add_kernel")
+    mul_kernel_code = a.device.manager.load_kernel("mul.cu")
+    mul_kfunc = a.device.manager.compile_kernel(mul_kernel_code, b"mul_kernel")
+
+    dims = a.shape
+    padded_dims = dims + (1,) * (3 - len(dims))  # Pad to 3D
+    dim1, dim2, dim3 = padded_dims[:3]
+
+    # for storing the mul result, to be used for addition
+    temp_a = np.zeros_like(a._grad.ravel())
+    temp_b = np.zeros_like(b._grad.ravel())
+
+    _, d_grad_out = np_to_device(grad_out, a.device.manager)
+    _, d_temp_a = np_to_device(temp_a, a.device.manager)
+    _, d_temp_b = np_to_device(temp_b, a.device.manager)
+
+    grid = (
+      (dim3 + block_size[0] - 1) // block_size[0],
+      (dim2 + block_size[1] - 1) // block_size[1],
+      (dim1 + block_size[2] - 1) // block_size[2],
+    )
+    n_flops = (int(a.requires_grad) + int(b.requires_grad)) * dim1 * dim2 * dim3
+
+    if a.requires_grad:
+      # d_temp_a = b.device_data * d_grad_out
+      kargs = prep_kargs(b.device_data, d_grad_out, d_temp_a, dim1, dim2, dim3)
+      a.device.manager.launch_kernel(mul_kfunc, grid, block_size, kargs, n_flops)
+
+      # a.device_grad += d_temp_a
+      kargs = prep_kargs(a.device_grad, d_temp_a, a.device_grad, dim1, dim2, dim3)
+      a.device.manager.launch_kernel(add_kfunc, grid, block_size, kargs, n_flops)
+
+      # free_device_tensor(a.device.manager, d_temp_a)  # FIXME: segfaults
+
+    if b.requires_grad:
+      # d_temp_b = a.device_data * d_grad_out
+      kargs = prep_kargs(a.device_data, d_grad_out, d_temp_b, dim1, dim2, dim3)
+      a.device.manager.launch_kernel(mul_kfunc, grid, block_size, kargs, n_flops)
+
+      # b.device_grad += d_temp_b
+      kargs = prep_kargs(b.device_grad, d_temp_b, b.device_grad, dim1, dim2, dim3)
+      a.device.manager.launch_kernel(add_kfunc, grid, block_size, kargs, n_flops)
+
+      # free_device_tensor(a.device.manager, d_temp_b)  # FIXME: segfaults
 
   @staticmethod
-  def dot(a: "Tensor", b: "Tensor", block_size: Tuple = (8, 8, 1)) -> np.ndarray:
+  def dot(a: "Tensor", b: "Tensor") -> np.ndarray:
     """Matrix multiplication using CUDA."""
+    assert len(a.shape) == 2 and len(b.shape) == 2, "Both tensors must be 2D (matrices)"
     assert a.shape[1] == b.shape[0], "Inner dimensions must match"
 
     kernel_code = a.device.manager.load_kernel("matmul.cu")
@@ -134,21 +197,79 @@ class BinaryOps:
     num_flops = 2 * M * N * K
     args = prep_kargs(a.device_data, b.device_data, d_C, M, N, K)
     a.device.manager.launch_kernel(kfunc, grid, block_size, args, num_flops)
-    a.device.manager.memcpy_dtoh(C.ctypes.data, d_C, C.nbytes)
-
-    return C, d_C
+    return d_C
 
   @staticmethod
   def dot_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray) -> np.ndarray:
-    if a.requires_grad: a._grad = cuda_add(a._grad, cuda_gemm(grad_out, b._data.T, a.device.manager), a.device.manager)
-    if b.requires_grad: b._grad = cuda_add(b._grad, cuda_gemm(a._data.T, grad_out, b.device.manager), b.device.manager)
+    if not a.requires_grad and not b.requires_grad: return
+
+    assert len(a.shape) == 2 and len(b.shape) == 2, "Both tensors must be 2D (matrices)"
+    assert a.shape[1] == b.shape[0], "Inner dimensions must match"
+
+    dot_kernel_code = a.device.manager.load_kernel("matmul.cu")
+    dot_kfunc = a.device.manager.compile_kernel(dot_kernel_code, b"matmul_tiled_kernel")
+    add_kernel_code = a.device.manager.load_kernel("add.cu")
+    add_kfunc = a.device.manager.compile_kernel(add_kernel_code, b"add_kernel")
+
+    temp_a = np.zeros_like(a._grad.ravel())
+    temp_b = np.zeros_like(b._grad.ravel())
+    
+    _, d_grad_out = np_to_device(grad_out, a.device.manager)
+    _, d_temp_a = np_to_device(temp_a, a.device.manager)
+    _, d_temp_b = np_to_device(temp_b, a.device.manager)
+
+    # setup dot kernel
+    M, K = a.shape
+    _, N = b.shape[0], b.shape[1]
+    dot_block_size = (TILE_SIZE, TILE_SIZE, 1)
+    dot_grid = (
+      (N + TILE_SIZE - 1) // TILE_SIZE,
+      (M + TILE_SIZE - 1) // TILE_SIZE,
+      1,
+    )
+
+    # setup add kernel
+    dims = a.shape
+    padded_dims = dims + (1,) * (3 - len(dims))  # Pad to 3D
+    dim1, dim2, dim3 = padded_dims[:3]
+    add_block_size = (8, 8, 8)
+    add_grid = (
+      (dim3 + add_block_size[0] - 1) // add_block_size[0],
+      (dim2 + add_block_size[1] - 1) // add_block_size[1],
+      (dim1 + add_block_size[2] - 1) // add_block_size[2],
+    )
+
+    num_flops = 2 * M * N * K
+
+    # TODO: transpose b and a ?
+    if a.requires_grad:
+      # d_temp_a = grad_out @ b.data.T
+      args = prep_kargs(d_grad_out, b.device_data, d_temp_a, M, N, K)
+      a.device.manager.launch_kernel(dot_kfunc, dot_grid, dot_block_size, args, num_flops)
+
+      # a.device_grad += d_temp_a
+      args = prep_kargs(a.device_grad, d_temp_a, a.device_grad, dim1, dim2, dim3)
+      a.device.manager.launch_kernel(add_kfunc, add_grid, add_block_size, args, num_flops)
+
+      # free_device_tensor(a.device.manager, d_temp_a)  # FIXME: segfaults
+
+    if b.requires_grad:
+      # d_temp_b = a.data.T @ grad_out
+      args = prep_kargs(a.device_data, d_grad_out, d_temp_b, K, M, N)
+      a.device.manager.launch_kernel(dot_kfunc, dot_grid, dot_block_size, args, num_flops)
+
+      # b.device_grad += d_temp_b
+      args = prep_kargs(b.device_grad, d_temp_b, b.device_grad, dim1, dim2, dim3)
+      a.device.manager.launch_kernel(add_kfunc, add_grid, add_block_size, args, num_flops)
+
+      # free_device_tensor(a.device.manager, d_temp_b)  # FIXME: segfaults
 
   # TODO: this is naive conv2d
   @staticmethod
   def conv2d(
     a: "Tensor", w: "Tensor", b:"Tensor",
     in_channels: int, out_channels: int, stride: int = 1, padding: int = 0,
-    block_size: Tuple = (256, 1, 1)
+    block_size: Tuple[int] = (256, 1, 1)
   ) -> np.ndarray:
     assert len(a.shape) == 4, "Input must be 4D (B, C, H, W)"
     assert a.shape[1] == in_channels, "Input channels do not match"
@@ -180,16 +301,16 @@ class BinaryOps:
       stride, padding
     )
     a.device.manager.launch_kernel(kfunc, grid, block_size, args, num_flops)
-    a.device.manager.memcpy_dtoh(C.ctypes.data, d_C, C.nbytes)
-
-    return C, d_C
+    return d_C
 
   @staticmethod
   def conv2d_back(
     a: "Tensor", grad_out: np.ndarray, w: "Tensor", b: "Tensor",
     in_channels: int, out_channels: int, stride: int = 1, padding: int = 0,
-    block_size: Tuple = (256, 1, 1)
+    block_size: Tuple[int] = (256, 1, 1)
   ):
+    if not a.requires_grad and not w.requires_grad and not b.requires_grad: return
+
     assert a.shape[1] == in_channels, "Input channels do not match"
     assert w.shape[0] == out_channels, "Output channels do not match"
     assert len(a.shape) == 4, "Input must be 4D (B, C, H, W)"
@@ -205,6 +326,7 @@ class BinaryOps:
     C_out, _, kernel_size, _ = w.shape
     _, _, H_out, W_out = grad_out.shape
 
+    # FIXME: grads already in device memory
     grad_a = np.zeros_like(a)
     d_grad_a = allocate_device_memory(a.device.manager, grad_a)
     grad_w = np.zeros_like(w)
@@ -230,16 +352,25 @@ class BinaryOps:
     )
     a.device.manager.launch_kernel(kfunc, grid, block_size, args, num_flops)
 
-    a.device.manager.memcpy_dtoh(grad_a.ctypes.data, d_grad_a, grad_a.nbytes)
-    a.device.manager.memcpy_dtoh(grad_w.ctypes.data, d_grad_w, grad_w.nbytes)
-    a.device.manager.memcpy_dtoh(grad_b.ctypes.data, d_grad_b, grad_b.nbytes)
-    if a.requires_grad: a.grad = grad_a
-    if w.requires_grad: w.grad = grad_w
-    if b.requires_grad: b.grad = grad_b
+    if a.requires_grad: a.device_grad = d_grad_a
+    if w.requires_grad: w.device_grad = d_grad_w
+    if b.requires_grad: b.device_grad = d_grad_b
 
 class UnaryOps:
   @staticmethod
-  def relu(a: "Tensor") -> np.ndarray: return np.maximum(a, np.zeros_like(a))
+  def relu(a: "Tensor") -> np.ndarray: return np.maximum(a.data, np.zeros_like(a))
+
+  @staticmethod
+  def relu_back(a: "Tensor", grad_out: np.ndarray):
+    # self.grad += (out.data > 0) * out.grad
+    pass
+  
+  @staticmethod
+  def softmax(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
+
+  @staticmethod
+  def softmax_back(a: "Tensor", grad_out: np.ndarray):
+    pass
   
   @staticmethod
   def sigmoid(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
@@ -264,9 +395,6 @@ class UnaryOps:
   
   @staticmethod
   def normalize(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
-  
-  @staticmethod
-  def softmax(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
   
   @staticmethod
   def batchnorm(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")

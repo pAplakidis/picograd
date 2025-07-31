@@ -59,12 +59,14 @@ class Function:
         method = cls.log_time(method)
         setattr(cls, method_name, method)
 
+# BINARY OPS
+
 class Add(Function):
   def forward(self, a: "Tensor", b: "Tensor") -> "Tensor":
     self.a, self.b = a, b
     return self.BinaryOps.add(a, b)
 
-  def backward(self, grad_out: "Tensor"):
+  def backward(self, grad_out: np.ndarray):
     self.BinaryOps().add_back(self.a, self.b, grad_out)
 
 class Mul(Function):
@@ -72,7 +74,7 @@ class Mul(Function):
     self.a, self.b = a, b
     return self.BinaryOps.mul(a, b)
 
-  def backward(self, grad_out: "Tensor"):
+  def backward(self, grad_out: np.ndarray):
     self.BinaryOps().mul_back(self.a, self.b, grad_out)
 
 class Dot(Function):
@@ -80,7 +82,7 @@ class Dot(Function):
     self.a, self.b = a, b
     return self.BinaryOps.dot(a, b)
 
-  def backward(self, grad_out: "Tensor"):
+  def backward(self, grad_out: np.ndarray):
     self.BinaryOps().dot_back(self.a, self.b, grad_out)
 
 class Conv2D(Function):
@@ -90,5 +92,24 @@ class Conv2D(Function):
     self.stride, self.padding = stride, padding
     return self.BinaryOps.conv2d(a, w, b, in_channels, out_channels, stride, padding)
   
-  def backward(self, grad_out: "Tensor"):
+  def backward(self, grad_out: np.ndarray):
     self.BinaryOps.conv2d_back(self.a, grad_out, self.w, self.b, self.a.shape[1], self.w.shape[0], self.stride, self.padding)
+
+# UNARY OPS
+
+class ReLU(Function):
+  def forward(self, a: "Tensor"):
+    self.a = a
+    return self.UnaryOps.relu(a)
+
+  def backward(self, grad_out: np.ndarray):
+    self.UnaryOps.relu_back(self.a, grad_out)
+
+class Softmax(Function):
+  def forward(self, a: "Tensor"):
+    self.a = a
+    self.out = self.UnaryOps.softmax(a)
+    return self.out
+  
+  def backward(self, grad_out: np.ndarray):
+    return self.UnaryOps.softmax_back(self.a, self.out, grad_out)

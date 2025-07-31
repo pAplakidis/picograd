@@ -16,10 +16,9 @@ class MSELoss(Loss):
 # z: network output, y: ground truth
 # Mean Squared Error Loss
 def MSELoss(z: Tensor, y: Tensor) -> Tensor:
-  assert (n := z.shape[0]) == y.shape[0], f"Z Tensor doesn't have the same shape as ground-truth Y: z.shape={str(z.shape)}, y.shape={str(y.shape)}"
-  loss_val = 1/n * np.sum((z.data-y.data) ** 2)
+  assert z.shape == y.shape, f"Z Tensor doesn't have the same shape as ground-truth Y: z.shape={str(z.shape)}, y.shape={str(y.shape)}"
+  loss_val = 1/z.shape[0] * np.sum((z.data-y.data) ** 2)
   t = Tensor(loss_val, name="mseloss_out",  _prev=(z,))
-  t._prev.append(z)
   t.prev_op = OPS.MSELoss
   t.grad = 2 * (z.data - y.data) / y.shape[0]
   return t
@@ -29,7 +28,6 @@ def MAELoss(z: Tensor, y: Tensor) -> Tensor:
   assert (n := z.shape[0]) == y.shape[0], f"Z Tensor doesn't have the same shape as ground-truth Y: z.shape={str(z.shape)}, y.shape={str(y.shape)}"
   loss_val = 1/n * np.sum(np.abs(z.data-y.data))
   t = Tensor(loss_val, name="maeloss_out", _prev=(z,))
-  t._prev.append(z)
   t.prev_op = OPS.MAELoss
   return t
 
@@ -51,17 +49,22 @@ def BCELoss(z: Tensor, y: Tensor) -> Tensor:
 
 # Categorical Cross Entropy
 def CrossEntropyLoss(z: Tensor, y: Tensor) -> Tensor:
-  # FIXME: does that just mitigate the problem?
-  if len(z.shape) == 3 and z.shape[0] == 1: z = Tensor(z.data[0])
-  assert (n := z.shape[0]) == y.shape[0], f"Z Tensor doesn't have the same shape as ground-truth Y: z.shape={str(z.shape)}, y.shape={str(y.shape)}"
-  assert len(y.shape) > 1 and len(z.shape) > 1, "Dimensionality of tensor and ground-truth must be > 1"
+  assert len(z.shape) == 2, "Z Tensor must be 2D (batch_size, num_classes)"
+  assert len(y.shape) == 1, "Ground-truth Y must be 1D (batch_size,)"
+  assert z.shape[0] == y.shape[0], "Z Tensor and ground-truth Y must have the same batch size"
+
+  y.data = y.data.astype(np.int32)
 
   y_pred_clipped = np.clip(z.data, 1e-7, 1 - 1e-7)
-  loss_val = -np.sum(y.data * np.log(y_pred_clipped), axis=1)
+  # loss_val = -np.sum(y.data * np.log(y_pred_clipped), axis=1)
+  loss_val = -np.log(y_pred_clipped[np.arange(y.shape[0]), y.data])
   out = Tensor(loss_val, name="crossentropyloss_out", _prev=(z,))
   out.prev_op = OPS.CrossEntropyLoss
-  # out.grad = z.data - y.data
-  out.grad = (z.data - y.data) / y.shape[0]
+
+  batch_size, n_classes = y.shape[0], z.shape[1]
+  y_one_hot = np.zeros((batch_size, n_classes))
+  y_one_hot[np.arange(batch_size), y.data] = 1
+  out.grad = (z.data - y_one_hot) / batch_size  # Average gradient over batch
   
   def _backward():
     z.grad = out.grad

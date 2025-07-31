@@ -65,11 +65,7 @@ if __name__ == '__main__':
       Y_batch = Y_train[batch_start:batch_end]
 
       X = Tensor(np.array(X_batch), device=device)
-      Y = np.zeros((1, 10), dtype=np.float32)
-      Y = np.zeros((len(Y_batch), 10), dtype=np.float32)
-      for idx, label in enumerate(Y_batch):
-        Y[idx][label] = 1.0
-      Y = Tensor(Y, device=device)
+      Y = Tensor(np.array(Y_batch), device=device)
 
       out = model(X)
       loss = CrossEntropyLoss(out, Y)
