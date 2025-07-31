@@ -13,6 +13,7 @@ from picograd.backend.cuda.utils import *
 from picograd.draw_utils import draw_dot
 
 
+cpu = Device(Devices.CPU)
 # device = Device(Devices.CPU)
 device = Device(Devices.CUDA) if is_cuda_available() else Device(Devices.CPU)
 print("[*] Using device", device.name, "\n")
@@ -70,18 +71,63 @@ class TestOps(unittest.TestCase):
 
   def test_linear_layer(self):
     try:
-      a = Tensor(np.random.randn(100, 50), device=device)
-      b = Tensor(np.random.randn(50, 100)).to(device)
+      t1 = np.random.randn(100, 50).astype(np.float32)
+      t2 = np.random.randn(50, 100).astype(np.float32)
+      t3 = np.random.randn(100, 100).astype(np.float32)
+
+      a = Tensor(t1, name="a", device=device)
+      b = Tensor(t2, name="b", device=device)
 
       c = a.dot(b)
+      c.name = "c"
       assert np.allclose(c.data, a.data @ b.data, atol=1e-4), "dot product failed"
 
-      d = Tensor(np.random.randn(100, 100), device=device)
+      d = Tensor(t3, name="d", device=device)
+      print(c.name, c.device, c.device_data)
       e = c + d
+      print(c.name, c.device_grad)
+      e.name = "e"
       e.backward()
       assert np.allclose(e.data, c.data + d.data), "addition failed"
 
       draw_dot(e, path="graphs/ops_test")
+
+      a_cpu = Tensor(t1, device=cpu)
+      b_cpu = Tensor(t2, device=cpu)
+      c_cpu = a_cpu.dot(b_cpu)
+      assert np.allclose(c_cpu.data, c.data, atol=1e-4), "dot product data mismatch between CPU and CUDA dot product"
+
+      d_cpu = Tensor(t3, device=cpu)
+      e_cpu = c_cpu + d_cpu
+      e_cpu.backward()
+      assert np.allclose(e_cpu.data, e.data, atol=1e-4), "addition data mismatch between CPU and CUDA addition"
+
+      print("E")
+      print(e.grad)
+      print(e_cpu.grad)
+      print()
+      assert np.allclose(e.grad, e_cpu.grad, atol=1e-4), "gradient of a mismatch"
+      print("D")
+      print(d.grad)
+      print(d_cpu.grad)
+      print()
+      # FIXME: running this separetely works, but not in the whole test suite (d.grad in CUDA is != 0.0)
+      assert np.allclose(d.grad, d_cpu.grad, atol=1e-4), "gradient of a mismatch"
+      print("C")
+      print(c.grad)
+      print(c_cpu.grad)
+      print()
+      assert np.allclose(c.grad, c_cpu.grad, atol=1e-4), "gradient of a mismatch"
+      print("B")
+      print(b.grad)
+      print(b_cpu.grad)
+      print()
+      assert np.allclose(b.grad, b_cpu.grad, atol=1e-4), "gradient of a mismatch"
+      print("A")
+      print(a.grad)
+      print(a_cpu.grad)
+      print()
+      assert np.allclose(a.grad, a_cpu.grad, atol=1e-4), "gradient of a mismatch"
 
       print("[+] Linear layer op OK\n")
     except Exception as e:
