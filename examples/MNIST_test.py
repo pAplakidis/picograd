@@ -56,7 +56,7 @@ if __name__ == '__main__':
   losses = []
   print("Training ...")
   for i in range(epochs):
-    print(f"[+] Epoch {i+1}/{epochs}")
+    print(f"[=>] Epoch {i+1}/{epochs}")
     epoch_losses = []
 
     num_batches = len(X_train) // BS + (len(X_train) % BS != 0)
@@ -79,7 +79,6 @@ if __name__ == '__main__':
       optim.step()
 
       if batch_idx == 0 and i == 0: draw_dot(loss, path="graphs/mnist")
-      # if idx == 0: draw_dot(loss, path="graphs/mnist")
       t.set_description(f"Loss: {loss.mean().item:.2f}")
     print(f"Avg loss: {np.array(epoch_losses).mean()}")
 
