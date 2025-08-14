@@ -1,4 +1,7 @@
-# A from-scratch toy implementation of neural networks, backpropagation, etc
+# PICOGRAD
+A from-scratch toy implementation of neural networks, backpropagation, etc
+
+### Note that this library is a work in progress, therefore some features and ops might cause errors or have not been implemented yet.
 
 ## Setup
 
@@ -14,7 +17,7 @@ or Debug:
 
 ## Requirements
 
-- CUDA toolkit (if using NVIDIA GPU)
+- NVIDIA drivers and CUDA toolkit (if using NVIDIA GPU, tested on Linux 6.14.0-27-generic #27~24.04.1-Ubuntu with cuda 12.9)
 - Python dependencies
 
 ```
@@ -75,7 +78,7 @@ You can set debug levels by assigning the debug value to DEBUG env variable.
 
 - Implement CUDA activation functions (and other unary ops)
 - Implement CUDA pooling
-- Implement BatchNorm1D and 2D
+- Implement BatchNorm1D and 2D (+CUDA)
 - debug & optimize CUDA and memory leaks (device data should not be moved to host in ops)
 - cudaMallocManaged
 

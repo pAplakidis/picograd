@@ -290,8 +290,31 @@ class Tensor:
           if child not in visited: stack.append(child)
       elif v not in topo: topo.append(v)
     for node in reversed(topo): node._backward()
+
+  # pretty print the graph for this tensor backwards
+  def print_graph(self, verbose=False):
+    tmp = list(reversed(list(self._prev.copy())))
+    tmp.insert(0, self)
+
+    topo = []
+    visited = set()
+    stack = [self]
+    while stack:
+      v = stack.pop()
+      if v not in visited:
+        visited.add(v)
+        stack.append(v)
+        for child in v._prev:
+          if child not in visited: stack.append(child)
+      elif v not in topo: topo.append(v)
+    for node in reversed(topo):
+      print(node)
+      if verbose:
+        print("[data]\n", node.data)
+        print("[grad]\n", node.grad)
+      if node.prev_op != None:
+        print("====++++****++++====\n[OP]:", node.prev_op ,"\n====++++****++++====")
   
-  # TODO: move to ops
   def mean(self): return Tensor(np.mean(self.data), _prev=(self,))
 
   def float(self):
@@ -327,7 +350,7 @@ class Tensor:
     out.prev_op = "UNSQUEEZE"
 
     def _backward():
-        self.grad += np.squeeze(out.grad, axis=axis)
+      self.grad += np.squeeze(out.grad, axis=axis)
     
     out._backward = _backward
     return out
@@ -342,30 +365,6 @@ class Tensor:
     out._backward = _backward
     return out
 
-  # pretty print the graph for this tensor backwards
-  def print_graph(self, verbose=False):
-    tmp = list(reversed(list(self._prev.copy())))
-    tmp.insert(0, self)
-
-    topo = []
-    visited = set()
-    stack = [self]
-    while stack:
-      v = stack.pop()
-      if v not in visited:
-        visited.add(v)
-        stack.append(v)
-        for child in v._prev:
-          if child not in visited: stack.append(child)
-      elif v not in topo: topo.append(v)
-    for node in reversed(topo):
-      print(node)
-      if verbose:
-        print("[data]\n", node.data)
-        print("[grad]\n", node.grad)
-      if node.prev_op != None:
-        print("====++++****++++====\n[OP]:", node.prev_op ,"\n====++++****++++====")
-  
   def linear(self, weight: "Tensor", bias: Optional["Tensor"] = None):
     x = self * weight if len(weight.shape) == 1 else self.dot(weight)
     return x + bias if bias is not None else x
@@ -399,38 +398,22 @@ class Tensor:
     pass
 
   def maxpool2d(self, filter=(2,2), stride=1):
-    # TODO: assert dimensionality
-    # TODO: double-check and test
-    channels, height, width = self.shape
-    out_height = (height - filter[0]) // stride + 1
-    out_width = (width - filter[1]) // stride + 1
-    out_img = np.zeros((channels, out_height, out_width))
-    mask = np.zeros_like(self.data)
-
-    for i in range(out_height):
-      for j in range(out_width):
-        h_start, h_end = i * stride, i * stride+ filter[0]
-        w_start, w_end = j * stride, j * stride + filter[1]
-
-        # Extract the region to perform max pooling
-        x_slice = self.data[:, h_start:h_end, w_start:w_end]
-
-        # Perform max pooling along the specified axis
-        max_values = np.max(x_slice, axis=(1, 2), keepdims=True)
-
-        # Update the output and mask
-        out_img[:, i, j] = max_values[:, 0, 0]
-        mask[:, h_start:h_end, w_start:w_end] = (x_slice == max_values)
-
-    out = Tensor(out_img, "maxpool2d", _prev=self._prev.copy())
-    out._prev.append(self)
+    func = MaxPool2D(self.device.name)
+    if self.device.name == Devices.CPU:
+      out = Tensor(
+        func.forward(self, filter, stride),
+        _prev=(self,),
+        device=self.device
+      )
+    else:
+      out = Tensor(
+        device_data=func.forward(self, filter, stride),
+        shape=(self.shape),
+        _prev=(self,),
+        device=self.device
+      )
     out.prev_op = OPS.MaxPool2D
-
-    # TODO: implement backward
-    def _backward():
-      self.grad = out.grad
-    out._backward = _backward
-
+    out._backward = lambda: func.backward(out.grad)
     return out
 
   # TODO: fix this like maxpool2D
@@ -438,26 +421,22 @@ class Tensor:
     # TODO: assert dimensionality
     # TODO: handle channels and padding as well
     # TODO: double-check if stride is used correctly
-
-    # pooling out_dim = (((input_dim - filter_dim) / stride) + 1) * channels
-    out_img = np.ones(((self.shape[0] - filter[0] // stride) + 1, (self.shape[1] - filter[1] // stride) + 1))
-    for i in range(0, self.shape[0]-filter[0], filter[0]):
-      for j in range(0, self.shape[1]-filter[0], filter[1]):
-        tmp = []
-        for n in range(filter[0]):
-          for m in range(filter[1]):
-            # TODO: keep pooling (max) indices, for use on GANs (like SegNet)
-            tmp.append(out_img[i*stride+n][j*stride+m])
-        out_img[i][j] = np.array(tmp).mean()
-
-    out = Tensor(out_img, "avgpool2d", _prev=self._prev.copy())
-    out._prev.append(self)
+    func = AvgPool2D(self.device.name)
+    if self.device.name == Devices.CPU:
+      out = Tensor(
+        func.forward(self, filter, stride),
+        _prev=(self,),
+        device=self.device
+      )
+    else:
+      out = Tensor(
+        device_data=func.forward(self, filter, stride),
+        shape=(self.shape),
+        _prev=(self,),
+        device=self.device
+      )
     out.prev_op = OPS.AvgPool2D
-
-    def _backward():
-      self.grad = out.grad
-    out._backward = _backward
-
+    out._backward = lambda: func.backward(out.grad)
     return out
 
   def tanh(self):

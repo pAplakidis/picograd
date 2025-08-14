@@ -114,3 +114,38 @@ class Softmax(Function):
   
   def backward(self, grad_out: np.ndarray):
     return self.UnaryOps.softmax_back(self.a, self.out, grad_out)
+
+# REDUCE OPS
+
+class Sum(Function):
+  pass
+
+class Mean(Function):
+  pass
+
+class Max(Function):
+  pass
+
+class Min(Function):
+  pass
+
+class MaxPool2D(Function):
+  def forward(self, a: "Tensor", filter=(2, 2), stride=1):
+    self.a = a
+    self.filter = filter
+    self.stride = stride
+    ret, self.mask = self.ReduceOps.maxpool2d(a, filter, stride)
+    return ret
+
+  def backward(self, grad_out: np.ndarray):
+    self.ReduceOps.maxpool2d_back(self.a, grad_out, self.mask, self.filter, self.stride)
+
+class AvgPool2D(Function):
+  def forward(self, a: "Tensor", filter=(2, 2), stride=1):
+    self.a = a
+    self.filter = filter
+    self.stride = stride
+    return self.ReduceOps.avgpool2d(a, filter, stride)
+
+  def backward(self, grad_out: np.ndarray):
+    self.ReduceOps.avgpool2d_back(self.a, grad_out, self.filter, self.stride)

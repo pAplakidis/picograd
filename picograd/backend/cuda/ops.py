@@ -391,9 +391,8 @@ class UnaryOps:
   def softmax(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
 
   @staticmethod
-  def softmax_back(a: "Tensor", grad_out: np.ndarray):
-    pass
-  
+  def softmax_back(a: "Tensor", grad_out: np.ndarray): raise NotImplementedError("This op is not implemented yet")
+
   @staticmethod
   def sigmoid(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
   
@@ -420,3 +419,18 @@ class UnaryOps:
   
   @staticmethod
   def batchnorm(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
+
+
+class ReduceOps:
+  @staticmethod
+  def maxpool2d(a: "Tensor", filter=(2, 2), stride=1) -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
+
+  @staticmethod
+  def maxpool2d_back(a: "Tensor", grad_out: np.ndarray, mask: np.ndarray, filter: Tuple[int], stride: int): raise NotImplementedError("This op is not implemented yet")
+
+  @staticmethod
+  def avgpool2d(a: "Tensor", filter=(2, 2), stride=1) -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
+
+  @staticmethod
+  def avgpool2d_back(a: "Tensor", grad_out: np.ndarray, filter: Tuple[int], stride: int): raise NotImplementedError("This op is not implemented yet")
+  

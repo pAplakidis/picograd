@@ -33,10 +33,12 @@ class Testnet(nn.Module):
   def __init__(self, out_feats):
     super(Testnet, self).__init__()
     self.conv = nn.Conv2d(1, 1, 3)
-    self.fc = nn.Linear(676, out_feats)
+    self.pool = nn.MaxPool2D()
+    self.fc = nn.Linear(625, out_feats)
 
   def forward(self, x):
     x = self.conv(x).relu()
+    x = self.pool(x)
     x = x.reshape(BS, -1)
     x = self.fc(x)
     return x.softmax()

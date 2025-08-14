@@ -6,13 +6,13 @@ from picograd.util import *
 
 
 class OPS(Enum):
-  # Binary
+  # Binary ops
   ADD = auto()
   MUL = auto()
   DOT = auto()
   POW = auto()
 
-  # Unary
+  # Unary ops
   ReLU = auto()
   Tanh = auto()
   Softmax = auto()
@@ -24,12 +24,14 @@ class OPS(Enum):
   BCELoss = auto()
 
   Conv2D = auto()
-  MaxPool2D = auto()
-  AvgPool2D = auto()
 
   Reshape = auto()
   Flatten = auto()
   Unsqueeze = auto()
+  
+  # Reduce ops
+  MaxPool2D = auto()
+  AvgPool2D = auto()
 
   def __str__(self): return self.name
 
@@ -150,15 +152,9 @@ class BinaryOps:
             grad_out_val = grad_out[batch, out_c, i, j]
             for in_c in range(C_in):
               input_patch = a_padded[batch, in_c, h_start:h_end, w_start:w_end]
-
-              # ∂L/∂W
-              grad_w[out_c, in_c, :, :] += input_patch * grad_out_val
-
-              # ∂L/∂A
-              grad_a_padded[batch, in_c, h_start:h_end, w_start:w_end] += w[out_c, in_c, :, :] * grad_out_val
-
-            # ∂L/∂b
-            grad_b[out_c] += grad_out_val
+              grad_w[out_c, in_c, :, :] += input_patch * grad_out_val # ∂L/∂W
+              grad_a_padded[batch, in_c, h_start:h_end, w_start:w_end] += w[out_c, in_c, :, :] * grad_out_val # ∂L/∂A
+            grad_b[out_c] += grad_out_val # ∂L/∂b
 
     # Remove padding from dA
     if padding > 0:
@@ -208,7 +204,7 @@ class UnaryOps:
     return exp_val / np.sum(exp_val, axis=1, keepdims=True)
 
   @staticmethod
-  def softmax_back(a: "Tensor", out: np.ndarray, grad_out: np.ndarray) -> np.ndarray:
+  def softmax_back(a: "Tensor", out: np.ndarray, grad_out: np.ndarray):
     if not a.requires_grad: return
 
     a.grad = np.zeros_like(out)
@@ -220,6 +216,83 @@ class UnaryOps:
   @staticmethod
   def batchnorm(a: np.ndarray) -> np.ndarray: pass
 
+
+class ReduceOps:
+  @staticmethod
+  def maxpool2d(a: "Tensor", filter=(2, 2), stride=1) -> np.ndarray:
+    assert len(a.shape) == 4, "Input must be 3D (BS, C, H, W)"
+
+    BS, channels, height, width = a.shape
+    out_height = (height - filter[0]) // stride + 1
+    out_width = (width - filter[1]) // stride + 1
+
+    out = np.zeros((BS, channels, out_height, out_width))
+    mask = np.zeros_like(a.data)
+    for i in range(out_height):
+      for j in range(out_width):
+        h_start, h_end = i * stride, i * stride + filter[0]
+        w_start, w_end = j * stride, j * stride + filter[1]
+
+        x_slice = a.data[:, :, h_start:h_end, w_start:w_end]  # (BS, C, fh, fw)
+        max_values = np.max(x_slice, axis=(2, 3), keepdims=True)  # keep dims for broadcasting
+
+        out[:, :, i, j] = max_values[:, :, 0, 0]
+        mask[:, :, h_start:h_end, w_start:w_end] = (x_slice == max_values)
+    return out, mask
+
+  @staticmethod
+  def maxpool2d_back(a: "Tensor", grad_out: np.ndarray, mask: np.ndarray, filter: Tuple[int], stride: int):
+    if not a.requires_grad: return
+
+    BS, channels, height, width = a.shape
+    out_height = (height - filter[0]) // stride + 1
+    out_width = (width - filter[1]) // stride + 1
+
+    grad_input = np.zeros_like(a.data)
+    for i in range(out_height):
+      for j in range(out_width):
+        h_start, h_end = i * stride, i * stride + filter[0]
+        w_start, w_end = j * stride, j * stride + filter[1]
+
+        # broadcast grad_out over batch and channels
+        grad_input[:, :, h_start:h_end, w_start:w_end] += mask[:, :, h_start:h_end, w_start:w_end] * grad_out[:, :, i, j][:, :, None, None]
+    a.grad = grad_input if a.grad is None else a.grad + grad_input
+
+  @staticmethod
+  def avgpool2d(a: "Tensor", filter=(2, 2), stride=1) -> np.ndarray:
+    assert len(a.shape) == 4, "Input must be 3D (BS, C, H, W)"
+
+    BS, channels, height, width = a.shape
+    out_height = (height - filter[0]) // stride + 1
+    out_width = (width - filter[1]) // stride + 1
+
+    out = np.zeros((BS, channels, out_height, out_width))
+    for i in range(out_height):
+      for j in range(out_width):
+        h_start, h_end = i * stride, i * stride + filter[0]
+        w_start, w_end = j * stride, j * stride + filter[1]
+
+        x_slice = a.data[:, :, h_start:h_end, w_start:w_end]  # (BS, C, fh, fw)
+        out[:, :, i, j] = np.mean(x_slice, axis=(2, 3))
+    return out
+
+  @staticmethod
+  def avgpool2d_back(a: "Tensor", grad_out: np.ndarray, filter: Tuple[int], stride: int):
+    if not a.requires_grad: return
+
+    BS, channels, height, width = a.shape
+    out_height = (height - filter[0]) // stride + 1
+    out_width = (width - filter[1]) // stride + 1
+
+    grad_input = np.zeros_like(a.data)
+    for i in range(out_height):
+      for j in range(out_width):
+        h_start, h_end = i * stride, i * stride + filter[0]
+        w_start, w_end = j * stride, j * stride + filter[1]
+
+        grad_share = grad_out[:, :, i, j][:, :, None, None] / (filter[0] * filter[1])
+        grad_input[:, :, h_start:h_end, w_start:w_end] += grad_share
+    a.grad = grad_input if a.grad is None else a.grad + grad_input
 
 # TODO:
 """

@@ -45,10 +45,16 @@ class SGD(Optim):
     # gradient clipping
     max_grad_norm = 1.0
     for param in self.params:
+      if not hasattr(param, 'weight') or param.weight is None or not hasattr(param, 'bias') or param.bias is None:
+        continue
+
       np.clip(param.weight.grad, -max_grad_norm, max_grad_norm, out=param.weight.grad)
       np.clip(param.bias.grad, -max_grad_norm, max_grad_norm, out=param.bias.grad)
 
     for i in range(len(self.params)):
+      if not hasattr(self.params[i], 'weight') or self.params[i].weight is None or not hasattr(self.params[i], 'bias') or self.params[i].bias is None:
+        continue
+
       self.params[i].weight.data -= self.lr * self.params[i].weight.grad
       self.params[i].bias.data -= self.lr * self.params[i].bias.grad
 
@@ -64,6 +70,9 @@ class Adam(Optim):
     self.mt_1_bias = [None] * len(self.params)
     self.ut_1_bias = [None] * len(self.params)
     for i in range(len(self.params)):
+      if not hasattr(self.params[i], 'weight') or self.params[i].weight is None or not hasattr(self.params[i], 'bias') or self.params[i].bias is None:
+        continue
+
       self.mt_1_weight[i] = np.zeros_like(self.params[i].weight.grad)
       self.ut_1_weight[i] = np.zeros_like(self.params[i].weight.grad)
 
@@ -74,10 +83,16 @@ class Adam(Optim):
     # gradient clipping
     max_grad_norm = 1.0
     for param in self.params:
+      if not hasattr(param, 'weight') or param.weight is None or not hasattr(param, 'bias') or param.bias is None:
+        continue
+
       np.clip(param.weight.grad, -max_grad_norm, max_grad_norm, out=param.weight.grad)
       np.clip(param.bias.grad, -max_grad_norm, max_grad_norm, out=param.bias.grad)
 
     for i in range(len(self.params)):
+      if not hasattr(self.params[i], 'weight') or self.params[i].weight is None or not hasattr(self.params[i], 'bias') or self.params[i].bias is None:
+        continue
+
       # weight
       mt_weight = self.b1 * self.mt_1_weight[i] + (1 - self.b1) * self.params[i].weight.grad
       ut_weight = self.b2 * self.ut_1_weight[i] + (1 - self.b2) * self.params[i].weight.grad**2
