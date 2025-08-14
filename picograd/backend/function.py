@@ -8,6 +8,7 @@ from .device import Devices
 from picograd.print_utils import *
 
 DEBUG = int(os.getenv("DEBUG", 0))
+PSEUDO_DEBUG = int(os.getenv("PSEUDO_DEBUG", 0))  # if 1, generate assembly code as string but don't print (helps with segfaults)
 
 class Function:
   def __init__(self, device: Devices = Devices.CPU):
@@ -37,7 +38,7 @@ class Function:
       start_time = time.time()
       result = method(self, *args, **kwargs)
       end_time = time.time()
-      if DEBUG >= 1:
+      if DEBUG >= 1 and not PSEUDO_DEBUG:
         print(f"{color_yellow(f"[Function-Perf]")} {self.__class__.__name__}.{method.__name__} - {color_yellow(f"{(end_time - start_time) * 1000.0:.4f}")} ms")
       return result
     return wrapper

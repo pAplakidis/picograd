@@ -1,3 +1,4 @@
+import os
 import time
 import ctypes
 import numpy as np
@@ -6,6 +7,7 @@ from typing import List, Tuple, Optional
 from picograd.print_utils import *
 from .cuda import CudaDevice
 
+PSEUDO_DEBUG = int(os.getenv("PSEUDO_DEBUG", 0))  # if 1, generate assembly code as string but don't print (helps with segfaults)
 TILE_SIZE = 16
 
 # TODO: expose as generic device API to avoid if statements in tensor
@@ -46,7 +48,7 @@ def np_to_host(d_array: ctypes.c_void_p, array_flat: np.ndarray, manager: CudaDe
 def tensor_to_device(tensor: "Tensor"):
   assert tensor.data is not None, "Tensor data is None, cannot copy to device"
 
-  if tensor.device.manager.debug >= 1:
+  if tensor.device.manager.debug >= 1 and not PSEUDO_DEBUG:
     start_time = time.time()
 
   T_flat = flatten_tensor(tensor.data)
@@ -59,13 +61,13 @@ def tensor_to_device(tensor: "Tensor"):
   copy_data_to_device(tensor.device.manager, d_grad, grad_flat)
   tensor.device_grad = d_grad
 
-  if tensor.device.manager.debug >= 1:
+  if tensor.device.manager.debug >= 1 and not PSEUDO_DEBUG:
     print(f"{color_green("[Cuda]")} Tensor data and gradient copied to device - {color_red(f"{tensor._data.nbytes} bytes, {tensor._grad.nbytes} bytes")} - {color_red(f"{(time.time() - start_time) * 1000:.4f} ms")}")
 
 def dev_data_to_host(tensor: "Tensor", free=True):
   assert tensor.device_data is not None, "Tensor device data is None, cannot copy to host"
 
-  if tensor.device.manager.debug >= 1:
+  if tensor.device.manager.debug >= 1 and not PSEUDO_DEBUG:
     start_time = time.time()
 
   if tensor._data is None: 
@@ -78,13 +80,13 @@ def dev_data_to_host(tensor: "Tensor", free=True):
 
   tensor._data = tensor._data.reshape(tensor._shape)
 
-  if tensor.device.manager.debug >= 1:
+  if tensor.device.manager.debug >= 1 and not PSEUDO_DEBUG:
     print(f"{color_green("[Cuda]")} Tensor data copied to host - {color_red(f"{tensor._data.nbytes} bytes, {tensor._grad.nbytes} bytes")} - {color_red(f"{(time.time() - start_time) * 1000:.4f} ms")}")
 
 def dev_grad_to_host(tensor: "Tensor", free=True):
   assert tensor.device_grad is not None, "Tensor device grad is None, cannot copy to host"
 
-  if tensor.device.manager.debug >= 1:
+  if tensor.device.manager.debug >= 1 and not PSEUDO_DEBUG:
     start_time = time.time()
 
   if tensor._data is None: 
@@ -97,7 +99,7 @@ def dev_grad_to_host(tensor: "Tensor", free=True):
     tensor.device_grad = None
   tensor._grad.reshape(tensor._shape)  # FIXME: will not work with CrossEntropyLoss (data.shape != grad.shape)
 
-  if tensor.device.manager.debug >= 1:
+  if tensor.device.manager.debug >= 1 and not PSEUDO_DEBUG:
     print(f"{color_green("[Cuda]")} Tensor gradient copied to host - {color_red(f"{tensor._data.nbytes} bytes, {tensor._grad.nbytes} bytes")} - {color_red(f"{(time.time() - start_time) * 1000:.4f} ms")}")
 
 def tensor_to_host(tensor: "Tensor"):
