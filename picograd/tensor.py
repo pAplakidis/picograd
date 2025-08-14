@@ -36,6 +36,7 @@ class Tensor:
     device_data: Optional[ctypes.c_void_p] = None,
     shape: Optional[Tuple] = None,
   ):
+    data = np.array(data) if data is not None else None
     self.device= list(_prev)[0].device if len(list(_prev)) > 0 else device
     self._ctx = None  # TODO: use context like pytorch
 
@@ -45,7 +46,7 @@ class Tensor:
     self.verbose = bool(VERBOSE)
     self.requires_grad = requires_grad
 
-    self._data = np.array(data, dtype=np.float32) if data is not None else np.zeros(self._shape)
+    self._data = data if data is not None else np.zeros(self._shape)
     self._grad= np.zeros(self._shape) if requires_grad else None
 
     self._prev = set(_prev)
@@ -99,7 +100,7 @@ class Tensor:
 
   @property
   def dtype(self):
-    return self.data.dtype if self._data is not None else np.float32
+    return self._data.dtype if self._data is not None else np.float32
 
   @dtype.setter
   def dtype(self, value):
@@ -196,50 +197,50 @@ class Tensor:
   def __equal__(self, other): return np.equal(self.data, other.data)
 
   def __add__(self, other):
-    self.func = Add(self.device.name)
+    func = Add(self.device.name)
     if self.device.name == Devices.CPU:
-      out = Tensor(self.func.forward(self, other), _prev=(self, other))
+      out = Tensor(func.forward(self, other), _prev=(self, other))
     else:
       out = Tensor(
-        device_data=self.func.forward(self, other),
+        device_data=func.forward(self, other),
         shape=self.shape,
         _prev=(self, other),
         device=self.device
       )
     out.prev_op = OPS.ADD
-    out._backward = lambda: self.func.backward(out.grad)
+    out._backward = lambda: func.backward(out.grad)
     return out
 
   def __mul__(self, other):
-    self.func = Mul(self.device.name)
+    func = Mul(self.device.name)
     if self.device.name == Devices.CPU:
-      out = Tensor(self.func.forward(self, other), _prev=(self, other))
+      out = Tensor(func.forward(self, other), _prev=(self, other))
     else:
       out = Tensor(
-        device_data=self.func.forward(self, other),
+        device_data=func.forward(self, other),
         shape=self.shape,
         _prev=(self, other),
         device=self.device  
       )
     out.prev_op = OPS.MUL
-    out._backward = lambda: self.func.backward(out.grad)
+    out._backward = lambda: func.backward(out.grad)
     return out
 
   def __matmul__(self, other): return self.dot(other)
 
   def dot(self, other):
-    self.func = Dot(self.device.name)
+    func = Dot(self.device.name)
     if self.device.name == Devices.CPU:
-      out = Tensor(self.func.forward(self, other), _prev=(self, other))
+      out = Tensor(func.forward(self, other), _prev=(self, other))
     else:
       out = Tensor(
-        device_data=self.func.forward(self, other),
+        device_data=func.forward(self, other),
         shape=(self.shape[0], other.shape[1]),
         _prev=(self, other),
         device=self.device
       )
     out.prev_op = OPS.DOT
-    out._backward = lambda: self.func.backward(out.grad)
+    out._backward = lambda: func.backward(out.grad)
     return out
 
   # TODO: implement these in ops (cpu and cuda)
@@ -254,18 +255,18 @@ class Tensor:
     return out
 
   def relu(self):
-    self.func = ReLU(self.device.name)
+    func = ReLU(self.device.name)
     if self.device.name == Devices.CPU:
-      out = Tensor(self.func.forward(self), _prev=(self,), device=self.device)
+      out = Tensor(func.forward(self), _prev=(self,), device=self.device)
     else:
       out = Tensor(
-        device_data=self.func.forward(self),
+        device_data=func.forward(self),
         shape=self.shape,
         _prev=(self,),
         device=self.device
       )
     out.prev_op = OPS.ReLU
-    out._backward = lambda: self.func.backward(out.grad)
+    out._backward = lambda: func.backward(out.grad)
     return out
 
   def __neg__(self): return self * Tensor(np.array(-1), device=self.device)
@@ -370,15 +371,15 @@ class Tensor:
     return x + bias if bias is not None else x
 
   def conv2d(self, weight: "Tensor", bias: "Tensor", in_channels: int, out_channels: int, stride: int = 1, padding: int = 0, debug=False):
-    self.func = Conv2D(self.device.name)
+    func = Conv2D(self.device.name)
     if self.device.name == Devices.CPU:
       out = Tensor(
-        self.func.forward(self, weight, bias,  in_channels, out_channels, stride, padding),
+        func.forward(self, weight, bias,  in_channels, out_channels, stride, padding),
         _prev=(self, weight, bias),
       )
     else:
       out = Tensor(
-        device_data=self.func.forward(self, weight, bias,  in_channels, out_channels, stride, padding),
+        device_data=func.forward(self, weight, bias,  in_channels, out_channels, stride, padding),
         shape= (
           self.shape[0], out_channels, 
           (self.shape[2] - weight.shape[2] + 2 * padding) // stride + 1,
@@ -388,7 +389,7 @@ class Tensor:
         device=self.device
       )
     out.prev_op = OPS.Conv2D
-    out._backward = lambda: self.func.backward(out.grad)
+    out._backward = lambda: func.backward(out.grad)
     return out
 
   def batchnorm1d(self):
@@ -483,16 +484,16 @@ class Tensor:
     return out
 
   def softmax(self):
-    self.func = Softmax(self.device.name)
+    func = Softmax(self.device.name)
     if self.device.name == Devices.CPU:
-      out = Tensor(self.func.forward(self), name="softmax_out", _prev=(self,))
+      out = Tensor(func.forward(self), name="softmax_out", _prev=(self,))
     else:
       out = Tensor(
-        device_data=self.func.forward(self),
+        device_data=func.forward(self),
         shape=self.shape,
         _prev=(self,),
         device=self.device
       )
     out.prev_op = OPS.Softmax
-    out._backward = lambda: self.func.backward(out.grad)
+    out._backward = lambda: func.backward(out.grad)
     return out

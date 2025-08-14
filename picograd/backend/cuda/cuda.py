@@ -1,6 +1,8 @@
 import os
 import time
 import ctypes
+import tempfile
+import subprocess
 from typing import Tuple, List, Optional
 
 from picograd.print_utils import *
@@ -16,6 +18,7 @@ except OSError as e:
   print("Could not load CUDA libraries. Make sure CUDA is installed and the libraries are in your library path.")
 
 KERNELS_PATH = "picograd/backend/cuda/kernels"
+PSEUDO_DEBUG = int(os.getenv("PSEUDO_DEBUG", 0))  # if 1, generate assembly code as string but don't print (helps with segfaults)
 
 
 class CudaDevice:
@@ -31,21 +34,22 @@ class CudaDevice:
     self.check_cuda(cuda.cuEventCreate(ctypes.byref(self.start_event), 0), "cuEventCreate (start)")
     self.check_cuda(cuda.cuEventCreate(ctypes.byref(self.end_event), 0), "cuEventCreate (end)")
 
-  # FIXME: doesn't work with tensors yet: RuntimeError: [CUDA ERROR] cuCtxDestroy failed: CUDA_ERROR_INVALID_SOURCE (code 201)
   def __del__(self):
     self.check_cuda(cuda.cuEventDestroy(self.start_event), "cuEventDestroy (start)")
     self.check_cuda(cuda.cuEventDestroy(self.end_event), "cuEventDestroy (end)")
+
+    # TODO: garbage collect self.allocations and self.kernels
 
     if self.module: self.check_cuda(cuda.cuModuleUnload(self.module), "cuModuleUnload")
     self.check_cuda(cuda.cuCtxDestroy(self.ctx), "cuCtxDestroy")
 
   @staticmethod
-  def check_cuda(result: int, func_name: str = ""):
+  def check_cuda(result: int, func_name: str = "", sync=False):
     """Checks if CUDA function call was successful. Raises RuntimeError if not."""
-
     if result != 0:
       err_msg = CUDA_ERRORS.get(result, f"Unknown error code {result}")
       raise RuntimeError(f"[CUDA ERROR] {func_name} failed: {err_msg} (code {result})")
+    if sync: cuda.cuCtxSynchronize()  # synchronous wait for CUDA ops to finish
 
   @staticmethod
   def load_kernel(file_path: str) -> str:
@@ -64,6 +68,41 @@ class CudaDevice:
       log = ctypes.create_string_buffer(log_size.value)
       nvrtc.nvrtcGetProgramLog(self.program, log)
       raise RuntimeError(f"[NVRTC ERROR] {func_name} failed with code {result}:\n{log.value.decode()}")
+
+  def print_ptx_and_sass(self, kernel_name: str, ptx_str: str):
+    if not PSEUDO_DEBUG:
+      print(f"\n===== [NVRTC Generated PTX for kernel {kernel_name}] =====")
+      print(ptx_str)
+      print("=================================\n")
+
+    if self.debug >= 4:
+      with tempfile.TemporaryDirectory() as tmpdir:
+        ptx_path = os.path.join(tmpdir, "kernel.ptx")
+        cubin_path = os.path.join(tmpdir, "kernel.cubin")
+
+        with open(ptx_path, "w") as f:
+          f.write(ptx_str)
+
+        arch = "sm_89"  # match your GPU
+        try:
+          subprocess.run(
+              ["ptxas", ptx_path, "-o", cubin_path, f"-arch={arch}"],
+              check=True
+          )
+          sass_output = subprocess.run(
+              ["nvdisasm", cubin_path],
+              check=True,
+              capture_output=True,
+              text=True
+          )
+          if not PSEUDO_DEBUG:
+            print(f"\n===== [SASS Assembly for kernel {kernel_name}] =====")
+            print(sass_output.stdout)
+            print("===========================\n")
+        except FileNotFoundError:
+          print("[WARN] ptxas or nvdisasm not found in PATH — cannot print SASS")
+        except subprocess.CalledProcessError as e:
+          print(f"[ERROR] Failed to generate SASS: {e}")
 
   def  init_cuda(self):
     """Gets CUDA device and context, then initializes CUDA driver API."""
@@ -85,10 +124,10 @@ class CudaDevice:
     if self.debug >= 2:
       print(f"{color_green("[Cuda]")} Compiling kernel {color_green(kernel_name)}")
 
-    program = nvrtcProgram()
+    self.program = nvrtcProgram()
     nvrtc.nvrtcCreateProgram.restype = nvrtcResult
     nvrtc.nvrtcCreateProgram(
-              ctypes.byref(program),
+              ctypes.byref(self.program),
               ctypes.c_char_p(src.encode()),
               ctypes.c_char_p(f"{kernel_name.decode()}.cu".encode()),
               0,
@@ -99,24 +138,34 @@ class CudaDevice:
     # compile to PTX
     opts = [
       b"--fmad=false",
-      b"--gpu-architecture=compute_75"
-      # b"--device-debug",
-      # b"--generate-line-info"
+      b"--gpu-architecture=compute_75",
     ]
-    # nvrtc.nvrtcCompileProgram(program, len(opts), (ctypes.c_char_p * len(opts))(*opts))
-    compile_result = nvrtc.nvrtcCompileProgram(program, len(opts), (ctypes.c_char_p * len(opts))(*opts))
-    self.check_nvrtc(compile_result, "nvrtcCompileProgram")
+    if self.debug >= 2:
+      opts += [
+        b"--device-debug",
+        b"--generate-line-info",
+        # b"-O0"
+      ]
+    self.check_nvrtc(
+      nvrtc.nvrtcCompileProgram(self.program, len(opts), (ctypes.c_char_p * len(opts))(*opts)),
+      "nvrtcCompileProgram"
+    )
 
     # get PTX code
     ptx_size = ctypes.c_size_t()
-    nvrtc.nvrtcGetPTXSize(program, ctypes.byref(ptx_size))
+    nvrtc.nvrtcGetPTXSize(self.program, ctypes.byref(ptx_size))
     ptx = (ctypes.c_char * ptx_size.value)()
-    nvrtc.nvrtcGetPTX(program, ptx)
+    nvrtc.nvrtcGetPTX(self.program, ptx)
+    ptx_str = ctypes.string_at(ptx, ptx_size.value).decode()
+
+    # Print PTX and SASS (intermediate repr and assembly)
+    if self.debug >= 3:
+      self.print_ptx_and_sass(kernel_name, ptx_str)
 
     # load PTX module
     self.module = CUmodule()
     self.check_cuda(cuda.cuModuleLoadData(ctypes.byref(self.module), ptx), "cuModuleLoadData")
-    nvrtc.nvrtcDestroyProgram(ctypes.byref(program))
+    nvrtc.nvrtcDestroyProgram(ctypes.byref(self.program))
 
     # get kernel function
     kfunc = CUfunction()
@@ -137,11 +186,11 @@ class CudaDevice:
 
   def memcpy_htod(self, dst: CUdeviceptr, src: ctypes.c_void_p, size: int):
     """Copies data from host to device memory."""
-    self.check_cuda(cuda.cuMemcpyHtoD(dst, ctypes.c_void_p(src), size), "cuMemcpyHtoD")
+    self.check_cuda(cuda.cuMemcpyHtoD(dst, ctypes.c_void_p(src), size), "cuMemcpyHtoD", sync=True)
 
   def memcpy_dtoh(self, dst: ctypes.c_void_p, src: CUdeviceptr, size):
     """Copies data from device to host memory."""
-    self.check_cuda(cuda.cuMemcpyDtoH(ctypes.c_void_p(dst), src, size), "cuMemcpyDtoH")
+    self.check_cuda(cuda.cuMemcpyDtoH(ctypes.c_void_p(dst), src, size), "cuMemcpyDtoH", sync=True)
 
   def launch_kernel(
       self,
@@ -153,7 +202,7 @@ class CudaDevice:
     ):
     """Launches a CUDA kernel with the given grid and block dimensions and arguments."""
 
-    if self.debug >= 1:
+    if self.debug >= 2:
       print(f"{color_green("[Cuda]")} Launching kernel {color_yellow(kfunc)} with grid {color_yellow(grid)} and block {color_yellow(block)}")
 
     # FIXME: start_event and end_event cause Segmentation fault (undeterministically) for consecutive kernel launches
@@ -162,27 +211,17 @@ class CudaDevice:
     start = time.time()
 
     # launch kernel
-    if len(grid) == 3 and len(block) == 3:
-      arg_buff = (ctypes.c_void_p * len(args))(*[ctypes.addressof(a) for a in args])
-      self.check_cuda(cuda.cuLaunchKernel(
-        kfunc,
-        grid[0], grid[1], grid[2],      # grid dimensions (blocks)
-        block[0], block[1], block[2],   # block dimensions (threas per block)
-        0, 0,                           # shared mem and stream
-        arg_buff, 0
-      ), "cuLaunchKernel")
-    elif len(grid) == 2 and len(block) == 2:
-      arg_buff = (ctypes.c_void_p * len(args))(*[ctypes.addressof(a) for a in args])
-      self.check_cuda(cuda.cuLaunchKernel(
-        kfunc,
-        grid[0], grid[1],               # grid dimensions (blocks)
-        block[0], block[1],             # block dimensions (threas per block)
-        0, 0,                           # shared mem and stream
-        arg_buff, 0
-      ), "cuLaunchKernel")
-    else:
+    if not len(grid) == 3 or not len(block) == 3:
       raise ValueError(f"Unsupported grid/block dimensions: grid={grid}, block={block}. Must be 2D or 3D.")
 
+    arg_buff = (ctypes.c_void_p * len(args))(*[ctypes.addressof(a) for a in args])
+    self.check_cuda(cuda.cuLaunchKernel(
+      kfunc,
+      grid[0], grid[1], grid[2],      # grid dimensions (blocks)
+      block[0], block[1], block[2],   # block dimensions (threas per block)
+      0, 0,                           # shared mem and stream
+      arg_buff, 0
+    ), "cuLaunchKernel", sync=True)
 
     # profiling results
     # self.check_cuda(cuda.cuEventRecord(self.end_event, 0), "cuEventRecord (end)")

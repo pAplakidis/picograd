@@ -1,7 +1,7 @@
 import time
 import ctypes
 import numpy as np
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 from picograd.print_utils import *
 from .cuda import CudaDevice
@@ -31,15 +31,17 @@ def free_device_tensor(manager: CudaDevice, d_T: ctypes.c_void_p):
   manager.cuda_free(d_T)
 
 def np_to_device(array: np.ndarray, manager: CudaDevice) -> Tuple[np.ndarray, ctypes.c_void_p]:
+  """Copy a NumPy array to device memory."""
   array_flat = flatten_tensor(array)
   d_array = allocate_device_memory(manager, array_flat)
   copy_data_to_device(manager, d_array, array_flat)
   return array_flat, d_array
 
-def np_to_host(d_array: ctypes.c_void_p, array_flat: np.ndarray, shape: Tuple, manager: CudaDevice) -> np.ndarray:
+def np_to_host(d_array: ctypes.c_void_p, array_flat: np.ndarray, manager: CudaDevice, shape: Optional[Tuple] = None) -> np.ndarray:
+  """Copy a NumPy array from device memory to host."""
   manager.memcpy_dtoh(array_flat.ctypes.data, d_array, array_flat.nbytes)
   free_device_tensor(manager, d_array)
-  return array_flat.reshape(shape)
+  return array_flat.reshape(shape) if shape else array_flat
 
 def tensor_to_device(tensor: "Tensor"):
   assert tensor.data is not None, "Tensor data is None, cannot copy to device"

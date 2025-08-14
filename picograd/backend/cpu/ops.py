@@ -172,7 +172,7 @@ class BinaryOps:
 
 class UnaryOps:
   @staticmethod
-  def relu(a: "Tensor") -> np.ndarray: return np.maximum(a.data, np.zeros_like(a))
+  def relu(a: "Tensor") -> np.ndarray: return np.maximum(a.data, np.zeros_like(a.data))
 
   @staticmethod
   def relu_back(a: "Tensor", grad_out: np.ndarray):

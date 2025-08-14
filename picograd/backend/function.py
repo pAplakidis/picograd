@@ -25,7 +25,7 @@ class Function:
   def check_same_device(method):
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
-      devices = {arg.device.name for arg in args if hasattr(arg, 'device')}
+      devices = {arg.device.name for arg in args if type(arg).__name__ == "Tensor" and hasattr(arg, "device")}
       if len(devices) > 1: raise RuntimeError(f"Device mismatch: found devices {devices}")
       return method(self, *args, **kwargs)
     return wrapper
@@ -37,7 +37,7 @@ class Function:
       start_time = time.time()
       result = method(self, *args, **kwargs)
       end_time = time.time()
-      if DEBUG >= 2:
+      if DEBUG >= 1:
         print(f"{color_yellow(f"[Function-Perf]")} {self.__class__.__name__}.{method.__name__} - {color_yellow(f"{(end_time - start_time) * 1000.0:.4f}")} ms")
       return result
     return wrapper

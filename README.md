@@ -2,7 +2,7 @@
 
 ## Setup
 
-- Build C++ libraries
+- Build C++ libraries (deprecated, not required)
 
 ```
 Release:
@@ -12,10 +12,19 @@ or Debug:
 ./build.sh debug
 ```
 
-- Install python dependencies
+## Requirements
+
+- CUDA toolkit (if using NVIDIA GPU)
+- Python dependencies
 
 ```
 python3 -m pip install -r requirements.txt
+```
+
+- Other dependencies (Linux)
+
+```
+sudo apt-get install graphviz
 ```
 
 ## Give it a try
@@ -33,6 +42,11 @@ Tests
 ./test/ops_test.py
 ```
 
+NOTE: cuda might contain bugs that cause segmentation faults. To help reduce the change of that, run:
+```bash
+DEBUG=3 PSEUDO_DEBUG=1 ./test/test_dot.py
+```
+
 Code
 
 ```python
@@ -47,6 +61,15 @@ e = c + d
 e.backward()
 draw_dot(e, path="graphs/test")
 ```
+
+## Debug Levels
+
+1. Print latency and GFLOPS
+2. Print device operations
+3. Print intermediate representation of kernel (if using device != cpu)
+4. Print streaming assembler code that runs on the device (if using device != cpu)
+
+You can set debug levels by assigning the debug value to DEBUG env variable.
 
 ## TODO
 

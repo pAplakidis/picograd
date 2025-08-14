@@ -187,12 +187,12 @@ class BinaryOps:
     C = np.zeros((M, N), dtype=np.float32)
     d_C = allocate_device_memory(a.device.manager, C)
 
+    block_size = (TILE_SIZE, TILE_SIZE, 1)
     grid = (
       (N + TILE_SIZE - 1) // TILE_SIZE,
       (M + TILE_SIZE - 1) // TILE_SIZE,
       1,
     )
-    block_size = (TILE_SIZE, TILE_SIZE, 1)
 
     num_flops = 2 * M * N * K
     args = prep_kargs(a.device_data, b.device_data, d_C, M, N, K)
@@ -358,13 +358,35 @@ class BinaryOps:
 
 class UnaryOps:
   @staticmethod
-  def relu(a: "Tensor") -> np.ndarray: return np.maximum(a.data, np.zeros_like(a))
+  def relu(a: "Tensor", block_size: Tuple[int] = (256, 1, 1)) -> np.ndarray:
+    kernel_code = a.device.manager.load_kernel("relu.cu")
+    kfunc = a.device.manager.compile_kernel(kernel_code, b"relu_kernel")
+
+    size = int(np.prod(a.shape))
+    C_flat = np.zeros(size, dtype=np.float32)
+    d_C = allocate_device_memory(a.device.manager, C_flat)
+
+    grid = ((size + block_size[0] - 1) // block_size[0], 1, 1)
+
+    args = prep_kargs(a.device_data, d_C, size)
+    a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=size)
+    return d_C
 
   @staticmethod
-  def relu_back(a: "Tensor", grad_out: np.ndarray):
-    # self.grad += (out.data > 0) * out.grad
-    pass
-  
+  def relu_back(a: "Tensor", grad_out: np.ndarray, block_size: Tuple[int] = (256, 1, 1)):
+    if not a.requires_grad: return
+
+    kernel_code = a.device.manager.load_kernel("relu_back.cu")
+    kfunc = a.device.manager.compile_kernel(kernel_code, b"relu_back_kernel")
+
+    size = int(np.prod(a.shape))
+    _, d_grad_out = np_to_device(grad_out, a.device.manager)
+
+    grid = ((size + block_size[0] - 1) // block_size[0], 1, 1)
+
+    args = prep_kargs(a.device_data, d_grad_out, a.device_grad, size)
+    a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=size)
+
   @staticmethod
   def softmax(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
 
