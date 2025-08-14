@@ -19,8 +19,8 @@ from picograd.draw_utils import draw_dot
 BS = 16
 
 # FIXME: on CPU loss goes down, on GPU it goes up
-device = Device(Devices.CUDA) if is_cuda_available() else Device(Devices.CPU)
-# device = Device(Devices.CPU)
+device = Device(Devices.CPU)
+# device = Device(Devices.CUDA) if is_cuda_available() else Device(Devices.CPU)
 print("[*] Using device", device.name, "\n")
 
 def get_data():
@@ -47,8 +47,8 @@ if __name__ == '__main__':
   X_train, Y_train, X_test, Y_test = get_data()
 
   model = Testnet(784, 10).to(device)
-  # optim = Adam(model.get_params(), lr=1e-4)
-  optim = SGD(model.get_params(), lr=1e-5)
+  optim = Adam(model.get_params(), lr=1e-4)
+  # optim = SGD(model.get_params(), lr=1e-6)  # FIXME: SGD not wokring even on CPU
 
   # Training Loop
   epochs = 4
@@ -66,11 +66,7 @@ if __name__ == '__main__':
       Y_batch = Y_train[batch_start:batch_end]
 
       X = Tensor(np.array(X_batch, dtype=np.float32), device=device)
-      Y = np.zeros((1, 10), dtype=np.float32)
-      Y = np.zeros((len(Y_batch), 10), dtype=np.float32)
-      for idx, label in enumerate(Y_batch):
-        Y[idx][label] = 1.0
-      Y = Tensor(Y, device=device)
+      Y = Tensor(np.array(Y_batch), device=device)
 
       out = model(X)
       loss = CrossEntropyLoss(out, Y)
@@ -92,11 +88,15 @@ if __name__ == '__main__':
   # Eval
   print("Evaluating ...")
   eval_losses = []
-  for idx, x in (t := tqdm(enumerate(X_test), total=len(X_test))):
-    X = Tensor(np.array([x], dtype=np.float32).reshape(-1, 784), device=device)
-    Y = np.zeros((1, 10), dtype=np.float32)
-    Y[0][Y_test[idx]] = 1.0
-    Y = Tensor(Y, device=device)
+  num_batches = len(X_train) // BS + (len(X_train) % BS != 0)
+  for batch_idx in (t := tqdm(range(num_batches), total=num_batches)):
+    batch_start = batch_idx * BS
+    batch_end = min(batch_start + BS, len(X_train))
+    X_batch = X_train[batch_start:batch_end].reshape(-1, 784)
+    Y_batch = Y_train[batch_start:batch_end]
+
+    X = Tensor(np.array(X_batch, dtype=np.float32), device=device)
+    Y = Tensor(np.array(Y_batch), device=device)
 
     out = model(X)
 

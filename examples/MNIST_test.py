@@ -18,6 +18,10 @@ from picograd.draw_utils import draw_dot
 
 BS = 16
 
+device = Device(Devices.CPU)
+# device = Device(Devices.CUDA) if is_cuda_available() else Device(Devices.CPU)
+print("[*] Using device", device.name, "\n")
+
 def get_data():
   (X_train, Y_train), (X_test, Y_test) = mnist.load_data()
   X_train = X_train / 255.0
@@ -29,10 +33,12 @@ class Testnet(nn.Module):
   def __init__(self, out_feats):
     super(Testnet, self).__init__()
     self.conv = nn.Conv2d(1, 1, 3)
-    self.fc = nn.Linear(676, out_feats)
+    self.pool = nn.MaxPool2D()
+    self.fc = nn.Linear(625, out_feats)
 
   def forward(self, x):
     x = self.conv(x).relu()
+    x = self.pool(x)
     x = x.reshape(BS, -1)
     x = self.fc(x)
     return x.softmax()
@@ -42,7 +48,7 @@ if __name__ == '__main__':
   X_train, Y_train, X_test, Y_test = get_data()
 
   in_feats = X_train.shape[1] * X_train.shape[2]
-  model = Testnet(10)
+  model = Testnet(10).to(device)
   optim = Adam(model.get_params(), lr=1e-4)
 
   # Training Loop
@@ -60,12 +66,8 @@ if __name__ == '__main__':
       X_batch = np.expand_dims(X_train[batch_start:batch_end], axis=1)
       Y_batch = Y_train[batch_start:batch_end]
 
-      X = Tensor(np.array(X_batch))
-      Y = np.zeros((1, 10), dtype=np.float32)
-      Y = np.zeros((len(Y_batch), 10), dtype=np.float32)
-      for idx, label in enumerate(Y_batch):
-        Y[idx][label] = 1.0
-      Y = Tensor(Y)
+      X = Tensor(np.array(X_batch), device=device)
+      Y = Tensor(np.array(Y_batch), device=device)
 
       out = model(X)
       loss = CrossEntropyLoss(out, Y)
@@ -83,6 +85,8 @@ if __name__ == '__main__':
 
   plt.plot(losses)
   plt.show()
+
+  exit(0)
 
   # Eval
   print("Evaluating ...")

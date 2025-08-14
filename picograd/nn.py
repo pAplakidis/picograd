@@ -76,7 +76,7 @@ class Linear(Layer):
 
     if initialization == "gaussian":
       self.weight = Tensor(0.01 * np.random.randn(self.in_feats, self.out_feats), name="linear-weight", device=self.device)
-    elif initialization == "Xavier":
+    elif initialization == "xavier":
       self.weight = Tensor(np.random.randn(self.in_feats, self.out_feats) * np.sqrt(2. / (self.in_feats + self.out_feats)), name="linear-weight", device=self.device)
     else:
       raise ValueError("Invalid initialization method")
@@ -99,11 +99,11 @@ class Conv2d(Layer):
     self.stride = stride
     self.padding = padding
 
-    self.weight = Tensor(np.random.uniform(0.0, 1.0, (self.out_channels, kernel_size, kernel_size)), "conv2D_kernel", device=self.device)
-    self.bias = Tensor(np.zeros((out_channels, 1, 1)), name="bias", device=self.device)
+    self.weight = Tensor(np.random.uniform(0.0, 1.0, (out_channels, in_channels, kernel_size, kernel_size)), "conv2D_kernel", device=self.device)
+    self.bias = Tensor(np.zeros((out_channels,)), name="bias", device=self.device)
 
-    # TODO: assert supported shapes as well
     assert self.kernel_size % 2 != 0, "Conv2D kenrel_size must be odd"
+    assert self.kernel_size in [3, 5, 7, 9]
 
   def __call__(self, x: Tensor):
     self.t_in = x
