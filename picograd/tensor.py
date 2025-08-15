@@ -11,11 +11,6 @@ from picograd.backend.cpu.ops import *
 from picograd.util import *
 from picograd.backend.device import Devices, Device
 
-# TODO: device abstraction layer
-from picograd.backend.cuda.utils import *
-
-from .draw_utils import draw_dot
-
 VERBOSE = int(os.getenv("VERBOSE", 0))
 
 # init c++ library
@@ -67,7 +62,7 @@ class Tensor:
     assert self._data is not None or self.device_data is not None, "Tensor data is not initialized."
 
     if self.device.name != Devices.CPU and self.device_data is not None:
-      dev_data_to_host(self, free=False)
+      self.device.manager.dev_data_to_host(self, free=False)
 
     if not isinstance(self._data, np.ndarray):
       self._data = np.array(self._data)
@@ -79,14 +74,14 @@ class Tensor:
     self._data = value
     if self.device.name != Devices.CPU and self.device_data is not None:
       assert initial_shape == value.shape, "Tensor data shape does not match the initialized shape." # TODO: support new shapes (?)
-      copy_data_to_device(self.device.manager, self.device_data, self._data)
+      self.device.manager.copy_data_to_device(self.device.manager, self.device_data, self._data)
 
   @property
   def grad(self):
     assert self._grad is not None or self.device_grad is not None, "Tensor grad is not initialized."
 
     if self.device.name != Devices.CPU and self.device_grad is not None:
-      dev_grad_to_host(self, free=False)
+      self.device.manager.dev_grad_to_host(self, free=False)
     return self._grad
 
   @grad.setter
@@ -96,7 +91,7 @@ class Tensor:
     # FIXME: this gets triggered in MNIST_simple/CUDA
     # assert initial_shape == value.shape, "Tensor data shape does not match the initialized shape." # TODO: support new shapes (?)
     if self.device.name != Devices.CPU and self.device_grad is not None:
-      copy_data_to_device(self.device.manager, self.device_grad , self._grad) # FIXME: CUDA_ERROR_ILLEGAL_ADDRESS on relu_back after a few loops
+      self.device.manager.copy_data_to_device(self.device.manager, self.device_grad , self._grad) # FIXME: CUDA_ERROR_ILLEGAL_ADDRESS on relu_back after a few loops
 
   @property
   def dtype(self):
@@ -143,7 +138,7 @@ class Tensor:
     """Returns the device memory of a tensor."""
 
     if self.device_data is None:
-      print("Tensor is not on the CUDA device.")
+      print("Tensor is not on the device.")
       return
 
     size = self.data.nbytes
@@ -159,16 +154,16 @@ class Tensor:
     """Tranfers tensor to the specified device."""
 
     if device.name == Devices.CPU:
-      if self.device_data is not None: tensor_to_host(self)
+      if self.device_data is not None: self.device.manager.tensor_to_host(self)
       self.device = device
       return self
 
     self.device = device
-    if device.name == Devices.CUDA:
+    if device.name != Devices.CPU:
       # TODO: if result of CUDA op, no need to reallocate memory (op should return d_C as well)
       self._data = self._data.astype(np.float32)
       self._grad = self._grad.astype(np.float32)
-      tensor_to_device(self)
+      self.device.manager.tensor_to_device(self)
 
     return self
 

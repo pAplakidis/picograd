@@ -10,7 +10,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from picograd.tensor import Tensor
 from picograd.util import is_cuda_available
 from picograd.backend.device import Devices, Device
-from picograd.backend.cuda.utils import *
 from picograd.draw_utils import draw_dot
 from picograd.loss import CrossEntropyLoss
 

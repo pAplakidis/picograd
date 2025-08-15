@@ -3,7 +3,6 @@ from enum import Enum, auto
 from typing import Tuple
 
 from picograd.util import *
-from .utils import *
 from .math import *
 
 
@@ -49,7 +48,7 @@ class BinaryOps:
     dim1, dim2, dim3 = padded_dims[:3]
 
     C_flat = np.empty_like(a._data.ravel())
-    d_C = allocate_device_memory(a.device.manager, C_flat)
+    d_C = a.device.manager.allocate_device_memory(C_flat)
 
     # Define grid and block sizes
     grid = (
@@ -60,7 +59,7 @@ class BinaryOps:
 
     # Kernel launch and copy result back to host
     n_flops = dim1 * dim2 * dim3
-    args = prep_kargs(a.device_data, b.device_data, d_C, dim1, dim2, dim3)
+    args = a.device.manager.prep_kargs(a.device_data, b.device_data, d_C, dim1, dim2, dim3)
     a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops)
     return d_C
 
@@ -77,7 +76,7 @@ class BinaryOps:
     padded_dims = dims + (1,) * (3 - len(dims))  # Pad to 3D
     dim1, dim2, dim3 = padded_dims[:3]
 
-    _, d_grad_out = np_to_device(grad_out, a.device.manager)
+    _, d_grad_out = a.device.manager.np_to_device(grad_out)
 
     grid = (
       (dim3 + block_size[0] - 1) // block_size[0],
@@ -87,10 +86,10 @@ class BinaryOps:
 
     n_flops = (int(a.requires_grad) + int(b.requires_grad)) * dim1 * dim2 * dim3
     if a.requires_grad:
-      args = prep_kargs(a.device_data, d_grad_out, a.device_grad, dim1, dim2, dim3)
+      args = a.device.manager.prep_kargs(a.device_data, d_grad_out, a.device_grad, dim1, dim2, dim3)
       a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops)
     if b.requires_grad:
-      args = prep_kargs(b.device_data, d_grad_out, b.device_grad, dim1, dim2, dim3)
+      args = a.device.manager.prep_kargs(b.device_data, d_grad_out, b.device_grad, dim1, dim2, dim3)
       a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops)
 
   @staticmethod
@@ -106,7 +105,7 @@ class BinaryOps:
     dim1, dim2, dim3 = padded_dims[:3]
 
     C_flat = np.empty_like(a._data.ravel())
-    d_C = allocate_device_memory(a.device.manager, C_flat)
+    d_C = a.device.manager.allocate_device_memory(C_flat)
 
     # Define grid and block sizes
     grid = (
@@ -117,7 +116,7 @@ class BinaryOps:
 
     # Kernel launch and copy result back to host
     n_flops = dim1 * dim2 * dim3
-    args = prep_kargs(a.device_data, b.device_data, d_C, dim1, dim2, dim3)
+    args = a.device.manager.prep_kargs(a.device_data, b.device_data, d_C, dim1, dim2, dim3)
     a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops)
     return d_C
 
@@ -139,9 +138,9 @@ class BinaryOps:
     temp_a = np.zeros_like(a._grad.ravel())
     temp_b = np.zeros_like(b._grad.ravel())
 
-    _, d_grad_out = np_to_device(grad_out, a.device.manager)
-    _, d_temp_a = np_to_device(temp_a, a.device.manager)
-    _, d_temp_b = np_to_device(temp_b, a.device.manager)
+    _, d_grad_out = a.device.manager.np_to_device(grad_out)
+    _, d_temp_a = a.device.manager.np_to_device(temp_a)
+    _, d_temp_b = a.device.manager.np_to_device(temp_b)
 
     grid = (
       (dim3 + block_size[0] - 1) // block_size[0],
@@ -152,22 +151,22 @@ class BinaryOps:
 
     if a.requires_grad:
       # d_temp_a = b.device_data * d_grad_out
-      kargs = prep_kargs(b.device_data, d_grad_out, d_temp_a, dim1, dim2, dim3)
+      kargs = a.device.manager.prep_kargs(b.device_data, d_grad_out, d_temp_a, dim1, dim2, dim3)
       a.device.manager.launch_kernel(mul_kfunc, grid, block_size, kargs, n_flops)
 
       # a.device_grad += d_temp_a
-      kargs = prep_kargs(a.device_grad, d_temp_a, a.device_grad, dim1, dim2, dim3)
+      kargs = a.device.manager.prep_kargs(a.device_grad, d_temp_a, a.device_grad, dim1, dim2, dim3)
       a.device.manager.launch_kernel(add_kfunc, grid, block_size, kargs, n_flops)
 
-      # free_device_tensor(a.device.manager, d_temp_a)  # FIXME: segfaults
+      # a.device.manager.free_device_tensor(d_temp_a)  # FIXME: segfaults
 
     if b.requires_grad:
       # d_temp_b = a.device_data * d_grad_out
-      kargs = prep_kargs(a.device_data, d_grad_out, d_temp_b, dim1, dim2, dim3)
+      kargs = a.device.manager.prep_kargs(a.device_data, d_grad_out, d_temp_b, dim1, dim2, dim3)
       a.device.manager.launch_kernel(mul_kfunc, grid, block_size, kargs, n_flops)
 
       # b.device_grad += d_temp_b
-      kargs = prep_kargs(b.device_grad, d_temp_b, b.device_grad, dim1, dim2, dim3)
+      kargs = a.device.manager.prep_kargs(b.device_grad, d_temp_b, b.device_grad, dim1, dim2, dim3)
       a.device.manager.launch_kernel(add_kfunc, grid, block_size, kargs, n_flops)
 
       # free_device_tensor(a.device.manager, d_temp_b)  # FIXME: segfaults
@@ -185,17 +184,17 @@ class BinaryOps:
     _, N = b.shape[0], b.shape[1]
 
     C = np.zeros((M, N), dtype=np.float32)
-    d_C = allocate_device_memory(a.device.manager, C)
+    d_C = a.device.manager.allocate_device_memory(C)
 
-    block_size = (TILE_SIZE, TILE_SIZE, 1)
+    block_size = (a.device.manager.tile_size, a.device.manager.tile_size, 1)
     grid = (
-      (N + TILE_SIZE - 1) // TILE_SIZE,
-      (M + TILE_SIZE - 1) // TILE_SIZE,
+      (N + a.device.manager.tile_size - 1) // a.device.manager.tile_size,
+      (M + a.device.manager.tile_size - 1) // a.device.manager.tile_size,
       1,
     )
 
     num_flops = 2 * M * N * K
-    args = prep_kargs(a.device_data, b.device_data, d_C, M, N, K)
+    args = a.device.manager.prep_kargs(a.device_data, b.device_data, d_C, M, N, K)
     a.device.manager.launch_kernel(kfunc, grid, block_size, args, num_flops)
     return d_C
 
@@ -214,17 +213,17 @@ class BinaryOps:
     temp_a = np.zeros_like(a._grad.ravel())
     temp_b = np.zeros_like(b._grad.ravel())
     
-    _, d_grad_out = np_to_device(grad_out, a.device.manager)
-    _, d_temp_a = np_to_device(temp_a, a.device.manager)
-    _, d_temp_b = np_to_device(temp_b, a.device.manager)
+    _, d_grad_out = a.device.manager.np_to_device(grad_out)
+    _, d_temp_a = a.device.manager.np_to_device(temp_a)
+    _, d_temp_b = a.device.manager.np_to_device(temp_b)
 
     # setup dot kernel
     M, K = a.shape
     _, N = b.shape[0], b.shape[1]
-    dot_block_size = (TILE_SIZE, TILE_SIZE, 1)
+    dot_block_size = (a.device.manager.tile_size, a.device.manager.tile_size, 1)
     dot_grid = (
-      (N + TILE_SIZE - 1) // TILE_SIZE,
-      (M + TILE_SIZE - 1) // TILE_SIZE,
+      (N + a.device.manager.tile_size - 1) // a.device.manager.tile_size,
+      (M + a.device.manager.tile_size - 1) // a.device.manager.tile_size,
       1,
     )
 
@@ -244,25 +243,25 @@ class BinaryOps:
     # TODO: transpose b and a ?
     if a.requires_grad:
       # d_temp_a = grad_out @ b.data.T
-      args = prep_kargs(d_grad_out, b.device_data, d_temp_a, M, N, K)
+      args = a.device.manager.prep_kargs(d_grad_out, b.device_data, d_temp_a, M, N, K)
       a.device.manager.launch_kernel(dot_kfunc, dot_grid, dot_block_size, args, num_flops)
 
       # a.device_grad += d_temp_a
-      args = prep_kargs(a.device_grad, d_temp_a, a.device_grad, dim1, dim2, dim3)
+      args = a.device.manager.prep_kargs(a.device_grad, d_temp_a, a.device_grad, dim1, dim2, dim3)
       a.device.manager.launch_kernel(add_kfunc, add_grid, add_block_size, args, num_flops)
 
-      # free_device_tensor(a.device.manager, d_temp_a)  # FIXME: segfaults
+      # a.device.manager.free_device_tensor(d_temp_a)  # FIXME: segfaults
 
     if b.requires_grad:
       # d_temp_b = a.data.T @ grad_out
-      args = prep_kargs(a.device_data, d_grad_out, d_temp_b, K, M, N)
+      args = a.device.manager.prep_kargs(a.device_data, d_grad_out, d_temp_b, K, M, N)
       a.device.manager.launch_kernel(dot_kfunc, dot_grid, dot_block_size, args, num_flops)
 
       # b.device_grad += d_temp_b
-      args = prep_kargs(b.device_grad, d_temp_b, b.device_grad, dim1, dim2, dim3)
+      args = a.device.manager.prep_kargs(b.device_grad, d_temp_b, b.device_grad, dim1, dim2, dim3)
       a.device.manager.launch_kernel(add_kfunc, add_grid, add_block_size, args, num_flops)
 
-      # free_device_tensor(a.device.manager, d_temp_b)  # FIXME: segfaults
+      # a.device.manager.free_device_tensor(d_temp_b)  # FIXME: segfaults
 
   # TODO: this is naive conv2d
   @staticmethod
@@ -289,11 +288,11 @@ class BinaryOps:
     # FIXME: a_padded
 
     C = np.zeros((BS, out_channels, H_out, W_out))
-    d_C = allocate_device_memory(a.device.manager, C)
+    d_C = a.device.manager.allocate_device_memory(C)
 
     grid = (BS, out_channels, 4)
     num_flops = BS * out_channels * H_out * W_out * in_channels * kernel_size * kernel_size * 2
-    args = prep_kargs(
+    args = a.device.manager.prep_kargs(
       a.device_data, w.device_data, b.device_data, d_C,
       BS, in_channels, H, W,
       out_channels, kernel_size, kernel_size,
@@ -328,18 +327,18 @@ class BinaryOps:
 
     # FIXME: grads already in device memory
     grad_a = np.zeros_like(a)
-    d_grad_a = allocate_device_memory(a.device.manager, grad_a)
+    d_grad_a = a.device.manager.allocate_device_memory(grad_a)
     grad_w = np.zeros_like(w)
-    d_grad_w = allocate_device_memory(a.device.manager, grad_w)
+    d_grad_w = a.device.manager.allocate_device_memory(grad_w)
     grad_b = np.zeros_like(b)
-    d_grad_b = allocate_device_memory(a.device.manager, grad_b)
-    d_grad_out = allocate_device_memory(a.device.manager, grad_out)
+    d_grad_b = a.device.manager.allocate_device_memory(grad_b)
+    d_grad_out = a.device.manager.allocate_device_memory(grad_out)
 
     # FIXME: a_padded + grad_a_padded
 
     grid = (BS, out_channels, 4)
     num_flops = BS * out_channels * H_out * W_out * in_channels * kernel_size * kernel_size * 2
-    args = prep_kargs(
+    args = a.device.manager.prep_kargs(
       a.device_data, w.device_data,
       d_grad_out, d_grad_a, d_grad_w, d_grad_b,
       BS, in_channels, out_channels,
@@ -364,11 +363,11 @@ class UnaryOps:
 
     size = int(np.prod(a.shape))
     C_flat = np.zeros(size, dtype=np.float32)
-    d_C = allocate_device_memory(a.device.manager, C_flat)
+    d_C = a.device.manager.allocate_device_memory(C_flat)
 
     grid = ((size + block_size[0] - 1) // block_size[0], 1, 1)
 
-    args = prep_kargs(a.device_data, d_C, size)
+    args = a.device.manager.prep_kargs(a.device_data, d_C, size)
     a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=size)
     return d_C
 
@@ -380,11 +379,11 @@ class UnaryOps:
     kfunc = a.device.manager.compile_kernel(kernel_code, b"relu_back_kernel")
 
     size = int(np.prod(a.shape))
-    _, d_grad_out = np_to_device(grad_out, a.device.manager)
+    _, d_grad_out = a.device.manager.np_to_device(grad_out)
 
     grid = ((size + block_size[0] - 1) // block_size[0], 1, 1)
 
-    args = prep_kargs(a.device_data, d_grad_out, a.device_grad, size)
+    args = a.device.manager.prep_kargs(a.device_data, d_grad_out, a.device_grad, size)
     a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=size)
 
   @staticmethod

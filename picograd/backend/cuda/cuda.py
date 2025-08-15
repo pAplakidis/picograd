@@ -3,11 +3,12 @@ import time
 import ctypes
 import tempfile
 import subprocess
+import numpy as np
 from typing import Tuple, List, Optional
 
 from picograd.print_utils import *
+from picograd.backend.device import DeviceManager
 from .error import CUDA_ERRORS
-from .utils import *
 from .types import *
 
 try:
@@ -20,10 +21,14 @@ except OSError as e:
 KERNELS_PATH = "picograd/backend/cuda/kernels"
 PSEUDO_DEBUG = int(os.getenv("PSEUDO_DEBUG", 0))  # if 1, generate assembly code as string but don't print (helps with segfaults)
 
+TILE_SIZE = 16
 
-class CudaDevice:
-  def __init__(self, debug: int = 1):
-    self.debug = debug  # debug levels: 0: no debug, 1: basic debug, 2: kernel level
+
+class CudaDeviceManager(DeviceManager):
+  def __init__(self, device_name, debug: int = 1):
+    super().__init__(device_name, debug=debug)
+    self.tile_size = TILE_SIZE
+
     self.ctx = CUcontext()
     self.module = None
     self.kernels = {}
@@ -183,11 +188,11 @@ class CudaDevice:
     """Frees device memory pointed to by ptr."""
     self.check_cuda(cuda.cuMemFree(ptr), "cuMemFree")
 
-  def memcpy_htod(self, dst: CUdeviceptr, src: ctypes.c_void_p, size: int):
+  def cuda_memcpy_htod(self, dst: CUdeviceptr, src: ctypes.c_void_p, size: int):
     """Copies data from host to device memory."""
     self.check_cuda(cuda.cuMemcpyHtoD(dst, ctypes.c_void_p(src), size), "cuMemcpyHtoD", sync=True)
 
-  def memcpy_dtoh(self, dst: ctypes.c_void_p, src: CUdeviceptr, size):
+  def cuda_memcpy_dtoh(self, dst: ctypes.c_void_p, src: CUdeviceptr, size):
     """Copies data from device to host memory."""
     self.check_cuda(cuda.cuMemcpyDtoH(ctypes.c_void_p(dst), src, size), "cuMemcpyDtoH", sync=True)
 
@@ -242,3 +247,23 @@ class CudaDevice:
       if self.debug >= 1 and not PSEUDO_DEBUG:
         # print(f"{color_yellow('[Cuda-Perf]')} Kernel time: {elapsed_ms.value:.3f} ms")
         print(f"{color_yellow('[Cuda-Perf]')} Kernel time: {elapsed_ms:.4f} ms")
+
+  # -------
+  # GENERIC DEVICE INTERFACE METHODS
+  # -------
+
+  def allocate_device_memory(self, T: np.ndarray) -> ctypes.c_void_p:
+    """Allocate device memory for tensor."""
+    return self.cuda_malloc(T.nbytes)
+
+  def copy_data_to_device(self, d_T: ctypes.c_void_p, T_flat: np.ndarray):
+    """Copy data from host to device."""
+    self.cuda_memcpy_htod(d_T, T_flat.ctypes.data, T_flat.nbytes)
+
+  def copy_data_to_host(self, d_T: ctypes.c_void_p, T_flat: np.ndarray):
+    """Copy data from device to host."""
+    self.cuda_memcpy_dtoh(T_flat.ctypes.data, d_T, T_flat.nbytes)
+
+  def free_device_tensor(self, d_T: ctypes.c_void_p):
+    """Free tensor from device memory."""
+    self.cuda_free(d_T)

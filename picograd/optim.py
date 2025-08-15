@@ -29,12 +29,18 @@ class Optim:
   # not zero_grad since we reset it to ones
   def zero_grad(self):
     for i in range(len(self.params)):
+      if self.params[i].t_in is None:
+        continue
+
       self.params[i].t_in.grad = np.zeros_like(self.params[i].t_in.grad)
       self.params[i].t_out.grad = np.zeros_like(self.params[i].t_out.grad)
     return self.params
 
   def reset_grad(self):
     for i in range(len(self.params)):
+      if self.params[i].t_in is None:
+        continue
+
       self.params[i].t_in.grad = np.ones_like(self.params[i].t_in.grad)
       self.params[i].t_out.grad = np.ones_like(self.params[i].t_out.grad)
     return self.params
