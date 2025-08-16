@@ -168,19 +168,6 @@ class BinaryOps:
 
 class UnaryOps:
   @staticmethod
-  def relu(a: "Tensor") -> np.ndarray: return np.maximum(a.data, np.zeros_like(a.data))
-
-  @staticmethod
-  def relu_back(a: "Tensor", grad_out: np.ndarray):
-    if a.requires_grad: a.grad += np.where(a.data > 0, grad_out, 0)
-  
-  @staticmethod
-  def sigmoid(a: "Tensor") -> np.ndarray: pass
-  
-  @staticmethod
-  def tanh(a: "Tensor") -> np.ndarray: pass
-  
-  @staticmethod
   def abs(a: "Tensor") -> np.ndarray: pass
   
   @staticmethod
@@ -199,7 +186,24 @@ class UnaryOps:
   def normalize(a: "Tensor") -> np.ndarray: pass
   
   @staticmethod
+  def batchnorm(a: np.ndarray) -> np.ndarray: pass
+
+  @staticmethod
+  def relu(a: "Tensor") -> np.ndarray: return np.maximum(a.data, np.zeros_like(a.data))
+
+  @staticmethod
+  def relu_back(a: "Tensor", grad_out: np.ndarray):
+    if a.requires_grad: a.grad += np.where(a.data > 0, grad_out, 0)
+  
+  @staticmethod
+  def sigmoid(a: "Tensor") -> np.ndarray: pass
+  
+  @staticmethod
+  def tanh(a: "Tensor") -> np.ndarray: pass
+  
+  @staticmethod
   def softmax(a: "Tensor") -> np.ndarray:
+    assert len(a.shape) == 2, "Softmax is only implemented for 2D tensors (batch_size, num_classes)"
     exp_val = np.exp(a.data - np.max(a.data, axis=1, keepdims=True))
     return exp_val / np.sum(exp_val, axis=1, keepdims=True)
 
@@ -212,9 +216,6 @@ class UnaryOps:
       s = out[i].reshape(-1, 1)
       jacobian = np.diagflat(s) - np.dot(s, s.T)
       a.grad[i] = np.dot(jacobian, grad_out[i])
-  
-  @staticmethod
-  def batchnorm(a: np.ndarray) -> np.ndarray: pass
 
 
 class ReduceOps:

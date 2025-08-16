@@ -1,4 +1,5 @@
 # PICOGRAD
+
 A from-scratch toy implementation of neural networks, backpropagation, etc
 
 ### Note that this library is a work in progress, therefore some features and ops might cause errors or have not been implemented yet.
@@ -46,9 +47,12 @@ Tests
 ```
 
 NOTE: cuda might contain bugs that cause segmentation faults. To help reduce the change of that, run:
+
 ```bash
 DEBUG=3 PSEUDO_DEBUG=1 ./test/test_dot.py
 ```
+
+or even without PSEUDO_DEBUG (prints compiled code)
 
 Code
 
@@ -77,7 +81,6 @@ You can set debug levels by assigning the debug value to DEBUG env variable.
 ## TODO
 
 - Implement CUDA activation functions (and other unary ops)
-- Implement CUDA pooling
 - Implement BatchNorm1D and 2D (+CUDA)
 - debug & optimize CUDA and memory leaks (device data should not be moved to host in ops)
 - cudaMallocManaged
@@ -87,10 +90,12 @@ You can set debug levels by assigning the debug value to DEBUG env variable.
 
 ## BUGS
 
+- CUDA sometimes segfaults for relu and softmax kernels
 - CUDA MNIST not learning
 
 ### DONE
 
+- Implement CUDA pooling
 - cuda conv-net
 - ops.py + function.py
 - conv2d, maxpool, etc

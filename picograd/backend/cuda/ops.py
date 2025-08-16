@@ -1,3 +1,4 @@
+import ctypes
 import numpy as np
 from enum import Enum, auto
 from typing import Tuple
@@ -60,7 +61,7 @@ class BinaryOps:
     # Kernel launch and copy result back to host
     n_flops = dim1 * dim2 * dim3
     args = a.device.manager.prep_kargs(a.device_data, b.device_data, d_C, dim1, dim2, dim3)
-    a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops)
+    a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=n_flops)
     return d_C
 
   @staticmethod
@@ -87,10 +88,10 @@ class BinaryOps:
     n_flops = (int(a.requires_grad) + int(b.requires_grad)) * dim1 * dim2 * dim3
     if a.requires_grad:
       args = a.device.manager.prep_kargs(a.device_data, d_grad_out, a.device_grad, dim1, dim2, dim3)
-      a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops)
+      a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=n_flops)
     if b.requires_grad:
       args = a.device.manager.prep_kargs(b.device_data, d_grad_out, b.device_grad, dim1, dim2, dim3)
-      a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops)
+      a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=n_flops)
 
   @staticmethod
   def mul(a: "Tensor", b: "Tensor", block_size: Tuple[int] = (8, 8, 8)) -> np.ndarray:
@@ -117,7 +118,7 @@ class BinaryOps:
     # Kernel launch and copy result back to host
     n_flops = dim1 * dim2 * dim3
     args = a.device.manager.prep_kargs(a.device_data, b.device_data, d_C, dim1, dim2, dim3)
-    a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops)
+    a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=n_flops)
     return d_C
 
   @staticmethod
@@ -152,22 +153,22 @@ class BinaryOps:
     if a.requires_grad:
       # d_temp_a = b.device_data * d_grad_out
       kargs = a.device.manager.prep_kargs(b.device_data, d_grad_out, d_temp_a, dim1, dim2, dim3)
-      a.device.manager.launch_kernel(mul_kfunc, grid, block_size, kargs, n_flops)
+      a.device.manager.launch_kernel(mul_kfunc, grid, block_size, kargs, n_flops=n_flops)
 
       # a.device_grad += d_temp_a
       kargs = a.device.manager.prep_kargs(a.device_grad, d_temp_a, a.device_grad, dim1, dim2, dim3)
-      a.device.manager.launch_kernel(add_kfunc, grid, block_size, kargs, n_flops)
+      a.device.manager.launch_kernel(add_kfunc, grid, block_size, kargs, n_flops=n_flops)
 
       # a.device.manager.free_device_tensor(d_temp_a)  # FIXME: segfaults
 
     if b.requires_grad:
       # d_temp_b = a.device_data * d_grad_out
       kargs = a.device.manager.prep_kargs(a.device_data, d_grad_out, d_temp_b, dim1, dim2, dim3)
-      a.device.manager.launch_kernel(mul_kfunc, grid, block_size, kargs, n_flops)
+      a.device.manager.launch_kernel(mul_kfunc, grid, block_size, kargs, n_flops=n_flops)
 
       # b.device_grad += d_temp_b
       kargs = a.device.manager.prep_kargs(b.device_grad, d_temp_b, b.device_grad, dim1, dim2, dim3)
-      a.device.manager.launch_kernel(add_kfunc, grid, block_size, kargs, n_flops)
+      a.device.manager.launch_kernel(add_kfunc, grid, block_size, kargs, n_flops=n_flops)
 
       # free_device_tensor(a.device.manager, d_temp_b)  # FIXME: segfaults
 
@@ -195,7 +196,7 @@ class BinaryOps:
 
     num_flops = 2 * M * N * K
     args = a.device.manager.prep_kargs(a.device_data, b.device_data, d_C, M, N, K)
-    a.device.manager.launch_kernel(kfunc, grid, block_size, args, num_flops)
+    a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=num_flops)
     return d_C
 
   @staticmethod
@@ -244,22 +245,22 @@ class BinaryOps:
     if a.requires_grad:
       # d_temp_a = grad_out @ b.data.T
       args = a.device.manager.prep_kargs(d_grad_out, b.device_data, d_temp_a, M, N, K)
-      a.device.manager.launch_kernel(dot_kfunc, dot_grid, dot_block_size, args, num_flops)
+      a.device.manager.launch_kernel(dot_kfunc, dot_grid, dot_block_size, args, n_flops=num_flops)
 
       # a.device_grad += d_temp_a
       args = a.device.manager.prep_kargs(a.device_grad, d_temp_a, a.device_grad, dim1, dim2, dim3)
-      a.device.manager.launch_kernel(add_kfunc, add_grid, add_block_size, args, num_flops)
+      a.device.manager.launch_kernel(add_kfunc, add_grid, add_block_size, args, n_flops=num_flops)
 
       # a.device.manager.free_device_tensor(d_temp_a)  # FIXME: segfaults
 
     if b.requires_grad:
       # d_temp_b = a.data.T @ grad_out
       args = a.device.manager.prep_kargs(a.device_data, d_grad_out, d_temp_b, K, M, N)
-      a.device.manager.launch_kernel(dot_kfunc, dot_grid, dot_block_size, args, num_flops)
+      a.device.manager.launch_kernel(dot_kfunc, dot_grid, dot_block_size, args, n_flops=num_flops)
 
       # b.device_grad += d_temp_b
       args = a.device.manager.prep_kargs(b.device_grad, d_temp_b, b.device_grad, dim1, dim2, dim3)
-      a.device.manager.launch_kernel(add_kfunc, add_grid, add_block_size, args, num_flops)
+      a.device.manager.launch_kernel(add_kfunc, add_grid, add_block_size, args, n_flops=num_flops)
 
       # a.device.manager.free_device_tensor(d_temp_b)  # FIXME: segfaults
 
@@ -299,7 +300,7 @@ class BinaryOps:
       H_out, W_out,
       stride, padding
     )
-    a.device.manager.launch_kernel(kfunc, grid, block_size, args, num_flops)
+    a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=num_flops)
     return d_C
 
   @staticmethod
@@ -349,7 +350,7 @@ class BinaryOps:
       stride,
       padding
     )
-    a.device.manager.launch_kernel(kfunc, grid, block_size, args, num_flops)
+    a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=num_flops)
 
     if a.requires_grad: a.device_grad = d_grad_a
     if w.requires_grad: w.device_grad = d_grad_w
@@ -387,10 +388,50 @@ class UnaryOps:
     a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=size)
 
   @staticmethod
-  def softmax(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
+  def softmax(a: "Tensor", block_size: Tuple[int] = (256, 1, 1)) -> np.ndarray:
+    assert len(a.shape) == 2, "Softmax is only implemented for 2D tensors (batch_size, num_classes)"
+
+    kernel_code = a.device.manager.load_kernel("softmax.cu")
+    kfunc = a.device.manager.compile_kernel(kernel_code, b"softmax_kernel")
+
+    batch_size, n_classes = a.shape
+    size = batch_size * n_classes
+
+    C_flat = np.zeros(size, dtype=np.float32)
+    d_C = a.device.manager.allocate_device_memory(C_flat)
+
+    grid = (batch_size, 1, 1)
+    shared_mem = block_size[0] * np.dtype(np.float32).itemsize
+
+    n_flops = 3 * size
+    args = a.device.manager.prep_kargs(a.device_data, d_C, batch_size, n_classes)
+    a.device.manager.launch_kernel(kfunc, grid, block_size, args, shared_mem=shared_mem, n_flops=n_flops)
+    return d_C
 
   @staticmethod
-  def softmax_back(a: "Tensor", grad_out: np.ndarray): raise NotImplementedError("This op is not implemented yet")
+  def softmax_back(a: "Tensor", softmax_out: ctypes.c_void_p, grad_out: np.ndarray, block_size: Tuple[int] = (256, 1, 1)):
+    if not a.requires_grad: return
+
+    kernel_code = a.device.manager.load_kernel("softmax_back.cu")
+    kfunc = a.device.manager.compile_kernel(kernel_code, b"softmax_back_kernel")
+
+    batch_size, n_classes = a.shape
+    size = batch_size * n_classes
+
+    _, d_grad_out = a.device.manager.np_to_device(grad_out)
+
+    grid = (batch_size, 1, 1)
+    shared_mem = block_size[0] * np.dtype(np.float32).itemsize
+
+    n_flops = 3 * size
+    args = a.device.manager.prep_kargs(
+      d_grad_out,
+      softmax_out,
+      a.device_grad,
+      batch_size,
+      n_classes
+    )
+    a.device.manager.launch_kernel(kfunc, grid, block_size, args, shared_mem=shared_mem, n_flops=n_flops)
 
   @staticmethod
   def sigmoid(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")

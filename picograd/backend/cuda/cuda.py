@@ -202,6 +202,7 @@ class CudaDeviceManager(DeviceManager):
       grid: Tuple,
       block: Tuple,
       args: List[ctypes.c_void_p],
+      shared_mem: int = 0,
       n_flops: Optional[int] = None
     ):
     """Launches a CUDA kernel with the given grid and block dimensions and arguments."""
@@ -223,7 +224,7 @@ class CudaDeviceManager(DeviceManager):
       kfunc,
       grid[0], grid[1], grid[2],      # grid dimensions (blocks)
       block[0], block[1], block[2],   # block dimensions (threas per block)
-      0, 0,                           # shared mem and stream
+      shared_mem, 0,                           # shared mem and stream
       arg_buff, 0
     ), "cuLaunchKernel", sync=True)
 
