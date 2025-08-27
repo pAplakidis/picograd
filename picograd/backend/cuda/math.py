@@ -35,7 +35,7 @@ def cuda_add(A: np.ndarray, B: np.ndarray, dev_manager: CudaDeviceManager, block
   # Kernel launch and copy result back to host
   args = dev_manager.prep_kargs(d_A, d_B, d_C, dim1, dim2, dim3)
   dev_manager.launch_kernel(kfunc, grid, block_size, args)
-  dev_manager.memcpy_dtoh(C_flat.ctypes.data, d_C, C_flat.nbytes)
+  dev_manager.copy_data_to_host(d_C, C_flat)
 
   dev_manager.free_device_tensor(dev_manager, d_A)
   dev_manager.free_device_tensor(dev_manager, d_B)
@@ -72,7 +72,7 @@ def cuda_mul(A: np.ndarray, B: np.ndarray, dev_manager: CudaDeviceManager, block
   # Kernel launch and copy result back to host
   args = dev_manager.prep_kargs(d_A, d_B, d_C, dim1, dim2, dim3)
   dev_manager.launch_kernel(kfunc, grid, block_size, args)
-  dev_manager.memcpy_dtoh(C_flat.ctypes.data, d_C, C_flat.nbytes)
+  dev_manager.copy_data_to_host(d_C, C_flat)
 
   dev_manager.free_device_tensor(dev_manager, d_A)
   dev_manager.free_device_tensor(dev_manager, d_B)
@@ -108,7 +108,7 @@ def cuda_gemm(A: np.ndarray, B: np.ndarray, dev_manager: CudaDeviceManager, bloc
   # Kernel launch and copy result back to host
   args = dev_manager.prep_kargs(d_A, d_B, d_C, M, N, K)
   dev_manager.launch_kernel(kfunc, grid, block_size, args)
-  dev_manager.memcpy_dtoh(C.ctypes.data, d_C, C.nbytes)
+  dev_manager.copy_data_to_host(d_C, C.ctypes)
 
   dev_manager.free_device_tensor(dev_manager, d_A)
   dev_manager.free_device_tensor(dev_manager, d_B)

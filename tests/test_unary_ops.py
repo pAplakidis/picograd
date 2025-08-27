@@ -36,4 +36,5 @@ def test_softmax():
   print("[+] Softmax OK")
 
 if __name__ == "__main__":
+  test_relu()
   test_softmax()

@@ -27,9 +27,7 @@ d = Tensor(t3, name="d", device=device)
 c = a.dot(b)
 c.name = "c"
 
-# FIXME: relu and relu_back segfault unreliably on CUDA (if we a.data in ops.relu(), sometimes it passes)
 tmp = c + d
-tmp.backward()
 e = tmp.relu()
 e.name = "e"
 e.backward()

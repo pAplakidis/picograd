@@ -145,10 +145,12 @@ class CudaDeviceManager(DeviceManager):
       b"--fmad=false",
       b"--gpu-architecture=compute_75",
     ]
-    if self.debug >= 2 and not PSEUDO_DEBUG:
+    if self.debug >= 2:
       opts += [
+        b"-G",
         b"--device-debug",
         b"--generate-line-info",
+        b"-lineinfo"
       ]
     self.check_nvrtc(
       nvrtc.nvrtcCompileProgram(self.program, len(opts), (ctypes.c_char_p * len(opts))(*opts)),
@@ -218,6 +220,17 @@ class CudaDeviceManager(DeviceManager):
     # launch kernel
     if not len(grid) == 3 or not len(block) == 3:
       raise ValueError(f"Unsupported grid/block dimensions: grid={grid}, block={block}. Must be 2D or 3D.")
+
+    cuda.cuLaunchKernel.restype = CUresult
+    cuda.cuLaunchKernel.argtypes = [
+      CUfunction,
+      ctypes.c_uint, ctypes.c_uint, ctypes.c_uint,  # gridDim (blocks in x, y, z)
+      ctypes.c_uint, ctypes.c_uint, ctypes.c_uint,  # blockDim (threads per block in x, y, z)
+      ctypes.c_uint,                                # sharedMemBytes (shared memory per block in bytes)
+      ctypes.c_void_p,                              # hStream (CUstream, 0 for default)
+      ctypes.POINTER(ctypes.c_void_p),              # void** kernelParams (array of pointers to arguments or NULL)
+      ctypes.c_void_p                               # void** extra (reserved for future use, usually NULL)
+    ]
 
     arg_buff = (ctypes.c_void_p * len(args))(*[ctypes.addressof(a) for a in args])
     self.check_cuda(cuda.cuLaunchKernel(

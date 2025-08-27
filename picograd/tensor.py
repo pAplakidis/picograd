@@ -42,7 +42,7 @@ class Tensor:
     self.requires_grad = requires_grad
 
     self._data = data if data is not None else np.zeros(self._shape)
-    self._grad= np.zeros(self._shape) if requires_grad else None
+    self._grad = np.zeros(self._shape) if requires_grad else None
 
     self._prev = set(_prev)
     self.prev_op = None
@@ -51,12 +51,10 @@ class Tensor:
     self.layer = None
     self.w, self.b = None, None
 
-    self.device_data = device_data
-    self.device_grad = None
+    self._device_data = device_data
+    self._device_grad = None
     if device.name != Devices.CPU: self.to(device)
 
-  # FIXME: using data and grad internally (ops.py) causes cura errors
-  # TODO: check what copy_data_to_host affects (data is moved when realized, so _data.shape might not be reliable)
   @property
   def data(self) -> np.ndarray:
     assert self._data is not None or self.device_data is not None, "Tensor data is not initialized."
@@ -73,8 +71,10 @@ class Tensor:
     initial_shape = self.shape
     self._data = value
     if self.device.name != Devices.CPU and self.device_data is not None:
-      assert initial_shape == value.shape, "Tensor data shape does not match the initialized shape." # TODO: support new shapes (?)
-      self.device.manager.copy_data_to_device(self.device.manager, self.device_data, self._data)
+      if initial_shape != value.shape:
+        self._shape = value.shape
+      self.device.manager.free_device_tensor(self.device_data)
+      _, self._device_data = self.device.manager.np_to_device(value)
 
   @property
   def grad(self):
@@ -88,10 +88,26 @@ class Tensor:
   def grad(self, value):
     initial_shape = self.shape
     self._grad = value
-    # FIXME: this gets triggered in MNIST_simple/CUDA
-    # assert initial_shape == value.shape, "Tensor data shape does not match the initialized shape." # TODO: support new shapes (?)
+    # assert initial_shape == value.shape, "Tensor data shape does not match the initialized shape."  # TODO: check if we need grad.shape == data.shape
     if self.device.name != Devices.CPU and self.device_grad is not None:
-      self.device.manager.copy_data_to_device(self.device.manager, self.device_grad , self._grad) # FIXME: CUDA_ERROR_ILLEGAL_ADDRESS on relu_back after a few loops
+      self.device.manager.free_device_tensor(self.device_grad)
+      _, self._device_grad = self.device.manager.np_to_device(value)
+
+  @property
+  def device_data(self): return self._device_data
+
+  @device_data.setter
+  def device_data(self, value):
+    if self.device.manager: self.device.manager.free_device_tensor(self._device_data)
+    self._device_data = value
+
+  @property
+  def device_grad(self): return self._device_grad
+
+  @device_grad.setter
+  def device_grad(self, value):
+    if self.device.manager: self.device.manager.free_device_tensor(self._device_grad)
+    self._device_grad  = value
 
   @property
   def dtype(self):
@@ -101,12 +117,6 @@ class Tensor:
   def dtype(self, value):
     if self._data is not None:
       self._data = self._data.astype(value)
-    # if self.device_data is not None:
-    #   self.device_data = self.device_data.astype(value)
-    # if self._grad is not None:
-    #   self._grad = self._grad.astype(value)
-    # if self.device_grad is not None:
-      # self.device_grad = self.device_grad.astype(value)
 
   @property
   def T(self): return Tensor(self.data.T, _prev=(self,), device=self.device)
@@ -134,22 +144,6 @@ class Tensor:
       ret = int(ret[0])
     return ret
 
-  def get_device_memory(self):
-    """Returns the device memory of a tensor."""
-
-    if self.device_data is None:
-      print("Tensor is not on the device.")
-      return
-
-    size = self.data.nbytes
-    host_buffer = np.empty(self.shape, dtype=self.data.dtype) # Create a host buffer to copy the data back to
-    self.device.manager.memcpy_dtoh(
-        host_buffer.ctypes.data,
-        self.device_data,
-        size
-    )
-    return host_buffer
-
   def to(self, device: Device):
     """Tranfers tensor to the specified device."""
 
@@ -159,10 +153,9 @@ class Tensor:
       return self
 
     self.device = device
-    if device.name != Devices.CPU:
-      # TODO: if result of CUDA op, no need to reallocate memory (op should return d_C as well)
+    if device.name != Devices.CPU :
       self._data = self._data.astype(np.float32)
-      self._grad = self._grad.astype(np.float32)
+      if self._grad is not None: self._grad = self._grad.astype(np.float32)
       self.device.manager.tensor_to_device(self)
 
     return self
@@ -261,7 +254,8 @@ class Tensor:
         device=self.device
       )
     out.prev_op = OPS.ReLU
-    out._backward = lambda: func.backward(out.grad)
+    # TODO: use out.device_grad
+    out._backward = lambda: func.backward(out.grad) # FIXME: [CUDA ERROR] cuMemcpyDtoH failed: CUDA_ERROR_ILLEGAL_ADDRESS (code 700) on MNIST after a few iterations
     return out
 
   def __neg__(self): return self * Tensor(np.array(-1), device=self.device)
