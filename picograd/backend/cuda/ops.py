@@ -326,7 +326,6 @@ class BinaryOps:
     C_out, _, kernel_size, _ = w.shape
     _, _, H_out, W_out = grad_out.shape
 
-    # FIXME: grads already in device memory
     grad_a = np.zeros_like(a)
     d_grad_a = a.device.manager.allocate_device_memory(grad_a)
     grad_w = np.zeros_like(w)
@@ -367,7 +366,6 @@ class UnaryOps:
     d_C = a.device.manager.allocate_device_memory(C_flat)
 
     grid = ((size + block_size[0] - 1) // block_size[0], 1, 1)
-
     args = a.device.manager.prep_kargs(a.device_data, d_C, size)
     a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=size)
     return d_C
@@ -383,7 +381,6 @@ class UnaryOps:
     _, d_grad_out = a.device.manager.np_to_device(grad_out)
 
     grid = ((size + block_size[0] - 1) // block_size[0], 1, 1)
-
     args = a.device.manager.prep_kargs(a.device_data, d_grad_out, a.device_grad, size)
     a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=size)
 
@@ -402,7 +399,6 @@ class UnaryOps:
 
     grid = (batch_size, 1, 1)
     shared_mem = block_size[0] * np.dtype(np.float32).itemsize
-
     n_flops = 3 * size
     args = a.device.manager.prep_kargs(a.device_data, d_C, batch_size, n_classes)
     a.device.manager.launch_kernel(kfunc, grid, block_size, args, shared_mem=shared_mem, n_flops=n_flops)
@@ -422,7 +418,6 @@ class UnaryOps:
 
     grid = (batch_size, 1, 1)
     shared_mem = block_size[0] * np.dtype(np.float32).itemsize
-
     n_flops = 3 * size
     args = a.device.manager.prep_kargs(
       d_grad_out,
@@ -473,4 +468,37 @@ class ReduceOps:
 
   @staticmethod
   def avgpool2d_back(a: "Tensor", grad_out: np.ndarray, filter: Tuple[int], stride: int): raise NotImplementedError("This op is not implemented yet")
+
+  # loss functions
+
+  @staticmethod
+  def cross_entropy(z: "Tensor", y: "Tensor", block_size=(256, 1, 1)) -> np.ndarray:
+    assert len(z.shape) == 2, "Z Tensor must be 2D (batch_size, num_classes)"
+    assert len(y.shape) == 1, "Ground-truth Y must be 1D (batch_size,)"
+    assert z.shape[0] == y.shape[0], "Z Tensor and ground-truth Y must have the same batch size"
+
+    kernel_code = z.device.manager.load_kernel("cre.cu")
+    kfunc = z.device.manager.compile_kernel(kernel_code, b"cross_entropy_kernel")
+    
+    batch_size, n_classes = z.shape
+    loss_flat = np.zeros(batch_size, dtype=np.float32)
+    d_loss = z.device.manager.allocate_device_memory(loss_flat)
+
+    grid = ((batch_size + block_size[0] - 1) // block_size[0], 1, 1)
+    args = z.device.manager.prep_kargs(z.device_data, y.device_data, d_loss, batch_size, n_classes)
+    z.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=batch_size * n_classes)
+    return d_loss
+
+  @staticmethod
+  def cross_entropy_back(z: "Tensor", y: "Tensor", block_size=(256, 1, 1)):
+    if not z.requires_grad: return
+
+    kernel_code = z.device.manager.load_kernel("cre_back.cu")
+    kfunc = z.device.manager.compile_kernel(kernel_code, b"cross_entropy_back_kernel")
+
+    batch_size, n_classes = z.shape
+    grid = ((batch_size + block_size[0] - 1) // block_size[0], 1, 1)
+    args = z.device.manager.prep_kargs(z.device_data, y.device_data, z.device_grad, batch_size, n_classes)
+    z.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=batch_size * n_classes)
+
   

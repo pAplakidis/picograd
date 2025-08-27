@@ -166,6 +166,7 @@ class BinaryOps:
     if Weight.requires_grad: Weight.grad = grad_w
     if Bias.requires_grad: Bias.grad = grad_b
 
+
 class UnaryOps:
   @staticmethod
   def abs(a: "Tensor") -> np.ndarray: pass
@@ -294,6 +295,28 @@ class ReduceOps:
         grad_share = grad_out[:, :, i, j][:, :, None, None] / (filter[0] * filter[1])
         grad_input[:, :, h_start:h_end, w_start:w_end] += grad_share
     a.grad = grad_input if a.grad is None else a.grad + grad_input
+
+  # loss functions
+
+  @staticmethod
+  def cross_entropy(z: "Tensor", y: "Tensor") -> np.ndarray:
+    assert len(z.shape) == 2, "Z Tensor must be 2D (batch_size, num_classes)"
+    assert len(y.shape) == 1, "Ground-truth Y must be 1D (batch_size,)"
+    assert z.shape[0] == y.shape[0], "Z Tensor and ground-truth Y must have the same batch size"
+
+    y.data = y.data.astype(np.int32)
+    y_pred_clipped = np.clip(z.data, 1e-7, 1 - 1e-7)
+    # loss_val = -np.sum(y.data * np.log(y_pred_clipped), axis=1)
+    return -np.log(y_pred_clipped[np.arange(y.shape[0]), y.data])
+
+  @staticmethod
+  def cross_entropy_back(z: "Tensor", y: "Tensor") -> np.ndarray:
+    if not z.requires_grad: return
+    batch_size, n_classes = z.shape
+    y_one_hot = np.zeros((batch_size, n_classes))
+    y_one_hot[np.arange(batch_size), y.data] = 1
+    z.grad = (z.data - y_one_hot) / batch_size  # Average gradient over batch
+  
 
 # TODO:
 """

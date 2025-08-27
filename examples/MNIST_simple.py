@@ -47,8 +47,8 @@ if __name__ == '__main__':
   X_train, Y_train, X_test, Y_test = get_data()
 
   model = Testnet(784, 10).to(device)
-  optim = Adam(model.get_params(), lr=1e-4)
-  # optim = SGD(model.get_params(), lr=1e-6)  # FIXME: SGD not wokring even on CPU
+  # optim = Adam(model.get_params(), lr=1e-4)
+  optim = SGD(model.get_params(), lr=1e-4)
 
   # Training Loop
   epochs = 4

@@ -149,3 +149,12 @@ class AvgPool2D(Function):
 
   def backward(self, grad_out: np.ndarray):
     self.ReduceOps.avgpool2d_back(self.a, grad_out, self.filter, self.stride)
+
+class CrossEntropy(Function):
+  def forward(self, z: "Tensor", y: "Tensor") -> "Tensor":
+    self.z = z
+    self.y = y
+    return self.ReduceOps.cross_entropy(z, y)
+  
+  def backward(self):
+    self.ReduceOps.cross_entropy_back(self.z, self.y)

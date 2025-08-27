@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import numpy as np
 from picograd.tensor import *
+from picograd.backend.function import *
 
 # TODO: all losses need to be classes that inherit from this abstract one
 """
@@ -53,22 +54,24 @@ def CrossEntropyLoss(z: Tensor, y: Tensor) -> Tensor:
   assert len(y.shape) == 1, "Ground-truth Y must be 1D (batch_size,)"
   assert z.shape[0] == y.shape[0], "Z Tensor and ground-truth Y must have the same batch size"
 
-  y.data = y.data.astype(np.int32)
-
-  y_pred_clipped = np.clip(z.data, 1e-7, 1 - 1e-7)
-  # loss_val = -np.sum(y.data * np.log(y_pred_clipped), axis=1)
-  loss_val = -np.log(y_pred_clipped[np.arange(y.shape[0]), y.data])
-  out = Tensor(loss_val, name="crossentropyloss_out", _prev=(z,))
+  func = CrossEntropy(z.device.name)
+  if z.device.name == Devices.CPU:
+    out = Tensor(
+      func.forward(z, y),
+      name="crossentropyloss_out",
+      _prev=(z,),
+      requires_grad=False
+    )
+  else:
+    out = Tensor(
+      device_data=func.forward(z, y),
+      shape=(z.shape[0],),
+      _prev=(z,),
+      requires_grad=False,
+      device=z.device
+    )
   out.prev_op = OPS.CrossEntropyLoss
-
-  batch_size, n_classes = y.shape[0], z.shape[1]
-  y_one_hot = np.zeros((batch_size, n_classes))
-  y_one_hot[np.arange(batch_size), y.data] = 1
-  out.grad = (z.data - y_one_hot) / batch_size  # Average gradient over batch
-  
-  def _backward():
-    z.grad = out.grad
-  out._backward = _backward
+  out._backward = lambda: func.backward()
   return out
 
 # Negative Log Likelihood Loss

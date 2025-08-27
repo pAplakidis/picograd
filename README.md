@@ -46,14 +46,6 @@ Tests
 ./test/ops_test.py
 ```
 
-NOTE: cuda might contain bugs that cause segmentation faults. To help reduce the change of that, run:
-
-```bash
-DEBUG=3 PSEUDO_DEBUG=1 ./test/test_dot.py
-```
-
-or even without PSEUDO_DEBUG (prints compiled code)
-
 Code
 
 ```python
@@ -78,24 +70,32 @@ draw_dot(e, path="graphs/test")
 
 You can set debug levels by assigning the debug value to DEBUG env variable.
 
+```bash
+DEBUG=3 ./test/test_dot.py
+```
+
 ## TODO
 
-- Implement CUDA activation functions (and other unary ops)
-- Implement BatchNorm1D and 2D (+CUDA)
-- debug & optimize CUDA and memory leaks (device data should not be moved to host in ops)
-- cudaMallocManaged
-
-- Test on actual neural networks, efficientnet, etc (full training and evaluation of simple models)
+- CrossEntropyLoss CUDA
+- CUDA activation functions (and other unary ops)
+- CUDA pooling
+- BatchNorm1D & 2D, LayerNorm (+CUDA)
+- Residual connections
 - Unit tests
+- RNN, LSTM, GRU
+- Attention, self-attention, transformer
+- Lazy buffers, scheduler, linearizer, kernel fusion
+- cudaMallocManaged
+- Test on actual neural networks, efficientnet, etc (full training and evaluation of simple models)
 
 ## BUGS
 
-- CUDA sometimes segfaults for relu and softmax kernels
-- CUDA MNIST not learning
+- MNIST (cuda) - illegal address on relu out.grad read + out of memory after some iterations
 
 ### DONE
 
-- Implement CUDA pooling
+- debug & optimize CUDA and memory leaks (device data should not be moved to host in ops)
+- CUDA sometimes segfaults for relu and softmax kernels
 - cuda conv-net
 - ops.py + function.py
 - conv2d, maxpool, etc
