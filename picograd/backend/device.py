@@ -93,7 +93,7 @@ class DeviceManager:
     tensor.device_data = d_T
     
     if self.debug >= 1 and not PSEUDO_DEBUG:
-      print(f"{color_green("[Cuda]")} Tensor data copied to device - {color_red(f"{tensor._data.nbytes} bytes")} - {color_red(f"{(time.time() - start_time) * 1000:.4f} ms")}")
+      print(f"{color_green('[Cuda]')} Tensor data copied to device - {color_red(f'{tensor._data.nbytes} bytes')} - {color_red(f'{(time.time() - start_time) * 1000:.4f} ms')}")
 
   def host_grad_to_dev(self, tensor: "Tensor"):
     if tensor.device.manager.debug >= 1 and not PSEUDO_DEBUG:
@@ -105,7 +105,7 @@ class DeviceManager:
     tensor.device_grad = d_grad
 
     if self.debug >= 1 and not PSEUDO_DEBUG:
-      print(f"{color_green("[Cuda]")} Tensor gradient copied to device - {color_red(f"{tensor._grad.nbytes} bytes")} - {color_red(f"{(time.time() - start_time) * 1000:.4f} ms")}")
+      print(f"{color_green('[Cuda]')} Tensor gradient copied to device - {color_red(f'{tensor._grad.nbytes} bytes')} - {color_red(f'{(time.time() - start_time) * 1000:.4f} ms')}")
 
   def dev_data_to_host(self, tensor: "Tensor", free=True):
     assert tensor.device_data is not None, "Tensor device data is None, cannot copy to host"
@@ -122,7 +122,7 @@ class DeviceManager:
       tensor.device_data = None
 
     if tensor.device.manager.debug >= 1 and not PSEUDO_DEBUG:
-      print(f"{color_green("[Cuda]")} Tensor data copied to host - {color_red(f"{tensor._data.nbytes} bytes")} - {color_red(f"{(time.time() - start_time) * 1000:.4f} ms")}")
+      print(f"{color_green('[Cuda]')} Tensor data copied to host - {color_red(f'{tensor._data.nbytes} bytes')} - {color_red(f'{(time.time() - start_time) * 1000:.4f} ms')}")
 
   def dev_grad_to_host(self, tensor: "Tensor", free=True):
     assert tensor.device_grad is not None, "Tensor device grad is None, cannot copy to host"
@@ -139,7 +139,7 @@ class DeviceManager:
       tensor.device_grad = None
 
     if tensor.device.manager.debug >= 1 and not PSEUDO_DEBUG:
-      print(f"{color_green("[Cuda]")} Tensor gradient copied to host - {color_red(f"{tensor._grad.nbytes} bytes")} - {color_red(f"{(time.time() - start_time) * 1000:.4f} ms")}")
+      print(f"{color_green('[Cuda]')} Tensor gradient copied to host - {color_red(f'{tensor._grad.nbytes} bytes')} - {color_red(f'{(time.time() - start_time) * 1000:.4f} ms')}")
 
   def tensor_to_host(self, tensor: "Tensor"):
     """Copy tensor data and gradient from device to host."""

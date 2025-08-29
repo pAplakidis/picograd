@@ -162,9 +162,9 @@ class Tensor:
 
   def __repr__(self):
     if self.verbose:
-      return f"{color_yellow("Tensor")} (name={self.name}, shape={str(self.shape)}, device={str(self.device.name)}, data=\n{str(self.data)}\n, grad=\n{self.grad}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
+      return f"{color_yellow('Tensor')} (name={self.name}, shape={self.shape}, device={self.device.name}, data=\n{self.data}\n, grad=\n{self.grad}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
     else:
-      return f"{color_yellow("Tensor")} (name={self.name}, shape={str(self.shape)}, device={str(self.device.name)}, data=\n{str(self.data)}\n, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
+      return f"{color_yellow('Tensor')} (name={self.name}, shape={self.shape}, device={self.device.name}, data=\n{self.data}\n, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
     
   def __del__(self):
     # if self.device_data is not None:

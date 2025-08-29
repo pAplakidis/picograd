@@ -39,7 +39,7 @@ class Function:
       result = method(self, *args, **kwargs)
       end_time = time.time()
       if DEBUG >= 1 and not PSEUDO_DEBUG:
-        print(f"{color_yellow(f"[Function-Perf]")} {self.__class__.__name__}.{method.__name__} - {color_yellow(f"{(end_time - start_time) * 1000.0:.4f}")} ms")
+        print(f"{color_yellow('[Function-Perf]')} {self.__class__.__name__}.{method.__name__} - {color_yellow(f'{(end_time - start_time) * 1000.0:.4f}')} ms")
       return result
     return wrapper
 

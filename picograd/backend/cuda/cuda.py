@@ -113,7 +113,7 @@ class CudaDeviceManager(DeviceManager):
     """Gets CUDA device and context, then initializes CUDA driver API."""
 
     if self.debug >= 2 and not PSEUDO_DEBUG:
-      print(f"{color_green("[Cuda]")} Initializing...")
+      print(f"{color_green('[Cuda]')} Initializing...")
 
     self.check_cuda(cuda.cuInit(0), "cuInit")
     device = CUdevice() 
@@ -127,7 +127,7 @@ class CudaDeviceManager(DeviceManager):
       return self.kernels[kernel_name]
 
     if self.debug >= 2 and not PSEUDO_DEBUG:
-      print(f"{color_green("[Cuda]")} Compiling kernel {color_green(kernel_name)}")
+      print(f"{color_green('[Cuda]')} Compiling kernel {color_green(kernel_name)}")
 
     self.program = nvrtcProgram()
     nvrtc.nvrtcCreateProgram.restype = nvrtcResult
@@ -210,7 +210,7 @@ class CudaDeviceManager(DeviceManager):
     """Launches a CUDA kernel with the given grid and block dimensions and arguments."""
 
     if self.debug >= 2 and not PSEUDO_DEBUG:
-      print(f"{color_green("[Cuda]")} Launching kernel {color_yellow(kfunc)} with grid {color_yellow(grid)} and block {color_yellow(block)}")
+      print(f"{color_green('[Cuda]')} Launching kernel {color_yellow(kfunc)} with grid {color_yellow(grid)} and block {color_yellow(block)}")
 
     # FIXME: start_event and end_event cause Segmentation fault (undeterministically) for consecutive kernel launches
     # event-based profiling
@@ -255,8 +255,7 @@ class CudaDeviceManager(DeviceManager):
       elapsed_s = elapsed_ms / 1000.0
       gflops = n_flops / (elapsed_s * 1e9)
       if self.debug >= 1 and not PSEUDO_DEBUG:
-        # print(f"{color_yellow("[Cuda-Perf]")} Kernel time: {color_red(f"{elapsed_ms.value:.3f} ms — GFLOPs: {gflops:.2f}")}")
-        print(f"{color_yellow("[Cuda-Perf]")} Kernel time: {color_red(f"{elapsed_ms:.4f} ms — GFLOPs: {gflops:.2f}")}")
+        print(f"{color_yellow('[Cuda-Perf]')} Kernel time: {color_red(f'{elapsed_ms:.4f} ms — GFLOPs: {gflops:.2f}')}")
     else:
       if self.debug >= 1 and not PSEUDO_DEBUG:
         # print(f"{color_yellow('[Cuda-Perf]')} Kernel time: {elapsed_ms.value:.3f} ms")
