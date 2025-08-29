@@ -49,10 +49,10 @@ if __name__ == '__main__':
 
   in_feats = X_train.shape[1] * X_train.shape[2]
   model = Testnet(10).to(device)
-  optim = Adam(model.get_params(), lr=1e-4)
+  optim = Adam(model.get_params(), lr=1e-5)
 
   # Training Loop
-  epochs = 4
+  epochs = 10
   losses = []
   print("Training ...")
   for i in range(epochs):
@@ -84,8 +84,6 @@ if __name__ == '__main__':
 
   plt.plot(losses)
   plt.show()
-
-  exit(0)
 
   # Eval
   print("Evaluating ...")

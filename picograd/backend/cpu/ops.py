@@ -45,10 +45,13 @@ class BinaryOps:
   def add_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray):
     if a.requires_grad: a.grad += grad_out
     if b.requires_grad: 
-      if b.grad.shape != grad_out.shape:
-        b.grad += np.sum(grad_out, axis=0)
-      else:
-        b.grad += grad_out
+      grad_b = grad_out
+      while grad_b.ndim > len(b.shape):
+        grad_b = grad_b.sum(axis=0)
+      for i, dim in enumerate(b.shape):
+        if dim == 1:
+          grad_b = grad_b.sum(axis=i, keepdims=True)
+      b.grad += grad_b
 
   @staticmethod
   def mul(a: "Tensor", b: "Tensor") -> np.ndarray: return a.data * b.data

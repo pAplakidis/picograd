@@ -76,11 +76,9 @@ DEBUG=3 ./test/test_dot.py
 
 ## TODO
 
-- CrossEntropyLoss CUDA
 - CUDA activation functions (and other unary ops)
 - CUDA pooling
 - BatchNorm1D & 2D, LayerNorm (+CUDA)
-- Residual connections
 - Unit tests
 - RNN, LSTM, GRU
 - Attention, self-attention, transformer
@@ -94,6 +92,8 @@ DEBUG=3 ./test/test_dot.py
 
 ### DONE
 
+- Residual connections
+- CrossEntropyLoss CUDA
 - debug & optimize CUDA and memory leaks (device data should not be moved to host in ops)
 - CUDA sometimes segfaults for relu and softmax kernels
 - cuda conv-net
