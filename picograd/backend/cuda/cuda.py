@@ -40,10 +40,10 @@ class CudaDeviceManager(DeviceManager):
     self.check_cuda(cuda.cuEventCreate(ctypes.byref(self.end_event), 0), "cuEventCreate (end)")
 
   def __del__(self):
+    for kernel in self.kernels: del kernel
+
     self.check_cuda(cuda.cuEventDestroy(self.start_event), "cuEventDestroy (start)")
     self.check_cuda(cuda.cuEventDestroy(self.end_event), "cuEventDestroy (end)")
-
-    # TODO: garbage collect self.allocations and self.kernels
 
     if self.module: self.check_cuda(cuda.cuModuleUnload(self.module), "cuModuleUnload")
     self.check_cuda(cuda.cuCtxDestroy(self.ctx), "cuCtxDestroy")

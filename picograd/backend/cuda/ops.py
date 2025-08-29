@@ -65,7 +65,7 @@ class BinaryOps:
     return d_C
 
   @staticmethod
-  def add_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray, block_size: Tuple[int] = (8, 8, 8)) -> np.ndarray:
+  def add_back(a: "Tensor", b: "Tensor", grad_out: ctypes.c_void_p, block_size: Tuple[int] = (8, 8, 8)) -> np.ndarray:
     """Backward pass for addition operation."""
 
     if not a.requires_grad and not b.requires_grad: return
@@ -77,8 +77,6 @@ class BinaryOps:
     padded_dims = dims + (1,) * (3 - len(dims))  # Pad to 3D
     dim1, dim2, dim3 = padded_dims[:3]
 
-    _, d_grad_out = a.device.manager.np_to_device(grad_out)
-
     grid = (
       (dim3 + block_size[0] - 1) // block_size[0],
       (dim2 + block_size[1] - 1) // block_size[1],
@@ -87,10 +85,10 @@ class BinaryOps:
 
     n_flops = (int(a.requires_grad) + int(b.requires_grad)) * dim1 * dim2 * dim3
     if a.requires_grad:
-      args = a.device.manager.prep_kargs(a.device_data, d_grad_out, a.device_grad, dim1, dim2, dim3)
+      args = a.device.manager.prep_kargs(a.device_data, grad_out, a.device_grad, dim1, dim2, dim3)
       a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=n_flops)
     if b.requires_grad:
-      args = a.device.manager.prep_kargs(b.device_data, d_grad_out, b.device_grad, dim1, dim2, dim3)
+      args = a.device.manager.prep_kargs(b.device_data, grad_out, b.device_grad, dim1, dim2, dim3)
       a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=n_flops)
 
   @staticmethod
@@ -122,7 +120,7 @@ class BinaryOps:
     return d_C
 
   @staticmethod
-  def mul_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray,  block_size=(8, 8, 8)) -> np.ndarray:
+  def mul_back(a: "Tensor", b: "Tensor", grad_out: ctypes.c_void_p,  block_size=(8, 8, 8)) -> np.ndarray:
     """Backward pass for pointwise multiplication operation."""
     if not a.requires_grad and not b.requires_grad: return
 
@@ -139,7 +137,6 @@ class BinaryOps:
     temp_a = np.zeros_like(a._grad.ravel())
     temp_b = np.zeros_like(b._grad.ravel())
 
-    _, d_grad_out = a.device.manager.np_to_device(grad_out)
     _, d_temp_a = a.device.manager.np_to_device(temp_a)
     _, d_temp_b = a.device.manager.np_to_device(temp_b)
 
@@ -151,8 +148,8 @@ class BinaryOps:
     n_flops = (int(a.requires_grad) + int(b.requires_grad)) * dim1 * dim2 * dim3
 
     if a.requires_grad:
-      # d_temp_a = b.device_data * d_grad_out
-      kargs = a.device.manager.prep_kargs(b.device_data, d_grad_out, d_temp_a, dim1, dim2, dim3)
+      # d_temp_a = b.device_data * grad_out
+      kargs = a.device.manager.prep_kargs(b.device_data, grad_out, d_temp_a, dim1, dim2, dim3)
       a.device.manager.launch_kernel(mul_kfunc, grid, block_size, kargs, n_flops=n_flops)
 
       # a.device_grad += d_temp_a
@@ -162,8 +159,8 @@ class BinaryOps:
       # a.device.manager.free_device_tensor(d_temp_a)  # FIXME: segfaults
 
     if b.requires_grad:
-      # d_temp_b = a.device_data * d_grad_out
-      kargs = a.device.manager.prep_kargs(a.device_data, d_grad_out, d_temp_b, dim1, dim2, dim3)
+      # d_temp_b = a.device_data * grad_out
+      kargs = a.device.manager.prep_kargs(a.device_data, grad_out, d_temp_b, dim1, dim2, dim3)
       a.device.manager.launch_kernel(mul_kfunc, grid, block_size, kargs, n_flops=n_flops)
 
       # b.device_grad += d_temp_b
@@ -200,7 +197,7 @@ class BinaryOps:
     return d_C
 
   @staticmethod
-  def dot_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray) -> np.ndarray:
+  def dot_back(a: "Tensor", b: "Tensor", grad_out: ctypes.c_void_p) -> np.ndarray:
     if not a.requires_grad and not b.requires_grad: return
 
     assert len(a.shape) == 2 and len(b.shape) == 2, "Both tensors must be 2D (matrices)"
@@ -214,7 +211,6 @@ class BinaryOps:
     temp_a = np.zeros_like(a._grad.ravel())
     temp_b = np.zeros_like(b._grad.ravel())
     
-    _, d_grad_out = a.device.manager.np_to_device(grad_out)
     _, d_temp_a = a.device.manager.np_to_device(temp_a)
     _, d_temp_b = a.device.manager.np_to_device(temp_b)
 
@@ -244,7 +240,7 @@ class BinaryOps:
     # TODO: transpose b and a ?
     if a.requires_grad:
       # d_temp_a = grad_out @ b.data.T
-      args = a.device.manager.prep_kargs(d_grad_out, b.device_data, d_temp_a, M, N, K)
+      args = a.device.manager.prep_kargs(grad_out, b.device_data, d_temp_a, M, N, K)
       a.device.manager.launch_kernel(dot_kfunc, dot_grid, dot_block_size, args, n_flops=num_flops)
 
       # a.device_grad += d_temp_a
@@ -255,7 +251,7 @@ class BinaryOps:
 
     if b.requires_grad:
       # d_temp_b = a.data.T @ grad_out
-      args = a.device.manager.prep_kargs(a.device_data, d_grad_out, d_temp_b, K, M, N)
+      args = a.device.manager.prep_kargs(a.device_data, grad_out, d_temp_b, K, M, N)
       a.device.manager.launch_kernel(dot_kfunc, dot_grid, dot_block_size, args, n_flops=num_flops)
 
       # b.device_grad += d_temp_b
@@ -282,7 +278,7 @@ class BinaryOps:
     kfunc = a.device.manager.compile_kernel(kernel_code, b"conv2d_kernel")
 
     BS, C_in, H, W = a.shape
-    C_out, C_in, kernel_size, kernel_size = w.shape
+    C_out, C_in, kernel_size, _ = w.shape
     H_out = ((H - kernel_size + 2*padding) // stride) + 1
     W_out = ((W - kernel_size + 2*padding) // stride) + 1
 
@@ -305,7 +301,7 @@ class BinaryOps:
 
   @staticmethod
   def conv2d_back(
-    a: "Tensor", grad_out: np.ndarray, w: "Tensor", b: "Tensor",
+    a: "Tensor", grad_out: ctypes.c_void_p, w: "Tensor", b: "Tensor",
     in_channels: int, out_channels: int, stride: int = 1, padding: int = 0,
     block_size: Tuple[int] = (256, 1, 1)
   ):
@@ -323,8 +319,9 @@ class BinaryOps:
     kfunc = a.device.manager.compile_kernel(kernel_code, b"conv2d_backward_kernel")
 
     BS, C_in, H, W = a.shape
-    C_out, _, kernel_size, _ = w.shape
-    _, _, H_out, W_out = grad_out.shape
+    C_out, C_in, kernel_size, _ = w.shape
+    H_out = ((H - kernel_size + 2*padding) // stride) + 1
+    W_out = ((W - kernel_size + 2*padding) // stride) + 1
 
     grad_a = np.zeros_like(a)
     d_grad_a = a.device.manager.allocate_device_memory(grad_a)
@@ -332,7 +329,6 @@ class BinaryOps:
     d_grad_w = a.device.manager.allocate_device_memory(grad_w)
     grad_b = np.zeros_like(b)
     d_grad_b = a.device.manager.allocate_device_memory(grad_b)
-    d_grad_out = a.device.manager.allocate_device_memory(grad_out)
 
     # FIXME: a_padded + grad_a_padded
 
@@ -340,7 +336,7 @@ class BinaryOps:
     num_flops = BS * out_channels * H_out * W_out * in_channels * kernel_size * kernel_size * 2
     args = a.device.manager.prep_kargs(
       a.device_data, w.device_data,
-      d_grad_out, d_grad_a, d_grad_w, d_grad_b,
+      grad_out, d_grad_a, d_grad_w, d_grad_b,
       BS, in_channels, out_channels,
       H, W,
       H_out, W_out,
@@ -370,18 +366,18 @@ class UnaryOps:
     a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=size)
     return d_C
 
+  # FIXME: [CUDA ERROR] cuMemcpyDtoH failed: CUDA_ERROR_ILLEGAL_ADDRESS (code 700) on MNIST after a few iterations
   @staticmethod
-  def relu_back(a: "Tensor", grad_out: np.ndarray, block_size: Tuple[int] = (256, 1, 1)):
+  def relu_back(a: "Tensor", grad_out: ctypes.c_void_p, block_size: Tuple[int] = (256, 1, 1)):
     if not a.requires_grad: return
 
     kernel_code = a.device.manager.load_kernel("relu_back.cu")
     kfunc = a.device.manager.compile_kernel(kernel_code, b"relu_back_kernel")
 
     size = int(np.prod(a.shape))
-    _, d_grad_out = a.device.manager.np_to_device(grad_out)
 
     grid = ((size + block_size[0] - 1) // block_size[0], 1, 1)
-    args = a.device.manager.prep_kargs(a.device_data, d_grad_out, a.device_grad, size)
+    args = a.device.manager.prep_kargs(a.device_data, grad_out, a.device_grad, size)
     a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=size)
 
   @staticmethod
@@ -405,7 +401,7 @@ class UnaryOps:
     return d_C
 
   @staticmethod
-  def softmax_back(a: "Tensor", softmax_out: ctypes.c_void_p, grad_out: np.ndarray, block_size: Tuple[int] = (256, 1, 1)):
+  def softmax_back(a: "Tensor", softmax_out: ctypes.c_void_p, grad_out: ctypes.c_void_p, block_size: Tuple[int] = (256, 1, 1)):
     if not a.requires_grad: return
 
     kernel_code = a.device.manager.load_kernel("softmax_back.cu")
@@ -414,13 +410,11 @@ class UnaryOps:
     batch_size, n_classes = a.shape
     size = batch_size * n_classes
 
-    _, d_grad_out = a.device.manager.np_to_device(grad_out)
-
     grid = (batch_size, 1, 1)
     shared_mem = block_size[0] * np.dtype(np.float32).itemsize
     n_flops = 3 * size
     args = a.device.manager.prep_kargs(
-      d_grad_out,
+      grad_out,
       softmax_out,
       a.device_grad,
       batch_size,
@@ -461,13 +455,13 @@ class ReduceOps:
   def maxpool2d(a: "Tensor", filter=(2, 2), stride=1) -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
 
   @staticmethod
-  def maxpool2d_back(a: "Tensor", grad_out: np.ndarray, mask: np.ndarray, filter: Tuple[int], stride: int): raise NotImplementedError("This op is not implemented yet")
+  def maxpool2d_back(a: "Tensor", grad_out: ctypes.c_void_p, mask: np.ndarray, filter: Tuple[int], stride: int): raise NotImplementedError("This op is not implemented yet")
 
   @staticmethod
   def avgpool2d(a: "Tensor", filter=(2, 2), stride=1) -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
 
   @staticmethod
-  def avgpool2d_back(a: "Tensor", grad_out: np.ndarray, filter: Tuple[int], stride: int): raise NotImplementedError("This op is not implemented yet")
+  def avgpool2d_back(a: "Tensor", grad_out: ctypes.c_void_p, filter: Tuple[int], stride: int): raise NotImplementedError("This op is not implemented yet")
 
   # loss functions
 
@@ -500,5 +494,3 @@ class ReduceOps:
     grid = ((batch_size + block_size[0] - 1) // block_size[0], 1, 1)
     args = z.device.manager.prep_kargs(z.device_data, y.device_data, z.device_grad, batch_size, n_classes)
     z.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=batch_size * n_classes)
-
-  

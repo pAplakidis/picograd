@@ -67,7 +67,7 @@ class Add(Function):
     self.a, self.b = a, b
     return self.BinaryOps.add(a, b)
 
-  def backward(self, grad_out: np.ndarray):
+  def backward(self, grad_out):
     self.BinaryOps().add_back(self.a, self.b, grad_out)
 
 class Mul(Function):
@@ -75,7 +75,7 @@ class Mul(Function):
     self.a, self.b = a, b
     return self.BinaryOps.mul(a, b)
 
-  def backward(self, grad_out: np.ndarray):
+  def backward(self, grad_out):
     self.BinaryOps().mul_back(self.a, self.b, grad_out)
 
 class Dot(Function):
@@ -83,7 +83,7 @@ class Dot(Function):
     self.a, self.b = a, b
     return self.BinaryOps.dot(a, b)
 
-  def backward(self, grad_out: np.ndarray):
+  def backward(self, grad_out):
     self.BinaryOps().dot_back(self.a, self.b, grad_out)
 
 class Conv2D(Function):
@@ -93,7 +93,7 @@ class Conv2D(Function):
     self.stride, self.padding = stride, padding
     return self.BinaryOps.conv2d(a, w, b, in_channels, out_channels, stride, padding)
   
-  def backward(self, grad_out: np.ndarray):
+  def backward(self, grad_out):
     self.BinaryOps.conv2d_back(self.a, grad_out, self.w, self.b, self.a.shape[1], self.w.shape[0], self.stride, self.padding)
 
 # UNARY OPS
@@ -103,7 +103,7 @@ class ReLU(Function):
     self.a = a
     return self.UnaryOps.relu(a)
 
-  def backward(self, grad_out: np.ndarray):
+  def backward(self, grad_out):
     self.UnaryOps.relu_back(self.a, grad_out)
 
 class Softmax(Function):
@@ -112,7 +112,7 @@ class Softmax(Function):
     self.out = self.UnaryOps.softmax(a)
     return self.out
   
-  def backward(self, grad_out: np.ndarray):
+  def backward(self, grad_out):
     return self.UnaryOps.softmax_back(self.a, self.out, grad_out)
 
 # REDUCE OPS
@@ -137,7 +137,7 @@ class MaxPool2D(Function):
     ret, self.mask = self.ReduceOps.maxpool2d(a, filter, stride)
     return ret
 
-  def backward(self, grad_out: np.ndarray):
+  def backward(self, grad_out):
     self.ReduceOps.maxpool2d_back(self.a, grad_out, self.mask, self.filter, self.stride)
 
 class AvgPool2D(Function):
@@ -147,7 +147,7 @@ class AvgPool2D(Function):
     self.stride = stride
     return self.ReduceOps.avgpool2d(a, filter, stride)
 
-  def backward(self, grad_out: np.ndarray):
+  def backward(self, grad_out):
     self.ReduceOps.avgpool2d_back(self.a, grad_out, self.filter, self.stride)
 
 class CrossEntropy(Function):

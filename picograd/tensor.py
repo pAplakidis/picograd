@@ -196,7 +196,7 @@ class Tensor:
         device=self.device
       )
     out.prev_op = OPS.ADD
-    out._backward = lambda: func.backward(out.grad)
+    out._backward = lambda: func.backward(out.grad if self.device.name == Devices.CPU else out.device_grad)
     return out
 
   def __mul__(self, other):
@@ -211,7 +211,7 @@ class Tensor:
         device=self.device  
       )
     out.prev_op = OPS.MUL
-    out._backward = lambda: func.backward(out.grad)
+    out._backward = lambda: func.backward(out.grad if self.device.name == Devices.CPU else out.device_grad)
     return out
 
   def __matmul__(self, other): return self.dot(other)
@@ -228,7 +228,7 @@ class Tensor:
         device=self.device
       )
     out.prev_op = OPS.DOT
-    out._backward = lambda: func.backward(out.grad)
+    out._backward = lambda: func.backward(out.grad if self.device.name == Devices.CPU else out.device_grad)
     return out
 
   # TODO: implement these in ops (cpu and cuda)
@@ -254,8 +254,7 @@ class Tensor:
         device=self.device
       )
     out.prev_op = OPS.ReLU
-    # TODO: use out.device_grad
-    out._backward = lambda: func.backward(out.grad) # FIXME: [CUDA ERROR] cuMemcpyDtoH failed: CUDA_ERROR_ILLEGAL_ADDRESS (code 700) on MNIST after a few iterations
+    out._backward = lambda: func.backward(out.grad if self.device.name == Devices.CPU else out.device_grad)
     return out
 
   def __neg__(self): return self * Tensor(np.array(-1), device=self.device)
@@ -377,7 +376,7 @@ class Tensor:
         device=self.device
       )
     out.prev_op = OPS.Conv2D
-    out._backward = lambda: func.backward(out.grad)
+    out._backward = lambda: func.backward(out.grad if self.device.name == Devices.CPU else out.device_grad)
     return out
 
   def batchnorm1d(self):
@@ -402,7 +401,7 @@ class Tensor:
         device=self.device
       )
     out.prev_op = OPS.MaxPool2D
-    out._backward = lambda: func.backward(out.grad)
+    out._backward = lambda: func.backward(out.grad if self.device.name == Devices.CPU else out.device_grad)
     return out
 
   # TODO: fix this like maxpool2D
@@ -425,7 +424,7 @@ class Tensor:
         device=self.device
       )
     out.prev_op = OPS.AvgPool2D
-    out._backward = lambda: func.backward(out.grad)
+    out._backward = lambda: func.backward(out.grad if self.device.name == Devices.CPU else out.device_grad)
     return out
 
   def tanh(self):
@@ -463,5 +462,5 @@ class Tensor:
         device=self.device
       )
     out.prev_op = OPS.Softmax
-    out._backward = lambda: func.backward(out.grad)
+    out._backward = lambda: func.backward(out.grad if self.device.name == Devices.CPU else out.device_grad)
     return out
