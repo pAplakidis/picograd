@@ -1,39 +1,7 @@
 import numpy as np
-from enum import Enum, auto
 from typing import Tuple
 
 from picograd.util import *
-
-
-class OPS(Enum):
-  # Binary ops
-  ADD = auto()
-  MUL = auto()
-  DOT = auto()
-  POW = auto()
-
-  # Unary ops
-  ReLU = auto()
-  Tanh = auto()
-  Softmax = auto()
-  Sigmoid = auto()
-
-  MSELoss = auto()
-  MAELoss = auto()
-  CrossEntropyLoss = auto()
-  BCELoss = auto()
-
-  Conv2D = auto()
-
-  Reshape = auto()
-  Flatten = auto()
-  Unsqueeze = auto()
-  
-  # Reduce ops
-  MaxPool2D = auto()
-  AvgPool2D = auto()
-
-  def __str__(self): return self.name
 
 
 # TODO: create @jit decorator that uses jit.compile() to execute the op (LLVM)
@@ -48,8 +16,8 @@ class BinaryOps:
       grad_b = grad_out
       while grad_b.ndim > len(b.shape):
         grad_b = grad_b.sum(axis=0)
-      for i, dim in enumerate(b.shape):
-        if dim == 1:
+      for i, axis in enumerate(b.shape):
+        if axis == 1:
           grad_b = grad_b.sum(axis=i, keepdims=True)
       b.grad += grad_b
 
@@ -221,8 +189,57 @@ class UnaryOps:
       jacobian = np.diagflat(s) - np.dot(s, s.T)
       a.grad[i] = np.dot(jacobian, grad_out[i])
 
+  @staticmethod
+  def batchnorm2d(a: "Tensor") -> np.ndarray:
+    return None
+
+  def batchnorm2d_back(a: "Tensor", grad_out: np.ndarray):
+    return None
+
 
 class ReduceOps:
+  @staticmethod
+  def max(a: "Tensor", axis, keepdims) -> np.ndarray: return np.array([np.max(a.data, axis=axis, keepdims=keepdims)])
+
+  @staticmethod
+  def max_back() -> np.ndarray: pass
+
+  @staticmethod
+  def min(a: "Tensor", axis, keepdims) -> np.ndarray: return np.array([np.min(a.data, axis=axis, keepdims=keepdims)])
+
+  @staticmethod
+  def min_back() -> np.ndarray: pass
+
+  @staticmethod
+  def sum(a: "Tensor", axis, keepdims) -> np.ndarray: return np.array([np.sum(a.data, axis=axis, keepdims=keepdims)])
+
+  @staticmethod
+  def sum_back() -> np.ndarray: pass
+
+  @staticmethod
+  def mean(a: "Tensor", axis, keepdims) -> np.ndarray: return np.array([np.mean(a.data, axis=axis, keepdims=keepdims)])
+
+  @staticmethod
+  def mean_back() -> np.ndarray: pass
+
+  @staticmethod
+  def std(a: "Tensor", axis, keepdims) -> np.ndarray: return np.array([np.std(a.data, axis=axis, keepdims=keepdims)])
+
+  @staticmethod
+  def std_back() -> np.ndarray: pass
+
+  @staticmethod
+  def argmax(a: "Tensor", axis, keepdims) -> np.ndarray: return np.array([np.argmax(a.data, axis=axis, keepdims=keepdims)])
+
+  @staticmethod
+  def argmax_back() -> np.ndarray: pass
+
+  @staticmethod
+  def argmin(a: "Tensor", axis, keepdims) -> np.ndarray: return np.array([np.argmin(a.data, axis=axis, keepdims=keepdims)])
+
+  @staticmethod
+  def argmin_back() -> np.ndarray: pass
+
   @staticmethod
   def maxpool2d(a: "Tensor", filter=(2, 2), stride=1) -> np.ndarray:
     assert len(a.shape) == 4, "Input must be 3D (BS, C, H, W)"
@@ -265,6 +282,9 @@ class ReduceOps:
 
   @staticmethod
   def avgpool2d(a: "Tensor", filter=(2, 2), stride=1) -> np.ndarray:
+    # TODO: assert dimensionality
+    # TODO: handle channels and padding as well
+    # TODO: double-check if stride is used correctly
     assert len(a.shape) == 4, "Input must be 3D (BS, C, H, W)"
 
     BS, channels, height, width = a.shape

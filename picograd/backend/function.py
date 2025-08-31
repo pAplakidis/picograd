@@ -2,13 +2,80 @@ import os
 import time
 import functools
 import importlib
-import numpy as np
+from enum import Enum, auto
 
 from .device import Devices
 from picograd.print_utils import *
 
 DEBUG = int(os.getenv("DEBUG", 0))
 PSEUDO_DEBUG = int(os.getenv("PSEUDO_DEBUG", 0))  # if 1, generate assembly code as string but don't print (helps with segfaults)
+
+
+class OPS(Enum):
+  # Binary ops
+  ADD = auto()
+  MUL = auto()
+  DOT = auto()
+  POW = auto()
+  Conv2D = auto()
+
+  # Unary ops
+  ReLU = auto()
+  Tanh = auto()
+  Softmax = auto()
+  Sigmoid = auto()
+
+  # Substitution ops
+  Reshape = auto()
+  Flatten = auto()
+  Unsqueeze = auto()
+  Squeeze = auto()
+  
+  # Reduce ops
+  SUM = auto()
+  MEAN = auto()
+  MAX = auto()
+  MIN = auto()
+  STD = auto()
+  ARGMAX = auto()
+  ARGMIN = auto()
+
+  MaxPool2D = auto()
+  AvgPool2D = auto()
+
+  MSELoss = auto()
+  MAELoss = auto()
+  CrossEntropyLoss = auto()
+  BCELoss = auto()
+
+  def __str__(self): return self.name
+
+
+def get_op(op_name: str, device_name: str):
+  # Binary Ops
+  if op_name == OPS.ADD: return Add(device_name)
+  if op_name == OPS.MUL: return Mul(device_name)
+  if op_name == OPS.DOT: return Dot(device_name)
+  if op_name == OPS.Conv2D: return Conv2D(device_name)
+
+  # Unary Ops
+  if op_name == OPS.ReLU: return ReLU(device_name)
+  if op_name == OPS.Softmax: return Softmax(device_name)
+
+  # Reduce Ops
+  if op_name == OPS.SUM: return Sum(device_name)
+  if op_name == OPS.MEAN: return Mean(device_name)
+  if op_name == OPS.MAX: return Max(device_name)
+  if op_name == OPS.MIN: return Min(device_name)
+  if op_name == OPS.ARGMAX: return Argmax(device_name)
+  if op_name == OPS.ARGMIN: return Argmin(device_name)
+  if op_name == OPS.STD: return Std(device_name)
+  if op_name == OPS.MaxPool2D: return MaxPool2D(device_name)
+  if op_name == OPS.AvgPool2D: return AvgPool2D(device_name)
+  if op_name == OPS.CrossEntropyLoss: return CrossEntropy(device_name)
+
+  raise ValueError(f"Unknown op {op_name}")
+
 
 class Function:
   def __init__(self, device: Devices = Devices.CPU):
@@ -115,19 +182,61 @@ class Softmax(Function):
   def backward(self, grad_out):
     return self.UnaryOps.softmax_back(self.a, self.out, grad_out)
 
+class BatchNorm2D(Function):
+  def forward(self, a: "Tensor", beta: "Tensor", gamma: "Tensor"):
+    return self.UnaryOps.batchnorm2d(a)
+
+  def backward(self, grad_out):
+    pass
+
 # REDUCE OPS
 
 class Sum(Function):
-  pass
+  def forward(self, a: "Tensor", axis=None, keepdims=False):
+    return self.ReduceOps.sum(a, axis, keepdims)
+
+  def backward(self, grad_out):
+    pass
 
 class Mean(Function):
-  pass
+  def forward(self, a: "Tensor", axis=None, keepdims=False):
+    return self.ReduceOps.mean(a, axis, keepdims)
 
+  def backward(self, grad_out):
+    pass
 class Max(Function):
-  pass
+  def forward(self, a: "Tensor", axis=None, keepdims=False):
+    return self.ReduceOps.max(a, axis, keepdims)
 
+  def backward(self, grad_out):
+    pass
 class Min(Function):
-  pass
+  def forward(self, a: "Tensor", axis=None, keepdims=False):
+    return self.ReduceOps.min(a, axis, keepdims)
+
+  def backward(self, grad_out):
+    pass
+
+class Std(Function):
+  def forward(self, a: "Tensor", axis=None, keepdims=False):
+    return self.ReduceOps.std(a, axis, keepdims)
+
+  def backward(self, grad_out):
+    pass
+
+class Argmax(Function):
+  def forward(self, a: "Tensor", axis=None, keepdims=False):
+    return self.ReduceOps.argmax(a, axis, keepdims)
+
+  def backward(self, grad_out):
+    pass
+
+class Argmin(Function):
+  def forward(self, a: "Tensor", axis=None, keepdims=False):
+    return self.ReduceOps.argmin(a, axis, keepdims)
+
+  def backward(self, grad_out):
+    pass
 
 class MaxPool2D(Function):
   def forward(self, a: "Tensor", filter=(2, 2), stride=1):

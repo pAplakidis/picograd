@@ -144,22 +144,6 @@ class Tensor:
       ret = int(ret[0])
     return ret
 
-  def to(self, device: Device):
-    """Tranfers tensor to the specified device."""
-
-    if device.name == Devices.CPU:
-      if self.device_data is not None: self.device.manager.tensor_to_host(self)
-      self.device = device
-      return self
-
-    self.device = device
-    if device.name != Devices.CPU :
-      self._data = self._data.astype(np.float32)
-      if self._grad is not None: self._grad = self._grad.astype(np.float32)
-      self.device.manager.tensor_to_device(self)
-
-    return self
-
   def __repr__(self):
     if self.verbose:
       return f"{color_yellow('Tensor')} (name={self.name}, shape={self.shape}, device={self.device.name}, data=\n{self.data}\n, grad=\n{self.grad}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
@@ -176,94 +160,38 @@ class Tensor:
     #   self.device_grad = None
     pass
 
-  def __getitem__(self, indices):
-    return self.data[indices]
+  # TODO: implement tensor generators
+  @staticmethod
+  def random(shape: Tuple[int], dtype=np.float32):
+    pass
 
-  def __setitem__(self, indices, value):
-    self.data[indices] = value
+  @staticmethod
+  def zeros(shape: Tuple[int], dtype=np.float32):
+    pass
 
-  def __equal__(self, other): return np.equal(self.data, other.data)
+  @staticmethod
+  def ones(shape: Tuple[int], dtype=np.float32):
+    pass
 
-  def __add__(self, other):
-    func = Add(self.device.name)
-    if self.device.name == Devices.CPU:
-      out = Tensor(func.forward(self, other), _prev=(self, other))
-    else:
-      out = Tensor(
-        device_data=func.forward(self, other),
-        shape=self.shape,
-        _prev=(self, other),
-        device=self.device
-      )
-    out.prev_op = OPS.ADD
-    out._backward = lambda: func.backward(out.grad if self.device.name == Devices.CPU else out.device_grad)
-    return out
+  @staticmethod
+  def eye(n: int, dtype=np.float32):
+    pass
 
-  def __mul__(self, other):
-    func = Mul(self.device.name)
-    if self.device.name == Devices.CPU:
-      out = Tensor(func.forward(self, other), _prev=(self, other))
-    else:
-      out = Tensor(
-        device_data=func.forward(self, other),
-        shape=self.shape,
-        _prev=(self, other),
-        device=self.device  
-      )
-    out.prev_op = OPS.MUL
-    out._backward = lambda: func.backward(out.grad if self.device.name == Devices.CPU else out.device_grad)
-    return out
+  def to(self, device: Device):
+    """Tranfers tensor to the specified device."""
 
-  def __matmul__(self, other): return self.dot(other)
+    if device.name == Devices.CPU:
+      if self.device_data is not None: self.device.manager.tensor_to_host(self)
+      self.device = device
+      return self
 
-  def dot(self, other):
-    func = Dot(self.device.name)
-    if self.device.name == Devices.CPU:
-      out = Tensor(func.forward(self, other), _prev=(self, other))
-    else:
-      out = Tensor(
-        device_data=func.forward(self, other),
-        shape=(self.shape[0], other.shape[1]),
-        _prev=(self, other),
-        device=self.device
-      )
-    out.prev_op = OPS.DOT
-    out._backward = lambda: func.backward(out.grad if self.device.name == Devices.CPU else out.device_grad)
-    return out
+    self.device = device
+    if device.name != Devices.CPU :
+      self._data = self._data.astype(np.float32)
+      if self._grad is not None: self._grad = self._grad.astype(np.float32)
+      self.device.manager.tensor_to_device(self)
 
-  # TODO: implement these in ops (cpu and cuda)
-  def __pow__(self, other):
-    assert isinstance(other, (int, float)), "only supporting int/float powers for now"
-    out = Tensor(self.data**other, _prev=(self,), device=self.device)
-    out.prev_op = OPS.POW
-
-    def _backward():
-      self.grad += (other * self.data**(other-1)) * out.grad
-    out._backward = _backward
-    return out
-
-  def relu(self):
-    func = ReLU(self.device.name)
-    if self.device.name == Devices.CPU:
-      out = Tensor(func.forward(self), _prev=(self,), device=self.device)
-    else:
-      out = Tensor(
-        device_data=func.forward(self),
-        shape=self.shape,
-        _prev=(self,),
-        device=self.device
-      )
-    out.prev_op = OPS.ReLU
-    out._backward = lambda: func.backward(out.grad if self.device.name == Devices.CPU else out.device_grad)
-    return out
-
-  def __neg__(self): return self * Tensor(np.array(-1), device=self.device)
-  def __radd__(self, other): return self + other
-  def __sub__(self, other): return self + (-other)
-  def __rsub__(self, other): return other + (-self)
-  def __rmul__(self, other): return self * other
-  def __truediv__(self, other): return self * other**-1
-  def __rtruediv__(self, other): return other * self**-1
+    return self
 
   def backward(self):
     topo = []
@@ -303,16 +231,112 @@ class Tensor:
       if node.prev_op != None:
         print("====++++****++++====\n[OP]:", node.prev_op ,"\n====++++****++++====")
   
-  def mean(self): return Tensor(np.mean(self.data), _prev=(self,))
-
+  # TODO: handle cuda as well
   def float(self):
     self.data = self.data.astype(np.float32)
+    self.dtype = np.float32
     return self
 
   def long(self):
     self.data = self.data.astype(np.int64)
+    self.dtype = np.int64
     return self
 
+  def create_op(
+      self,
+      op_name: str,
+      shape: Optional[Tuple] = None,
+      args: Tuple["Tensor"] = (),
+      forward_args: Tuple = (),
+      forward_kwargs: dict = None,
+    ):
+    """
+    Generalized op creation for tensor operations.
+    
+    Args:
+        op_name: Name of the operation (e.g., 'add', 'dot', 'conv2d').
+        args: Other tensor arguments involved in the op.
+        forward_args: Extra positional arguments for func.forward (e.g., stride, padding).
+        forward_kwargs: Extra keyword arguments for func.forward.
+    Returns: New tensor resulting from the operation.
+    """
+
+    func = get_op(op_name, self.device.name)
+    tensor_inputs = (self, ) + args
+    prev = tensor_inputs
+    out_data = func.forward(*tensor_inputs, *forward_args, **forward_kwargs)
+
+    if self.device.name == Devices.CPU:
+      out = Tensor(out_data, _prev=(self,), device=self.device)
+    else:
+      out = Tensor(
+        device_data=out_data,
+        shape=shape if shape is not None else (self.shape,),
+        _prev=prev,
+        device=self.device
+      )
+
+    out.prev_op = op_name
+    out._backward = lambda: func.backward(out.grad if self.device.name == Devices.CPU else out.device_grad)
+    return out
+
+  def __getitem__(self, indices):         return self.data[indices]
+  def __setitem__(self, indices, value):  self.data[indices] = value
+  def __equal__(self, other):             return np.equal(self.data, other.data)
+
+  # Binary Ops
+  def __add__(self, other):     return self.create_op(OPS.ADD, args=(other,), forward_args=(), forward_kwargs={})
+  def __mul__(self, other):     return self.create_op(OPS.MUL, args=(other,), forward_args=(), forward_kwargs={})
+  def __matmul__(self, other):  return self.dot(other)
+  def dot(self, other):         return self.create_op(OPS.DOT, args=(other,), forward_args=(), forward_kwargs={})
+  def __radd__(self, other):    return self + other
+  def __sub__(self, other):     return self + (-other)
+  def __rsub__(self, other):    return other + (-self)
+  def __rmul__(self, other):    return self * other
+  def __truediv__(self, other): return self * other**-1
+  def __rtruediv__(self, other):return other * self**-1
+
+  # FIXME: move these this ops (cpu and cuda)
+  def __pow__(self, other):
+    assert isinstance(other, (int, float)), "only supporting int/float powers for now"
+    out = Tensor(self.data**other, _prev=(self,), device=self.device)
+    out.prev_op = OPS.POW
+
+    def _backward():
+      self.grad += (other * self.data**(other-1)) * out.grad
+    out._backward = _backward
+    return out
+
+  def linear(self, weight: "Tensor", bias: Optional["Tensor"] = None):
+    x = self * weight if len(weight.shape) == 1 else self.dot(weight)
+    return x + bias if bias is not None else x
+
+  # TODO: self.create_op
+  def conv2d(self, weight: "Tensor", bias: "Tensor", in_channels: int, out_channels: int, stride: int = 1, padding: int = 0, debug=False):
+    func = Conv2D(self.device.name)
+    if self.device.name == Devices.CPU:
+      out = Tensor(
+        func.forward(self, weight, bias, in_channels, out_channels, stride, padding),
+        _prev=(self, weight, bias),
+      )
+    else:
+      out = Tensor(
+        device_data=func.forward(self, weight, bias,  in_channels, out_channels, stride, padding),
+        shape=(
+          self.shape[0], out_channels, 
+          (self.shape[2] - weight.shape[2] + 2 * padding) // stride + 1,
+          (self.shape[3] - weight.shape[3] + 2 * padding) // stride + 1
+        ),
+        _prev=(self, weight, bias),
+        device=self.device
+      )
+    out.prev_op = OPS.Conv2D
+    out._backward = lambda: func.backward(out.grad if self.device.name == Devices.CPU else out.device_grad)
+    return out
+
+
+  # Substitution Ops
+  # FIXME: move to ops (cpu + cuda)
   def reshape(self, *args, **kwargs):
     out = Tensor(self.data.reshape(*args, **kwargs), _prev=(self,))
     original_shape = self.shape
@@ -353,80 +377,13 @@ class Tensor:
     out._backward = _backward
     return out
 
-  def linear(self, weight: "Tensor", bias: Optional["Tensor"] = None):
-    x = self * weight if len(weight.shape) == 1 else self.dot(weight)
-    return x + bias if bias is not None else x
+  # Unary Ops
+  def __neg__(self): return self * Tensor([-1], device=self.device)
 
-  def conv2d(self, weight: "Tensor", bias: "Tensor", in_channels: int, out_channels: int, stride: int = 1, padding: int = 0, debug=False):
-    func = Conv2D(self.device.name)
-    if self.device.name == Devices.CPU:
-      out = Tensor(
-        func.forward(self, weight, bias,  in_channels, out_channels, stride, padding),
-        _prev=(self, weight, bias),
-      )
-    else:
-      out = Tensor(
-        device_data=func.forward(self, weight, bias,  in_channels, out_channels, stride, padding),
-        shape= (
-          self.shape[0], out_channels, 
-          (self.shape[2] - weight.shape[2] + 2 * padding) // stride + 1,
-          (self.shape[3] - weight.shape[3] + 2 * padding) // stride + 1
-        ),
-        _prev=(self, weight, bias),
-        device=self.device
-      )
-    out.prev_op = OPS.Conv2D
-    out._backward = lambda: func.backward(out.grad if self.device.name == Devices.CPU else out.device_grad)
-    return out
+  def relu(self): return self.create_op(OPS.ReLU, args=(), forward_args=(), forward_kwargs={})
+  def softmax(self): return self.create_op(OPS.Softmax, args=(), forward_args=(), forward_kwargs={})
 
-  def batchnorm1d(self):
-    pass
-
-  def batchnorm2d(self):
-    pass
-
-  def maxpool2d(self, filter=(2,2), stride=1):
-    func = MaxPool2D(self.device.name)
-    if self.device.name == Devices.CPU:
-      out = Tensor(
-        func.forward(self, filter, stride),
-        _prev=(self,),
-        device=self.device
-      )
-    else:
-      out = Tensor(
-        device_data=func.forward(self, filter, stride),
-        shape=(self.shape),
-        _prev=(self,),
-        device=self.device
-      )
-    out.prev_op = OPS.MaxPool2D
-    out._backward = lambda: func.backward(out.grad if self.device.name == Devices.CPU else out.device_grad)
-    return out
-
-  # TODO: fix this like maxpool2D
-  def avgpool2d(self, filter=(2,2), stride=1, padding=0):
-    # TODO: assert dimensionality
-    # TODO: handle channels and padding as well
-    # TODO: double-check if stride is used correctly
-    func = AvgPool2D(self.device.name)
-    if self.device.name == Devices.CPU:
-      out = Tensor(
-        func.forward(self, filter, stride),
-        _prev=(self,),
-        device=self.device
-      )
-    else:
-      out = Tensor(
-        device_data=func.forward(self, filter, stride),
-        shape=(self.shape),
-        _prev=(self,),
-        device=self.device
-      )
-    out.prev_op = OPS.AvgPool2D
-    out._backward = lambda: func.backward(out.grad if self.device.name == Devices.CPU else out.device_grad)
-    return out
-
+  # FIXME: function + ops
   def tanh(self):
     t = (np.exp(2*self.data) - 1) / (np.exp(2*self.data) + 1)
     out = Tensor(t, name="tanh_out", _prev=self._prev.copy())
@@ -450,17 +407,13 @@ class Tensor:
 
     return out
 
-  def softmax(self):
-    func = Softmax(self.device.name)
-    if self.device.name == Devices.CPU:
-      out = Tensor(func.forward(self), name="softmax_out", _prev=(self,))
-    else:
-      out = Tensor(
-        device_data=func.forward(self),
-        shape=self.shape,
-        _prev=(self,),
-        device=self.device
-      )
-    out.prev_op = OPS.Softmax
-    out._backward = lambda: func.backward(out.grad if self.device.name == Devices.CPU else out.device_grad)
-    return out
+  # Reduce Ops
+  def mean(self, axis=None, keepdims=False):    return self.create_op(OPS.MEAN, args=(), forward_args=(axis, keepdims), forward_kwargs={})
+  def sum(self, axis=None, keepdims=False):     return self.create_op(OPS.SUM, args=(), forward_args=(axis, keepdims), forward_kwargs={})
+  def max(self, axis=None, keepdims=False):     return self.create_op(OPS.MAX, args=(), forward_args=(axis, keepdims), forward_kwargs={})
+  def min(self, axis=None, keepdims=False):     return self.create_op(OPS.MIN, args=(), forward_args=(axis, keepdims), forward_kwargs={})
+  def std(self, axis=None, keepdims=False):     return self.create_op(OPS.STD, args=(), forward_args=(axis, keepdims), forward_kwargs={})
+  def argmax(self, axis=None, keepdims=False):  return self.create_op(OPS.ARGMAX, args=(), forward_args=(axis, keepdims), forward_kwargs={})
+  def argmin(self, axis=None, keepdims=False):  return self.create_op(OPS.ARGMIN, args=(), forward_args=(axis, keepdims), forward_kwargs={})
+  def maxpool2d(self, filter=(2,2), stride=1):  return self.create_op(OPS.MaxPool2D, forward_args=(filter, stride), args=(), forward_kwargs={})
+  def avgpool2d(self, filter=(2,2), stride=1):  return self.create_op(OPS.AvgPool2D, forward_args=(filter, stride), args=(), forward_kwargs={})

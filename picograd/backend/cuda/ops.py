@@ -1,39 +1,9 @@
 import ctypes
 import numpy as np
-from enum import Enum, auto
 from typing import Tuple
 
 from picograd.util import *
 from .math import *
-
-
-class OPS(Enum):
-  # Binary
-  ADD = auto()
-  MUL = auto()
-  DOT = auto()
-  POW = auto()
-
-  # Unary
-  ReLU = auto()
-  Tanh = auto()
-  Softmax = auto()
-  Sigmoid = auto()
-
-  MSELoss = auto()
-  MAELoss = auto()
-  CrossEntropyLoss = auto()
-  BCELoss = auto()
-
-  Conv2D = auto()
-  MaxPool2D = auto()
-  AvgPool2D = auto()
-
-  Reshape = auto()
-  Flatten = auto()
-  Unsqueeze = auto()
-
-  def __str__(self): return self.name
 
 
 # TODO: backward ops should keep gradients in the device memory
