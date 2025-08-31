@@ -38,6 +38,13 @@ class BinaryOps:
     if b.requires_grad: b.grad += a.data.T @ grad_out
 
   @staticmethod
+  def pow(a: "Tensor", b: float) -> np.ndarray: return a.data ** b
+
+  @staticmethod
+  def pow_back(a: "Tensor", b: float, grad_out: np.ndarray):
+    if a.requires_grad: a.grad += b * (a.data ** (b - 1)) * grad_out
+
+  @staticmethod
   def conv2d(A: "Tensor", Weight: "Tensor", Bias: "Tensor",
              in_channels: int, out_channels: int, stride: int = 1, padding: int = 0,
              debug=False) -> np.ndarray:
@@ -199,46 +206,82 @@ class UnaryOps:
 
 class ReduceOps:
   @staticmethod
-  def max(a: "Tensor", axis, keepdims) -> np.ndarray: return np.array([np.max(a.data, axis=axis, keepdims=keepdims)])
+  def max(a: "Tensor", axis, keepdims) -> np.ndarray:
+    res = np.max(a.data, axis=axis, keepdims=keepdims)
+    return res if keepdims else res[np.newaxis]
 
   @staticmethod
-  def max_back() -> np.ndarray: pass
+  def max_back(a: "Tensor", grad_out, axis, keepdims):
+    if not a.requires_grad: return
+    if not keepdims and axis is not None:
+      grad_out = np.expand_dims(grad_out, axis=axis)
+    a.grad = (a.data == np.max(a.data, axis=axis, keepdims=True)) * grad_out
 
   @staticmethod
-  def min(a: "Tensor", axis, keepdims) -> np.ndarray: return np.array([np.min(a.data, axis=axis, keepdims=keepdims)])
+  def min(a: "Tensor", axis, keepdims) -> np.ndarray:
+    res = np.min(a.data, axis=axis, keepdims=keepdims)
+    return res if keepdims else res[np.newaxis]
 
   @staticmethod
-  def min_back() -> np.ndarray: pass
+  def min_back(a: "Tensor", grad_out, axis, keepdims):
+    if not a.requires_grad: return
+    if not keepdims and axis is not None:
+      grad_out = np.expand_dims(grad_out, axis=axis)
+    a.grad = (a.data == np.min(a.data, axis=axis, keepdims=True)) * grad_out
 
   @staticmethod
-  def sum(a: "Tensor", axis, keepdims) -> np.ndarray: return np.array([np.sum(a.data, axis=axis, keepdims=keepdims)])
+  def sum(a: "Tensor", axis, keepdims) -> np.ndarray:
+    res = np.sum(a.data, axis=axis, keepdims=keepdims)
+    return res if keepdims else res[np.newaxis]
 
   @staticmethod
-  def sum_back() -> np.ndarray: pass
+  def sum_back(a: "Tensor", grad_out, axis, keepdims):
+    if not a.requires_grad: return
+    if not keepdims and axis is not None:
+      grad_out = np.expand_dims(grad_out, axis=axis)
+    a.grad = np.ones_like(a.data) * grad_out
 
   @staticmethod
-  def mean(a: "Tensor", axis, keepdims) -> np.ndarray: return np.array([np.mean(a.data, axis=axis, keepdims=keepdims)])
+  def mean(a: "Tensor", axis, keepdims) -> np.ndarray:
+    res  = np.mean(a.data, axis=axis, keepdims=keepdims)
+    return res if keepdims else res[np.newaxis]
 
   @staticmethod
-  def mean_back() -> np.ndarray: pass
+  def mean_back(a: "Tensor", grad_out, axis, keepdims):
+    if not a.requires_grad: return
+    if not keepdims and axis is not None:
+      grad_out = np.expand_dims(grad_out, axis=axis)
+    a.grad = np.ones_like(a.data) * grad_out / a.data.size
 
   @staticmethod
-  def std(a: "Tensor", axis, keepdims) -> np.ndarray: return np.array([np.std(a.data, axis=axis, keepdims=keepdims)])
+  def std(a: "Tensor", axis, keepdims) -> np.ndarray:
+    res = np.std(a.data, axis=axis, keepdims=keepdims)
+    return res if keepdims else res[np.newaxis]
 
   @staticmethod
-  def std_back() -> np.ndarray: pass
+  def std_back(a: "Tensor", grad_out, axis, keepdims):
+    if not a.requires_grad: return
+    mean = np.mean(a.data, axis=axis, keepdims=True)
+    std = np.std(a.data, axis=axis, keepdims=True)
+    if not keepdims and axis is not None:
+      grad_out = np.expand_dims(grad_out, axis=axis)
+    a.grad = (a.data - mean) * grad_out / (std * a.data.size)
 
   @staticmethod
-  def argmax(a: "Tensor", axis, keepdims) -> np.ndarray: return np.array([np.argmax(a.data, axis=axis, keepdims=keepdims)])
+  def argmax(a: "Tensor", axis, keepdims) -> np.ndarray:
+    res = np.argmax(a.data, axis=axis, keepdims=keepdims)
+    return res if keepdims else res[np.newaxis]
 
   @staticmethod
-  def argmax_back() -> np.ndarray: pass
+  def argmax_back(a: "Tensor"): a.grad = np.zeros_like(a.data)
 
   @staticmethod
-  def argmin(a: "Tensor", axis, keepdims) -> np.ndarray: return np.array([np.argmin(a.data, axis=axis, keepdims=keepdims)])
+  def argmin(a: "Tensor", axis, keepdims) -> np.ndarray:
+    res = np.argmin(a.data, axis=axis, keepdims=keepdims)
+    return res if keepdims else res[np.newaxis]
 
   @staticmethod
-  def argmin_back() -> np.ndarray: pass
+  def argmin_back(a: "Tensor"): a.grad = np.zeros_like(a.data)
 
   @staticmethod
   def maxpool2d(a: "Tensor", filter=(2, 2), stride=1) -> np.ndarray:

@@ -25,7 +25,7 @@ class OPS(Enum):
   Softmax = auto()
   Sigmoid = auto()
 
-  # Substitution ops
+  # Movement ops
   Reshape = auto()
   Flatten = auto()
   Unsqueeze = auto()
@@ -56,6 +56,7 @@ def get_op(op_name: str, device_name: str):
   if op_name == OPS.ADD: return Add(device_name)
   if op_name == OPS.MUL: return Mul(device_name)
   if op_name == OPS.DOT: return Dot(device_name)
+  if op_name == OPS.POW: return Pow(device_name)
   if op_name == OPS.Conv2D: return Conv2D(device_name)
 
   # Unary Ops
@@ -153,6 +154,14 @@ class Dot(Function):
   def backward(self, grad_out):
     self.BinaryOps().dot_back(self.a, self.b, grad_out)
 
+class Pow(Function):
+  def forward(self, a: "Tensor", b: float) -> "Tensor":
+    self.a, self.b = a, b
+    return self.BinaryOps.pow(a, b)
+
+  def backward(self, grad_out):
+    self.BinaryOps().pow_back(self.a, self.b, grad_out)
+
 class Conv2D(Function):
   def forward(self, a: "Tensor", w: "Tensor", b: "Tensor",
               in_channels: int, out_channels: int, stride: int = 1, padding: int = 0) -> "Tensor":
@@ -182,61 +191,73 @@ class Softmax(Function):
   def backward(self, grad_out):
     return self.UnaryOps.softmax_back(self.a, self.out, grad_out)
 
-class BatchNorm2D(Function):
-  def forward(self, a: "Tensor", beta: "Tensor", gamma: "Tensor"):
-    return self.UnaryOps.batchnorm2d(a)
-
-  def backward(self, grad_out):
-    pass
-
 # REDUCE OPS
 
 class Sum(Function):
   def forward(self, a: "Tensor", axis=None, keepdims=False):
+    self.a = a
+    self.axis = axis
+    self.keepdims = keepdims
     return self.ReduceOps.sum(a, axis, keepdims)
 
   def backward(self, grad_out):
-    pass
+    self.ReduceOps.sum_back(self.a, grad_out, self.axis, self.keepdims)
 
 class Mean(Function):
   def forward(self, a: "Tensor", axis=None, keepdims=False):
+    self.a = a
+    self.axis = axis
+    self.keepdims = keepdims
     return self.ReduceOps.mean(a, axis, keepdims)
 
   def backward(self, grad_out):
-    pass
-class Max(Function):
-  def forward(self, a: "Tensor", axis=None, keepdims=False):
-    return self.ReduceOps.max(a, axis, keepdims)
-
-  def backward(self, grad_out):
-    pass
-class Min(Function):
-  def forward(self, a: "Tensor", axis=None, keepdims=False):
-    return self.ReduceOps.min(a, axis, keepdims)
-
-  def backward(self, grad_out):
-    pass
+    self.ReduceOps.mean_back(self.a, grad_out, self.axis, self.keepdims)
 
 class Std(Function):
   def forward(self, a: "Tensor", axis=None, keepdims=False):
+    self.a = a
+    self.axis = axis
+    self.keepdims = keepdims
     return self.ReduceOps.std(a, axis, keepdims)
 
   def backward(self, grad_out):
-    pass
+    self.ReduceOps.std_back(self.a, grad_out, self.axis, self.keepdims)
+
+class Max(Function):
+  def forward(self, a: "Tensor", axis=None, keepdims=False):
+    self.a = a
+    self.axis = axis
+    self.keepdims = keepdims
+    return self.ReduceOps.max(a, axis, keepdims)
+
+  def backward(self, grad_out):
+    self.ReduceOps.max_back(self.a, grad_out, self.axis, self.keepdims)
+
+class Min(Function):
+  def forward(self, a: "Tensor", axis=None, keepdims=False):
+    self.a = a
+    self.axis = axis
+    self.keepdims = keepdims
+    return self.ReduceOps.min(a, axis, keepdims)
+
+  def backward(self, grad_out):
+    self.ReduceOps.min_back(self.a, grad_out, self.axis, self.keepdims)
 
 class Argmax(Function):
   def forward(self, a: "Tensor", axis=None, keepdims=False):
+    self.a = a
     return self.ReduceOps.argmax(a, axis, keepdims)
 
   def backward(self, grad_out):
-    pass
+    self.ReduceOps.argmax_back(self.a)
 
 class Argmin(Function):
   def forward(self, a: "Tensor", axis=None, keepdims=False):
+    self.a = a
     return self.ReduceOps.argmin(a, axis, keepdims)
 
   def backward(self, grad_out):
-    pass
+    self.ReduceOps.argmin_back(self.a)
 
 class MaxPool2D(Function):
   def forward(self, a: "Tensor", filter=(2, 2), stride=1):

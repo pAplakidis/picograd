@@ -168,11 +168,11 @@ class Tensor:
   
   @staticmethod
   def zeros(shape: Tuple[int], name="t", dtype=np.float32, device=Device(Devices.CPU)):
-    return Tensor(np.zeros(shape, dtype=dtype, name=name, device=device))
+    return Tensor(np.zeros(shape, dtype=dtype), name=name, device=device)
   
   @staticmethod
   def ones(shape: Tuple[int], name="t", dtype=np.float32, device=Device(Devices.CPU)):
-    return Tensor(np.ones(shape, dtype=dtype, name=name, device=device))
+    return Tensor(np.ones(shape, dtype=dtype), name=name, device=device)
   
   @staticmethod
   def eye(n: int, name="t", dtype=np.float32, device=Device(Devices.CPU)):
@@ -268,7 +268,7 @@ class Tensor:
     out_data = func.forward(*tensor_inputs, *forward_args, **forward_kwargs)
 
     if self.device.name == Devices.CPU:
-      out = Tensor(out_data, _prev=(self,), device=self.device)
+      out = Tensor(out_data, _prev=prev, device=self.device)
     else:
       out = Tensor(
         device_data=out_data,
@@ -290,23 +290,13 @@ class Tensor:
   def __mul__(self, other):     return self.create_op(OPS.MUL, args=(other,), forward_args=(), forward_kwargs={})
   def __matmul__(self, other):  return self.dot(other)
   def dot(self, other):         return self.create_op(OPS.DOT, args=(other,), forward_args=(), forward_kwargs={})
+  def __pow__(self, other):     return self.create_op(OPS.POW, args=(), forward_args=(other,), forward_kwargs={})
   def __radd__(self, other):    return self + other
   def __sub__(self, other):     return self + (-other)
   def __rsub__(self, other):    return other + (-self)
   def __rmul__(self, other):    return self * other
   def __truediv__(self, other): return self * other**-1
   def __rtruediv__(self, other):return other * self**-1
-
-  # FIXME: move these this ops (cpu and cuda)
-  def __pow__(self, other):
-    assert isinstance(other, (int, float)), "only supporting int/float powers for now"
-    out = Tensor(self.data**other, _prev=(self,), device=self.device)
-    out.prev_op = OPS.POW
-
-    def _backward():
-      self.grad += (other * self.data**(other-1)) * out.grad
-    out._backward = _backward
-    return out
 
   def linear(self, weight: "Tensor", bias: Optional["Tensor"] = None):
     x = self * weight if len(weight.shape) == 1 else self.dot(weight)
@@ -326,7 +316,7 @@ class Tensor:
       forward_kwargs={}
     )
 
-  # Substitution Ops
+  # Movement Ops
   # FIXME: move to ops (cpu + cuda)
   def reshape(self, *args, **kwargs):
     out = Tensor(self.data.reshape(*args, **kwargs), _prev=(self,))
@@ -370,7 +360,7 @@ class Tensor:
 
   # Unary Ops
   def __neg__(self): return self * Tensor([-1], device=self.device)
-
+  def sqrt(self):    return self ** 0.5
   def relu(self): return self.create_op(OPS.ReLU, args=(), forward_args=(), forward_kwargs={})
   def softmax(self): return self.create_op(OPS.Softmax, args=(), forward_args=(), forward_kwargs={})
 
