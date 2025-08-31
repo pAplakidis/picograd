@@ -52,10 +52,10 @@ Code
 from picograd import Tensor
 from picograd.draw_utils import draw_dot
 
-a = Tensor(np.random.randn(100, 50), device=device)
-b = Tensor(np.random.randn(50, 100)).to(device)
+a = Tensor.random((100, 50))
+b = Tensor.random((50, 100))
 c = a.dot(b)
-d = Tensor(np.random.randn(100, 100), device=device)
+d = Tensor.random((100, 100))
 e = c + d
 e.backward()
 draw_dot(e, path="graphs/test")
@@ -83,12 +83,10 @@ DEBUG=3 ./test/test_dot.py
 - RNN, LSTM, GRU
 - Attention, self-attention, transformer
 - Lazy buffers, scheduler, linearizer, kernel fusion
-- cudaMallocManaged
-- Test on actual neural networks, efficientnet, etc (full training and evaluation of simple models)
 
 ## BUGS
 
-- MNIST (cuda) - illegal address on relu out.grad read + out of memory after some iterations
+- MNIST_simple (cuda) - illegal address on relu out.grad read + out of memory after some iterations
 
 ### DONE
 
@@ -122,3 +120,5 @@ DEBUG=3 ./test/test_dot.py
 
 - GEMM with tensorcores
 - OpenCL ops
+- cudaMallocManaged
+- Test on actual neural networks, efficientnet, etc (full training and evaluation of simple models)

@@ -14,8 +14,7 @@ device = Device(Devices.CUDA) if is_cuda_available() else Device(Devices.CPU)
 print("[*] Using device", device.name, "\n")
 
 def generate_tensors():
-  t1 = np.random.randn(50, 100)
-  return Tensor(t1, name="a", device=device)
+  return Tensor.random((50, 100), name="a", device=device)
 
 def test_reduce_ops():
   a = generate_tensors()

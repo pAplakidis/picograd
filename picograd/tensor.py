@@ -31,6 +31,7 @@ class Tensor:
     device_data: Optional[ctypes.c_void_p] = None,
     shape: Optional[Tuple] = None,
   ):
+
     data = np.array(data) if data is not None else None
     self.device= list(_prev)[0].device if len(list(_prev)) > 0 else device
     self._ctx = None  # TODO: use context like pytorch
@@ -122,7 +123,7 @@ class Tensor:
   def T(self): return Tensor(self.data.T, _prev=(self,), device=self.device)
 
   @property
-  def item(self): return self.data
+  def item(self, *args): return self.data.item(*args)
 
   @property
   def shape(self, idxs=None):
@@ -160,22 +161,22 @@ class Tensor:
     #   self.device_grad = None
     pass
 
-  # TODO: implement tensor generators
+  # TODO: implement all tensor generators + cuda
   @staticmethod
-  def random(shape: Tuple[int], dtype=np.float32):
-    pass
-
+  def random(shape: Tuple[int], name="t", dtype=np.float32, device=Device(Devices.CPU)):
+    return Tensor(np.random.randn(*shape).astype(dtype), name=name, device=device)
+  
   @staticmethod
-  def zeros(shape: Tuple[int], dtype=np.float32):
-    pass
-
+  def zeros(shape: Tuple[int], name="t", dtype=np.float32, device=Device(Devices.CPU)):
+    return Tensor(np.zeros(shape, dtype=dtype, name=name, device=device))
+  
   @staticmethod
-  def ones(shape: Tuple[int], dtype=np.float32):
-    pass
-
+  def ones(shape: Tuple[int], name="t", dtype=np.float32, device=Device(Devices.CPU)):
+    return Tensor(np.ones(shape, dtype=dtype, name=name, device=device))
+  
   @staticmethod
-  def eye(n: int, dtype=np.float32):
-    pass
+  def eye(n: int, name="t", dtype=np.float32, device=Device(Devices.CPU)):
+    return Tensor(np.eye(n, dtype=dtype), name=name, device=device)
 
   def to(self, device: Device):
     """Tranfers tensor to the specified device."""
@@ -254,7 +255,7 @@ class Tensor:
     Generalized op creation for tensor operations.
     
     Args:
-        op_name: Name of the operation (e.g., 'add', 'dot', 'conv2d').
+        op_name: Name of the operation (e.g., OPS.ADD, OPS.DOT, etc).
         args: Other tensor arguments involved in the op.
         forward_args: Extra positional arguments for func.forward (e.g., stride, padding).
         forward_kwargs: Extra keyword arguments for func.forward.
@@ -311,29 +312,19 @@ class Tensor:
     x = self * weight if len(weight.shape) == 1 else self.dot(weight)
     return x + bias if bias is not None else x
 
-  # TODO: self.create_op
   def conv2d(self, weight: "Tensor", bias: "Tensor", in_channels: int, out_channels: int, stride: int = 1, padding: int = 0, debug=False):
-    func = Conv2D(self.device.name)
-    if self.device.name == Devices.CPU:
-      out = Tensor(
-        func.forward(self, weight, bias, in_channels, out_channels, stride, padding),
-        _prev=(self, weight, bias),
-      )
-    else:
-      out = Tensor(
-        device_data=func.forward(self, weight, bias,  in_channels, out_channels, stride, padding),
-        shape=(
-          self.shape[0], out_channels, 
-          (self.shape[2] - weight.shape[2] + 2 * padding) // stride + 1,
-          (self.shape[3] - weight.shape[3] + 2 * padding) // stride + 1
-        ),
-        _prev=(self, weight, bias),
-        device=self.device
-      )
-    out.prev_op = OPS.Conv2D
-    out._backward = lambda: func.backward(out.grad if self.device.name == Devices.CPU else out.device_grad)
-    return out
-
+    return self.create_op(
+      OPS.Conv2D,
+      shape=(
+        self.shape[0],
+        out_channels,
+        (self.shape[2] - weight.shape[2] + 2 * padding) // stride + 1,
+        (self.shape[3] - weight.shape[3] + 2 * padding) // stride + 1
+      ),
+      args=(weight, bias),
+      forward_args=(in_channels, out_channels, stride, padding),
+      forward_kwargs={}
+    )
 
   # Substitution Ops
   # FIXME: move to ops (cpu + cuda)
