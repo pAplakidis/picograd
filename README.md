@@ -36,8 +36,7 @@ sudo apt-get install graphviz
 Examples
 
 ```bash
-./examples/MNIST_test.py
-./examples/MNIST_simple.py
+./examples/MNIST.py
 ```
 
 Tests

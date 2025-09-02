@@ -11,6 +11,7 @@ DEBUG = int(os.getenv("DEBUG", 0))
 PSEUDO_DEBUG = int(os.getenv("PSEUDO_DEBUG", 0))  # if 1, generate assembly code as string but don't print (helps with segfaults)
 
 
+# TODO: split into BOps, UOps, MOps, ROps classes
 class OPS(Enum):
   # Binary ops
   ADD = auto()
@@ -21,8 +22,8 @@ class OPS(Enum):
 
   # Unary ops
   ReLU = auto()
-  Tanh = auto()
   Softmax = auto()
+  Tanh = auto()
   Sigmoid = auto()
 
   # Movement ops
@@ -53,24 +54,26 @@ class OPS(Enum):
 
 def get_op(op_name: str, device_name: str):
   # Binary Ops
-  if op_name == OPS.ADD: return Add(device_name)
-  if op_name == OPS.MUL: return Mul(device_name)
-  if op_name == OPS.DOT: return Dot(device_name)
-  if op_name == OPS.POW: return Pow(device_name)
+  if op_name == OPS.ADD:    return Add(device_name)
+  if op_name == OPS.MUL:    return Mul(device_name)
+  if op_name == OPS.DOT:    return Dot(device_name)
+  if op_name == OPS.POW:    return Pow(device_name)
   if op_name == OPS.Conv2D: return Conv2D(device_name)
 
   # Unary Ops
-  if op_name == OPS.ReLU: return ReLU(device_name)
+  if op_name == OPS.ReLU:    return ReLU(device_name)
   if op_name == OPS.Softmax: return Softmax(device_name)
+  if op_name == OPS.Tanh:    return Tanh(device_name)
+  if op_name == OPS.Sigmoid: return Sigmoid(device_name)
 
   # Reduce Ops
-  if op_name == OPS.SUM: return Sum(device_name)
-  if op_name == OPS.MEAN: return Mean(device_name)
-  if op_name == OPS.MAX: return Max(device_name)
-  if op_name == OPS.MIN: return Min(device_name)
-  if op_name == OPS.ARGMAX: return Argmax(device_name)
-  if op_name == OPS.ARGMIN: return Argmin(device_name)
-  if op_name == OPS.STD: return Std(device_name)
+  if op_name == OPS.SUM:       return Sum(device_name)
+  if op_name == OPS.MEAN:      return Mean(device_name)
+  if op_name == OPS.MAX:       return Max(device_name)
+  if op_name == OPS.MIN:       return Min(device_name)
+  if op_name == OPS.ARGMAX:    return Argmax(device_name)
+  if op_name == OPS.ARGMIN:    return Argmin(device_name)
+  if op_name == OPS.STD:       return Std(device_name)
   if op_name == OPS.MaxPool2D: return MaxPool2D(device_name)
   if op_name == OPS.AvgPool2D: return AvgPool2D(device_name)
   if op_name == OPS.CrossEntropyLoss: return CrossEntropy(device_name)
@@ -190,6 +193,23 @@ class Softmax(Function):
   
   def backward(self, grad_out):
     return self.UnaryOps.softmax_back(self.a, self.out, grad_out)
+
+class Tanh(Function):
+  def forward(self, a: "Tensor"):
+    self.a = a
+    return self.UnaryOps.tanh(a)
+
+  def backward(self, grad_out):
+    self.UnaryOps.tanh_back(self.a, grad_out)
+
+class Sigmoid(Function):
+  def forward(self, a: "Tensor"):
+    self.a = a
+    self.out = self.UnaryOps.sigmoid(a)
+    return self.out
+
+  def backward(self, grad_out):
+    self.UnaryOps.sigmoid_back(self.a, self.out, grad_out)
 
 # REDUCE OPS
 

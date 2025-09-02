@@ -9,8 +9,12 @@ class LayerType(Enum):
   NOLAYER = auto()
   LINEAR = auto()
   CONV2D = auto()
+
   MAXPOOL2D = auto()
   AVGPOOL2D = auto()
+
+  BATCHNORM2D = auto()
+  LAYERNORM = auto()
 
   def __str__(self):
     return self.name
@@ -25,13 +29,12 @@ class Module:
 
   def to(self, device: Device):
     self.device = device
-    for param in self.get_params():
-      param.device = device
-      param.to(device)
+    for param in self.get_params(): param.to(device)
     return self
 
   def train(self):
     self.train = True
+    for param in self.get_params(): param.train = True
     return self
 
   def eval(self):
@@ -52,20 +55,31 @@ class Module:
     return self.params
 
 
+# TODO: for all Tensors defined inside the layers, set device to self.device
 class Layer:
-  def __init__(self):
+  def __init__(self, device = Device(Devices.CPU)):
     self.type = None
     self.t_in = None
     self.t_out = None
     self.weight = None
     self.bias = None
-    self.device = Device(Devices.CPU)
+    self.train = True
+    self.device = device
+
+    self.subgraph_name = None
+    self._subgraph_nodes = []
 
   def to(self, device: Device):
     self.device = device
     if self.weight is not None: self.weight.to(device)
     if self.bias is not None: self.bias.to(device)
     return self
+
+  def _track(self, t: Tensor):
+    """Tracks tensors that belong to this layer's subgraph for better visualization"""
+    self._subgraph_nodes.append(t)
+    t.layer = self
+    return t
 
 class Linear(Layer):
   def __init__(self, in_feats: int, out_feats: int, initialization: str = 'gaussian'):
@@ -138,3 +152,38 @@ class AvgPool2D(Layer):
     self.t_in = x
     self.t_out = x.avgpool2d(self.filter, self.stride, self.padding)
     return self.t_out
+
+class BatchNorm1D(Layer):
+  def __init__(self, n_feats: int, eps=1e-5, momentum=0.1):
+    super().__init__()
+    self.type = LayerType.BATCHNORM2D
+    self.subgraph_name = "BatchNorm1D"
+    self.n_feats = n_feats
+    self.eps = Tensor([eps], requires_grad=False, name="batchnorm1d-eps", device=self.device)
+    self.momentum = Tensor([momentum], requires_grad=False, name="batchnorm1d-momentum", device=self.device)
+
+    self.weight = Tensor.ones((1, self.n_feats), name="batchnorm2d-gamma", device=self.device)
+    self.bias =   Tensor.zeros((1, self.n_feats), name="batchnorm2d-beta", device=self.device)
+
+    self.running_mean = Tensor.zeros((1, self.n_feats), requires_grad=False, name="batchnorm1d-running-mean", device=self.device)
+    self.running_var =  Tensor.ones((1, self.n_feats), requires_grad=False, name="batchnorm1d-running-var", device=self.device)
+
+  def __call__(self, x: Tensor):
+    assert len(x.shape) == 2, "BatchNorm1D requires input of shape (batch_size, features)"
+    assert x.shape[1] == self.n_feats, f"BatchNorm1D requires input with {self.n_feats} features, got {x.shape[1]}"
+
+    if self.train:
+      mean = x.mean(axis=0)
+      std = x.std(axis=0, keepdims=True)
+      x_norm = (x - mean) / (std + self.eps).sqrt()
+      x_norm.name = "x_norm"
+
+      self.running_mean = self.momentum * self.running_mean + (Tensor([1], requires_grad=False, name="1", device=self.device) - self.momentum) * mean
+      self.running_var = self.momentum * self.running_var + (Tensor([1], requires_grad=False, name="1", device=self.device) - self.momentum) * std**2
+    else:
+      x_norm = (x - self.running_mean) / (self.running_var + self.eps).sqrt()
+      x_norm.name = "x_norm"
+
+    self.out = self.weight * x_norm + self.bias
+    return self.out
+

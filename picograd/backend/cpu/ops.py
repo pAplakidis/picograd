@@ -3,6 +3,18 @@ from typing import Tuple
 
 from picograd.util import *
 
+def reduce_grad(grad: np.ndarray, shape: tuple) -> np.ndarray:
+  """Reduce broadcasted gradient `grad` back to `shape`."""
+
+  # Step 1: collapse extra leading dims
+  while grad.ndim > len(shape): grad = grad.sum(axis=0)
+
+  # Step 2: sum over axes where original shape had 1 (broadcasted dims)
+  for axis, dim in enumerate(shape):
+    if dim == 1: grad = grad.sum(axis=axis, keepdims=True)
+
+  return grad
+
 
 # TODO: create @jit decorator that uses jit.compile() to execute the op (LLVM)
 class BinaryOps:
@@ -11,23 +23,16 @@ class BinaryOps:
 
   @staticmethod
   def add_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray):
-    if a.requires_grad: a.grad += grad_out
-    if b.requires_grad: 
-      grad_b = grad_out
-      while grad_b.ndim > len(b.shape):
-        grad_b = grad_b.sum(axis=0)
-      for i, axis in enumerate(b.shape):
-        if axis == 1:
-          grad_b = grad_b.sum(axis=i, keepdims=True)
-      b.grad += grad_b
+    if a.requires_grad: a.grad += reduce_grad(grad_out, a.data.shape)
+    if b.requires_grad: b.grad += reduce_grad(grad_out, b.data.shape)
 
   @staticmethod
   def mul(a: "Tensor", b: "Tensor") -> np.ndarray: return a.data * b.data
 
   @staticmethod
   def mul_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray):
-    if a.requires_grad: a.grad += b.data * grad_out
-    if b.requires_grad: b.grad += a.data * grad_out
+    if a.requires_grad: a.grad += reduce_grad(b.data * grad_out, a.data.shape)
+    if b.requires_grad: b.grad += reduce_grad(a.data * grad_out, b.data.shape)
 
   @staticmethod
   def dot(a: "Tensor", b: "Tensor") -> np.ndarray: return a.data @ b.data
@@ -197,12 +202,18 @@ class UnaryOps:
       a.grad[i] = np.dot(jacobian, grad_out[i])
 
   @staticmethod
-  def batchnorm2d(a: "Tensor") -> np.ndarray:
-    return None
+  def tanh(a: "Tensor") -> np.ndarray: return np.tanh(a.data)
 
-  def batchnorm2d_back(a: "Tensor", grad_out: np.ndarray):
-    return None
+  @staticmethod
+  def tanh_back(a: "Tensor", grad_out: np.ndarray):
+    if a.requires_grad: a.grad += (1 - np.tanh(a.data)**2) * grad_out
 
+  @staticmethod
+  def sigmoid(a: "Tensor") -> np.ndarray: return np.exp(a.data) / (np.exp(a.data) + 1)
+
+  @staticmethod
+  def sigmoid_back(a: "Tensor", out: np.ndarray, grad_out: np.ndarray):
+    if a.requires_grad: a.grad += out * (1 - out) * grad_out
 
 class ReduceOps:
   @staticmethod

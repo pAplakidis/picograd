@@ -20,7 +20,7 @@ def generate_tensors():
   return a, b, t1
 
 def test_relu():
-  a, b, t1 = generate_tensors()
+  a, _, t1 = generate_tensors()
   res = a.relu()
   res.backward()
 
@@ -35,6 +35,21 @@ def test_softmax():
   assert np.allclose(res_a.data, b.softmax().data), "Softmax failed"
   print("[+] Softmax OK")
 
+def test_tanh():
+  a, _, _ = generate_tensors()
+  res = a.tanh()
+  res.backward()
+  print("[+] Tanh OK")
+
+def test_sigmoid():
+  a, _, _ = generate_tensors()
+  res = a.sigmoid()
+  res.backward()
+  print("[+] Sigmoid OK")
+
+
 if __name__ == "__main__":
   test_relu()
   test_softmax()
+  test_tanh()
+  test_sigmoid()

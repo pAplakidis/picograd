@@ -47,10 +47,8 @@ class Tensor:
 
     self._prev = set(_prev)
     self.prev_op = None
-    self._backward = lambda: None
-
     self.layer = None
-    self.w, self.b = None, None
+    self._backward = lambda: None
 
     self._device_data = device_data
     self._device_grad = None
@@ -163,20 +161,20 @@ class Tensor:
 
   # TODO: implement all tensor generators + cuda
   @staticmethod
-  def random(shape: Tuple[int], name="t", dtype=np.float32, device=Device(Devices.CPU)):
-    return Tensor(np.random.randn(*shape).astype(dtype), name=name, device=device)
+  def random(shape: Tuple[int], name="t", dtype=np.float32, *args, **kwargs):
+    return Tensor(np.random.randn(*shape).astype(dtype), *args, **kwargs)
   
   @staticmethod
-  def zeros(shape: Tuple[int], name="t", dtype=np.float32, device=Device(Devices.CPU)):
-    return Tensor(np.zeros(shape, dtype=dtype), name=name, device=device)
+  def zeros(shape: Tuple[int], name="t", dtype=np.float32, *args, **kwargs):
+    return Tensor(np.zeros(shape, dtype=dtype), *args, **kwargs)
   
   @staticmethod
-  def ones(shape: Tuple[int], name="t", dtype=np.float32, device=Device(Devices.CPU)):
-    return Tensor(np.ones(shape, dtype=dtype), name=name, device=device)
+  def ones(shape: Tuple[int], name="t", dtype=np.float32, *args, **kwargs):
+    return Tensor(np.ones(shape, dtype=dtype), *args, **kwargs)
   
   @staticmethod
-  def eye(n: int, name="t", dtype=np.float32, device=Device(Devices.CPU)):
-    return Tensor(np.eye(n, dtype=dtype), name=name, device=device)
+  def eye(n: int, name="t", dtype=np.float32, *args, **kwargs):
+    return Tensor(np.eye(n, dtype=dtype), *args, **kwargs)
 
   def to(self, device: Device):
     """Tranfers tensor to the specified device."""
@@ -203,10 +201,13 @@ class Tensor:
       if v not in visited:
         visited.add(v)
         stack.append(v)
+        if not isinstance(v, Tensor): continue
         for child in v._prev:
           if child not in visited: stack.append(child)
       elif v not in topo: topo.append(v)
-    for node in reversed(topo): node._backward()
+    for node in reversed(topo):
+      if isinstance(node, Tensor):
+        node._backward()
 
   # pretty print the graph for this tensor backwards
   def print_graph(self, verbose=False):
@@ -247,23 +248,23 @@ class Tensor:
       self,
       op_name: str,
       shape: Optional[Tuple] = None,
-      args: Tuple["Tensor"] = (),
+      operands: Tuple["Tensor"] = (),
       forward_args: Tuple = (),
-      forward_kwargs: dict = None,
+      forward_kwargs: dict = {},
     ):
     """
     Generalized op creation for tensor operations.
     
     Args:
         op_name: Name of the operation (e.g., OPS.ADD, OPS.DOT, etc).
-        args: Other tensor arguments involved in the op.
+        operands: Other tensor arguments involved in the op.
         forward_args: Extra positional arguments for func.forward (e.g., stride, padding).
         forward_kwargs: Extra keyword arguments for func.forward.
     Returns: New tensor resulting from the operation.
     """
 
     func = get_op(op_name, self.device.name)
-    tensor_inputs = (self, ) + args
+    tensor_inputs = (self,) + operands
     prev = tensor_inputs
     out_data = func.forward(*tensor_inputs, *forward_args, **forward_kwargs)
 
@@ -284,37 +285,6 @@ class Tensor:
   def __getitem__(self, indices):         return self.data[indices]
   def __setitem__(self, indices, value):  self.data[indices] = value
   def __equal__(self, other):             return np.equal(self.data, other.data)
-
-  # Binary Ops
-  def __add__(self, other):     return self.create_op(OPS.ADD, args=(other,), forward_args=(), forward_kwargs={})
-  def __mul__(self, other):     return self.create_op(OPS.MUL, args=(other,), forward_args=(), forward_kwargs={})
-  def __matmul__(self, other):  return self.dot(other)
-  def dot(self, other):         return self.create_op(OPS.DOT, args=(other,), forward_args=(), forward_kwargs={})
-  def __pow__(self, other):     return self.create_op(OPS.POW, args=(), forward_args=(other,), forward_kwargs={})
-  def __radd__(self, other):    return self + other
-  def __sub__(self, other):     return self + (-other)
-  def __rsub__(self, other):    return other + (-self)
-  def __rmul__(self, other):    return self * other
-  def __truediv__(self, other): return self * other**-1
-  def __rtruediv__(self, other):return other * self**-1
-
-  def linear(self, weight: "Tensor", bias: Optional["Tensor"] = None):
-    x = self * weight if len(weight.shape) == 1 else self.dot(weight)
-    return x + bias if bias is not None else x
-
-  def conv2d(self, weight: "Tensor", bias: "Tensor", in_channels: int, out_channels: int, stride: int = 1, padding: int = 0, debug=False):
-    return self.create_op(
-      OPS.Conv2D,
-      shape=(
-        self.shape[0],
-        out_channels,
-        (self.shape[2] - weight.shape[2] + 2 * padding) // stride + 1,
-        (self.shape[3] - weight.shape[3] + 2 * padding) // stride + 1
-      ),
-      args=(weight, bias),
-      forward_args=(in_channels, out_channels, stride, padding),
-      forward_kwargs={}
-    )
 
   # Movement Ops
   # FIXME: move to ops (cpu + cuda)
@@ -358,43 +328,52 @@ class Tensor:
     out._backward = _backward
     return out
 
+  # Binary Ops
+  def __add__(self, other):     return self.create_op(OPS.ADD, operands=(other,))
+  def __mul__(self, other):     return self.create_op(OPS.MUL, operands=(other,))
+  def __matmul__(self, other):  return self.dot(other)
+  def dot(self, other):         return self.create_op(OPS.DOT, operands=(other,))
+  def __pow__(self, other):     return self.create_op(OPS.POW, operands=(other,))
+  def __radd__(self, other):    return self + other
+  def __sub__(self, other):     return self + (-other)
+  def __rsub__(self, other):    return other + (-self)
+  def __rmul__(self, other):    return self * other
+  def __truediv__(self, other): return self * other**-1
+  def __rtruediv__(self, other):return other * self**-1
+
+  def linear(self, weight: "Tensor", bias: Optional["Tensor"] = None):
+    x = self * weight if len(weight.shape) == 1 else self.dot(weight)
+    return x + bias if bias is not None else x
+
+  def conv2d(self, weight: "Tensor", bias: "Tensor", in_channels: int, out_channels: int, stride: int = 1, padding: int = 0, debug=False):
+    return self.create_op(
+      OPS.Conv2D,
+      shape=(
+        self.shape[0],
+        out_channels,
+        (self.shape[2] - weight.shape[2] + 2 * padding) // stride + 1,
+        (self.shape[3] - weight.shape[3] + 2 * padding) // stride + 1
+      ),
+      operands=(weight, bias),
+      forward_args=(in_channels, out_channels, stride, padding),
+    )
+
   # Unary Ops
-  def __neg__(self): return self * Tensor([-1], device=self.device)
+  # TODO: support add, mul with scalars
+  def __neg__(self): return self * Tensor([-1], name="-1", requires_grad=False, device=self.device)
   def sqrt(self):    return self ** 0.5
-  def relu(self): return self.create_op(OPS.ReLU, args=(), forward_args=(), forward_kwargs={})
-  def softmax(self): return self.create_op(OPS.Softmax, args=(), forward_args=(), forward_kwargs={})
-
-  # FIXME: function + ops
-  def tanh(self):
-    t = (np.exp(2*self.data) - 1) / (np.exp(2*self.data) + 1)
-    out = Tensor(t, name="tanh_out", _prev=self._prev.copy())
-    out._prev.append(self)
-    out.prev_op = OPS.Tanh
-
-    def _backward():
-      self.grad += (1 - t**2) * out.grad
-    out._backward = _backward
-
-    return out
-
-  def sigmoid(self):
-    t = np.exp(self.data) / (np.exp(self.data) + 1)
-    out = Tensor(t, name="sigmoid_out", _prev=(self,))
-    out.prev_op = OPS.Sigmoid
-
-    def _backward():
-      self.grad = t * (1-t) * out.grad
-    out._backward = _backward
-
-    return out
+  def relu(self):    return self.create_op(OPS.ReLU, )
+  def softmax(self): return self.create_op(OPS.Softmax)
+  def tanh(self):    return self.create_op(OPS.Tanh)
+  def sigmoid(self): return self.create_op(OPS.Sigmoid)
 
   # Reduce Ops
-  def mean(self, axis=None, keepdims=False):    return self.create_op(OPS.MEAN, args=(), forward_args=(axis, keepdims), forward_kwargs={})
-  def sum(self, axis=None, keepdims=False):     return self.create_op(OPS.SUM, args=(), forward_args=(axis, keepdims), forward_kwargs={})
-  def max(self, axis=None, keepdims=False):     return self.create_op(OPS.MAX, args=(), forward_args=(axis, keepdims), forward_kwargs={})
-  def min(self, axis=None, keepdims=False):     return self.create_op(OPS.MIN, args=(), forward_args=(axis, keepdims), forward_kwargs={})
-  def std(self, axis=None, keepdims=False):     return self.create_op(OPS.STD, args=(), forward_args=(axis, keepdims), forward_kwargs={})
-  def argmax(self, axis=None, keepdims=False):  return self.create_op(OPS.ARGMAX, args=(), forward_args=(axis, keepdims), forward_kwargs={})
-  def argmin(self, axis=None, keepdims=False):  return self.create_op(OPS.ARGMIN, args=(), forward_args=(axis, keepdims), forward_kwargs={})
-  def maxpool2d(self, filter=(2,2), stride=1):  return self.create_op(OPS.MaxPool2D, forward_args=(filter, stride), args=(), forward_kwargs={})
-  def avgpool2d(self, filter=(2,2), stride=1):  return self.create_op(OPS.AvgPool2D, forward_args=(filter, stride), args=(), forward_kwargs={})
+  def mean(self, axis=None, keepdims=False):    return self.create_op(OPS.MEAN, forward_args=(axis, keepdims))
+  def sum(self, axis=None, keepdims=False):     return self.create_op(OPS.SUM, forward_args=(axis, keepdims))
+  def max(self, axis=None, keepdims=False):     return self.create_op(OPS.MAX, forward_args=(axis, keepdims))
+  def min(self, axis=None, keepdims=False):     return self.create_op(OPS.MIN, forward_args=(axis, keepdims))
+  def std(self, axis=None, keepdims=False):     return self.create_op(OPS.STD, forward_args=(axis, keepdims))
+  def argmax(self, axis=None, keepdims=False):  return self.create_op(OPS.ARGMAX, forward_args=(axis, keepdims))
+  def argmin(self, axis=None, keepdims=False):  return self.create_op(OPS.ARGMIN, forward_args=(axis, keepdims))
+  def maxpool2d(self, filter=(2,2), stride=1):  return self.create_op(OPS.MaxPool2D, forward_args=(filter, stride))
+  def avgpool2d(self, filter=(2,2), stride=1):  return self.create_op(OPS.AvgPool2D, forward_args=(filter, stride))
