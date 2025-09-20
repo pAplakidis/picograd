@@ -118,9 +118,6 @@ class Tensor:
       self._data = self._data.astype(value)
 
   @property
-  def T(self): return Tensor(self.data.T, _prev=(self,), device=self.device)
-
-  @property
   def item(self, *args): return self.data.item(*args)
 
   @property
@@ -287,46 +284,16 @@ class Tensor:
   def __equal__(self, other):             return np.equal(self.data, other.data)
 
   # Movement Ops
-  # FIXME: move to ops (cpu + cuda)
-  def reshape(self, *args, **kwargs):
-    out = Tensor(self.data.reshape(*args, **kwargs), _prev=(self,))
-    original_shape = self.shape
-    out.prev_op = OPS.Reshape
-
-    def _backward():
-      self.grad += out.grad.reshape(original_shape)
-    out._backward = _backward
-    return out
-
-  def flatten(self):
-    out = Tensor(self.data.flatten(), _prev=(self,), name="flattenout")
-    original_shape = self.shape
-    out.prev_op = OPS.Flatten
-
-    def _backward():
-      self.grad += out.grad.reshape(original_shape)
-    out._backward = _backward
-    return out
-
-  def unsqueeze(self, axis):
-    out = Tensor(np.expand_dims(self.data, axis), _prev=(self,))
-    out.prev_op = "UNSQUEEZE"
-
-    def _backward():
-      self.grad += np.squeeze(out.grad, axis=axis)
-    
-    out._backward = _backward
-    return out
-
-  def squeeze(self, axis=0):
-    out = Tensor(np.squeeze(self.data, axis=axis), _prev=(self,), name="squeeze_out")
-    original_shape = self.shape
-    out.prev_op = OPS.Unsqueeze
-
-    def _backward():
-      self.grad += out.grad.reshape(original_shape)
-    out._backward = _backward
-    return out
+  # FIXME: view should not create a new tensor, but just change the shape and stride of the current one
+  # TODO: shape value for cuda (reshape should not call any op on cuda (?))
+  def reshape(self, *args, **kwargs): return self.create_op(OPS.Reshape, forward_args=args, forward_kwargs=kwargs)
+  def view(self, *args, **kwargs):    return self.create_op(OPS.Reshape, forward_args=args, forward_kwargs=kwargs)
+  def flatten(self):                  return self.reshape(-1)
+  def unsqueeze(self, axis):          return self.create_op(OPS.Unsqueeze, forward_args=(axis,))
+  def squeeze(self, axis=0):          return self.create_op(OPS.Squeeze, forward_args=(axis,))
+  @property
+  def T(self):                        return self.create_op(OPS.Transpose)
+  def transpose(self, axes):          return self.create_op(OPS.Transpose, forward_args=(axes,))
 
   # Binary Ops
   def __add__(self, other):     return self.create_op(OPS.ADD, operands=(other,))

@@ -2,6 +2,7 @@ import os
 import time
 import functools
 import importlib
+from typing import Tuple
 from enum import Enum, auto
 
 from .device import Devices
@@ -28,9 +29,11 @@ class OPS(Enum):
 
   # Movement ops
   Reshape = auto()
+  View = auto()
   Flatten = auto()
   Unsqueeze = auto()
   Squeeze = auto()
+  Transpose = auto()
   
   # Reduce ops
   SUM = auto()
@@ -77,6 +80,14 @@ def get_op(op_name: str, device_name: str):
   if op_name == OPS.MaxPool2D: return MaxPool2D(device_name)
   if op_name == OPS.AvgPool2D: return AvgPool2D(device_name)
   if op_name == OPS.CrossEntropyLoss: return CrossEntropy(device_name)
+
+  # Movement Ops
+  if op_name == OPS.Reshape:   return Reshape(device_name)
+  if op_name == OPS.View:      return View(device_name)
+  if op_name == OPS.Flatten:   return Flatten(device_name)
+  if op_name == OPS.Unsqueeze: return Unsqueeze(device_name)
+  if op_name == OPS.Squeeze:   return Squeeze(device_name)
+  if op_name == OPS.Transpose: return Transpose(device_name)
 
   raise ValueError(f"Unknown op {op_name}")
 
@@ -131,8 +142,8 @@ class Function:
         method = cls.log_time(method)
         setattr(cls, method_name, method)
 
-# BINARY OPS
 
+# BINARY OPS
 class Add(Function):
   def forward(self, a: "Tensor", b: "Tensor") -> "Tensor":
     self.a, self.b = a, b
@@ -175,8 +186,8 @@ class Conv2D(Function):
   def backward(self, grad_out):
     self.BinaryOps.conv2d_back(self.a, grad_out, self.w, self.b, self.a.shape[1], self.w.shape[0], self.stride, self.padding)
 
-# UNARY OPS
 
+# UNARY OPS
 class ReLU(Function):
   def forward(self, a: "Tensor"):
     self.a = a
@@ -211,8 +222,8 @@ class Sigmoid(Function):
   def backward(self, grad_out):
     self.UnaryOps.sigmoid_back(self.a, self.out, grad_out)
 
-# REDUCE OPS
 
+# REDUCE OPS
 class Sum(Function):
   def forward(self, a: "Tensor", axis=None, keepdims=False):
     self.a = a
@@ -308,3 +319,59 @@ class CrossEntropy(Function):
   
   def backward(self):
     self.ReduceOps.cross_entropy_back(self.z, self.y)
+
+
+# MOVEMENT OPS
+class Reshape(Function):
+  def forward(self, a: "Tensor", shape):
+    self.a = a
+    self.original_shape = a.shape
+    return self.MovementOps.reshape(a, shape)
+  
+  def backward(self, grad_out):
+    self.MovementOps.reshape_back(self.a, grad_out, self.original_shape)
+
+class View(Function):
+  def forward(self, a: "Tensor", shape):
+    self.a = a
+    self.original_shape = a.shape
+    return self.MovementOps.view(a, shape)
+  
+  def backward(self, grad_out):
+    self.MovementOps.view_back(self.a, grad_out, self.original_shape)
+
+class Flatten(Function):
+  def forward(self, a: "Tensor"):
+    self.a = a
+    self.original_shape = a.shape
+    return self.MovementOps.flatten(a)
+  
+  def backward(self, grad_out):
+    self.MovementOps.flatten_back(self.a, grad_out, self.original_shape)
+
+class Unsqueeze(Function):
+  def forward(self, a: "Tensor", axis):
+    self.a = a
+    self.axis = axis
+    return self.MovementOps.unsqueeze(a, axis)
+  
+  def backward(self, grad_out):
+    self.MovementOps.unsqueeze_back(self.a, grad_out, self.axis)
+
+class Squeeze(Function):
+  def forward(self, a: "Tensor", axis):
+    self.a = a
+    self.axis = axis
+    return self.MovementOps.squeeze(a, axis)
+  
+  def backward(self, grad_out):
+    self.MovementOps.squeeze_back(self.a, grad_out, self.axis)
+
+class Transpose(Function):
+  def forward(self, a: "Tensor", axes: Tuple[int] = None):
+    self.a = a
+    self.axes = axes
+    return self.MovementOps.transpose(a, axes)
+  
+  def backward(self, grad_out):
+    self.MovementOps.transpose_back(self.a, grad_out, self.axes)

@@ -393,6 +393,68 @@ class ReduceOps:
     y_one_hot = np.zeros((batch_size, n_classes))
     y_one_hot[np.arange(batch_size), y.data] = 1
     z.grad = (z.data - y_one_hot) / batch_size  # Average gradient over batch
+
+
+class MovementOps:
+  @staticmethod
+  def reshape(a: "Tensor", new_shape: Tuple[int]) -> np.ndarray: return a.data.reshape(new_shape)
+
+  @staticmethod
+  def reshape_back(a: "Tensor", grad_out: np.ndarray, original_shape: Tuple[int]):
+    if a.requires_grad: a.grad += grad_out.reshape(original_shape)
+
+  @staticmethod
+  def view(a: "Tensor", new_shape: Tuple[int]) -> np.ndarray: return a.data.reshape(new_shape)
+
+  @staticmethod
+  def view_back(a: "Tensor", grad_out: np.ndarray, original_shape: Tuple[int]):
+    if a.requires_grad: a.grad += grad_out.reshape(original_shape)
+
+  @staticmethod
+  def transpose(a: "Tensor", axes: Tuple[int] = None) -> np.ndarray:
+    if axes is None: axes = tuple(reversed(range(a.data.ndim)))
+    return np.transpose(a.data, axes)
+
+  @staticmethod
+  def transpose_back(a: "Tensor", grad_out: np.ndarray, axes: Tuple[int] = None):
+    if axes is None: axes = tuple(reversed(range(a.data.ndim)))
+    if a.requires_grad:
+      reverse_axes = np.argsort(axes)
+      a.grad += np.transpose(grad_out, reverse_axes)
+
+  @staticmethod
+  def expand(a: "Tensor", new_shape: Tuple[int]) -> np.ndarray: return np.broadcast_to(a.data, new_shape)
+
+  @staticmethod
+  def expand_back(a: "Tensor", grad_out: np.ndarray, original_shape: Tuple[int]):
+    if a.requires_grad: a.grad += reduce_grad(grad_out, original_shape)
+  
+  @staticmethod
+  def permute(a: "Tensor", axes: Tuple[int]) -> np.ndarray: return np.transpose(a.data, axes)
+
+  @staticmethod
+  def permute_back(a: "Tensor", grad_out: np.ndarray, axes: Tuple[int]):
+    if a.requires_grad:
+      reverse_axes = np.argsort(axes)
+      a.grad += np.transpose(grad_out, reverse_axes)
+
+  @staticmethod
+  def squeeze(a: "Tensor", axis: Tuple[int]) -> np.ndarray: return np.squeeze(a.data, axis=axis)
+  
+  @staticmethod
+  def squeeze_back(a: "Tensor", grad_out: np.ndarray, original_shape: Tuple[int]):
+    if a.requires_grad:
+      a.grad += grad_out.reshape(original_shape)
+
+  @staticmethod
+  def unsqueeze(a: "Tensor", axis: Tuple[int]) -> np.ndarray:
+    for ax in sorted(axis):
+      a.data = np.expand_dims(a.data, axis=ax)
+    return a.data
+  
+  @staticmethod
+  def unsqueeze_back(a: "Tensor", grad_out: np.ndarray, original_shape: Tuple[int]):
+    if a.requires_grad: a.grad += grad_out.reshape(original_shape)
   
 
 # TODO:
