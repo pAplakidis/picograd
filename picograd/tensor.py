@@ -286,9 +286,9 @@ class Tensor:
   # Movement Ops
   # FIXME: view should not create a new tensor, but just change the shape and stride of the current one
   # TODO: shape value for cuda (reshape should not call any op on cuda (?))
-  def reshape(self, *args, **kwargs): return self.create_op(OPS.Reshape, forward_args=args, forward_kwargs=kwargs)
+  def reshape(self, *args, **kwargs): shape = args if len(args) > 1 else args[0]; return self.create_op(OPS.Reshape, forward_args=(shape,), forward_kwargs=kwargs)
   def view(self, *args, **kwargs):    return self.create_op(OPS.Reshape, forward_args=args, forward_kwargs=kwargs)
-  def flatten(self):                  return self.reshape(-1)
+  def flatten(self):                  return self.reshape(-1) # TODO: axis
   def unsqueeze(self, axis):          return self.create_op(OPS.Unsqueeze, forward_args=(axis,))
   def squeeze(self, axis=0):          return self.create_op(OPS.Squeeze, forward_args=(axis,))
   @property
@@ -327,12 +327,12 @@ class Tensor:
 
   # Unary Ops
   # TODO: support add, mul with scalars
-  def __neg__(self): return self * Tensor([-1], name="-1", requires_grad=False, device=self.device)
-  def sqrt(self):    return self ** 0.5
-  def relu(self):    return self.create_op(OPS.ReLU, )
-  def softmax(self): return self.create_op(OPS.Softmax)
-  def tanh(self):    return self.create_op(OPS.Tanh)
-  def sigmoid(self): return self.create_op(OPS.Sigmoid)
+  def __neg__(self):            return self * Tensor([-1], name="-1", requires_grad=False, device=self.device)
+  def sqrt(self):               return self ** 0.5
+  def relu(self):               return self.create_op(OPS.ReLU, )
+  def softmax(self, axis=None): return self.create_op(OPS.Softmax, forward_args=(axis,))
+  def tanh(self):               return self.create_op(OPS.Tanh)
+  def sigmoid(self):            return self.create_op(OPS.Sigmoid)
 
   # Reduce Ops
   def mean(self, axis=None, keepdims=False):    return self.create_op(OPS.MEAN, forward_args=(axis, keepdims))

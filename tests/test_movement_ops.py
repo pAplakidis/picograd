@@ -12,20 +12,20 @@ print("[*] Using device", device.name, "\n")
 def test_reshape():
   # Basic reshape
   t = Tensor.random((2, 3), device=device)
-  t_out = t.reshape((3, 2))
+  t_out = t.reshape(3, 2)
   assert t_out.shape == (3, 2), f"Expected shape (3, 2), got {t_out.shape}"
   t_out.backward()
   print("[+] Reshape Test OK")
 
   # Reshape to invalid shape
   try:
-    t.reshape((4, 2))
+    t.reshape(4, 2)
   except ValueError:
     print("[+] Reshape Invalid Shape Test OK")
 
   # Reshape with zero dimensions
   t = Tensor.random((0, 3), device=device)
-  t_out = t.reshape((3, 0))
+  t_out = t.reshape(3, 0)
   assert t_out.shape == (3, 0), f"Expected shape (3, 0), got {t_out.shape}"
   print("[+] Reshape Zero-Dimension Test OK")
 
