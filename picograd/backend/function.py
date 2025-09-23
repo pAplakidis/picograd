@@ -197,13 +197,14 @@ class ReLU(Function):
     self.UnaryOps.relu_back(self.a, grad_out)
 
 class Softmax(Function):
-  def forward(self, a: "Tensor"):
+  def forward(self, a: "Tensor", axis=None):
     self.a = a
-    self.out = self.UnaryOps.softmax(a)
+    self.axis = axis if axis is not None else -1
+    self.out = self.UnaryOps.softmax(a, axis)
     return self.out
   
   def backward(self, grad_out):
-    return self.UnaryOps.softmax_back(self.a, self.out, grad_out)
+    return self.UnaryOps.softmax_back(self.a, self.out, grad_out, self.axis)
 
 class Tanh(Function):
   def forward(self, a: "Tensor"):
