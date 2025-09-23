@@ -16,6 +16,8 @@ class LayerType(Enum):
   BATCHNORM2D = auto()
   LAYERNORM = auto()
 
+  RNN = auto()
+
   def __str__(self):
     return self.name
 
@@ -244,3 +246,51 @@ class LayerNorm(Layer):
     x_norm.name = "x_norm"
     self.out = self.weight * x_norm + self.bias
     return self.out
+
+
+class RNN(Layer):
+  def __init__(
+      self,
+      input_size: int,
+      hidden_size: int,
+      num_layers=1,
+      nonlinearity='tanh',
+      bias=True,
+      batch_first=False,
+      dropout=0.0,
+      bidirectional=False
+  ):
+    super().__init__()
+    self.type = LayerType.RNN
+
+    self.input_size = input_size
+    self.hidden_size = hidden_size
+    self.num_layers = num_layers
+    self.batch_first = batch_first
+    self.nonlinearity = nonlinearity
+    self.dropout = dropout
+    self.bidirectional = bidirectional
+    
+    # FIXME: optim - learnable paramaters are no longer weight and bias (add to a params[] list and modify optim)
+    self.u      = Tensor.random((input_size, hidden_size), device=self.device, name="rnn_u")  # input to hidden weight
+    self.v      = Tensor.random((hidden_size, hidden_size), device=self.device, name="rnn_v") # hidden to output weight
+    self.weight = Tensor.random((hidden_size, hidden_size), device=self.device, name="rnn_w") # hidden to hidden weight
+    self.b      = Tensor.zeros((hidden_size,), device=self.device, name="rnn_b") if bias else None
+    self.c      = Tensor.zeros((hidden_size,), device=self.device, name="rnn_c") if bias else None
+
+  def __call__(self, x: Tensor, h_0: Tensor=None):
+    """"""
+    assert x.shape == (x.shape[0], x.shape[1], self.input_size), f"Expected input shape (batch_size, seq_len, {self.input_size}), got {x.shape}"
+
+    y = Tensor.zeros((x.shape[0], x.shape[1], self.hidden_size), device=self.device, name="rnn_out") # output tensor
+    h_prev = Tensor.zeros((x.shape[0], self.hidden_size), device=self.device, name="h_0") if h_0 is None else h_0
+    # FIXME: graph is wrong
+    for t in range(x.shape[1]):
+      x_t = x[:, t, :]                  # (batch, input_size)
+      a_t = x_t @ self.u + h_prev @ self.weight + self.b
+      h_t = a_t.tanh()
+      o_t = h_t @ self.v + self.c       # (batch, hidden_size)
+      y[:, t, :] = o_t.softmax(axis=-1)
+      h_prev = h_t
+
+    return y, h_prev

@@ -279,8 +279,10 @@ class Tensor:
     out._backward = lambda: func.backward(out.grad if self.device.name == Devices.CPU else out.device_grad)
     return out
 
-  def __getitem__(self, indices):         return self.data[indices]
-  def __setitem__(self, indices, value):  self.data[indices] = value
+  # def __getitem__(self, indices):         return self.data[indices]
+  # def __setitem__(self, indices, value):  self.data[indices] = value
+  def __getitem__(self, indices):         return Tensor(self.data[indices]) # FIXME: tempfix
+  def __setitem__(self, indices, value):  self.data[indices] = value.data if isinstance(value, Tensor) else value
   def __equal__(self, other):             return np.equal(self.data, other.data)
 
   # Movement Ops
