@@ -37,7 +37,7 @@ class Testnet(nn.Module):
 
   def forward(self, x):
     x = self.pool(self.bn2d(self.conv2d(x))).relu()
-    x = x.reshape(BS, -1)
+    x = x.reshape(BS, -1) # TODO: use flatten when done fixing it
     x = self.fc(x)
     return x.softmax()
 

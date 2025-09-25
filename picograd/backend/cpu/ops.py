@@ -1,4 +1,5 @@
 import numpy as np
+from numpy.lib.stride_tricks import as_strided
 from typing import Tuple
 
 from picograd.util import *
@@ -64,6 +65,22 @@ class BinaryOps:
     assert w.shape[1] % 2 == 1, "Kernel dimensions must be odd"
     assert a.shape[2] >= w.shape[1] and a.shape[3] >= w.shape[2], "Input must be larger than or equal to kernel dimensions"
 
+    def im2col(a, kernel_size, stride):
+      BS, C, H, W = a.shape
+      H_out = (H - kernel_size)//stride + 1
+      W_out = (W - kernel_size)//stride + 1
+
+      shape = (BS, C, H_out, W_out, kernel_size, kernel_size)
+      strides = (
+        a.strides[0],
+        a.strides[1],
+        stride * a.strides[2],
+        stride * a.strides[3],
+        a.strides[2],
+        a.strides[3],
+      )
+      return as_strided(a, shape=shape, strides=strides)
+
     BS, C_in, H, W = a.shape
     C_out, _, kernel_size, _ = w.shape
 
@@ -78,20 +95,12 @@ class BinaryOps:
     else:
       a_padded = a
 
-    for batch in range(BS):
-      for out_c in range(out_channels):
-        for i in range(H_out):
-          for j in range(W_out):
-            val = b[out_c]  # add bias once per output element
-            for in_c in range(in_channels):
-              # sliding window start indices
-              h_start = i * stride
-              w_start = j * stride
-
-              # convolution sum for this position
-              window = a_padded[batch, in_c, h_start:h_start+kernel_size, w_start:w_start+kernel_size]
-              val += np.sum(window * w[out_c, in_c])
-            out[batch, out_c, i, j] = val
+    cols = im2col(a_padded, kernel_size, stride)    # (BS, in_c, H_out, W_out, k, k)
+    cols = cols.reshape(BS, in_channels, H_out, W_out, -1).transpose(0,2,3,1,4).reshape(BS, H_out*W_out, -1)  # (BS, H_out * W_out, in_c * k * k)
+    w_flat = w.reshape(out_channels, -1)            # (out_c, in_c * k * k)
+    out_flat = cols @ w_flat.T                      # (BS, H_out*W_out, out_c)
+    out = out_flat.transpose(0,2,1).reshape(BS, out_channels, H_out, W_out)
+    out += b[:, None, None]
     return out
 
   @staticmethod
@@ -443,9 +452,8 @@ class MovementOps:
       a.grad += grad_out.reshape(original_shape)
 
   @staticmethod
-  def unsqueeze(a: "Tensor", axis: Tuple[int]) -> np.ndarray:
-    for ax in sorted(axis):
-      a.data = np.expand_dims(a.data, axis=ax)
+  def unsqueeze(a: "Tensor", axis: int) -> np.ndarray:
+    a.data = np.expand_dims(a.data, axis=axis)
     return a.data
   
   @staticmethod
