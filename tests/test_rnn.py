@@ -47,11 +47,12 @@ def numpy_rnn(x, h_0, model):
   return y, h_prev
 
 def test_rnn():
-  x = Tensor.random((1, 3, 10), device=device, name="x")  # Sequence length 3, input size 10
-  h_0 = Tensor.random((1, 5), device=device, name="h_0")  # Hidden size 5
+  x = Tensor.random((1, 3, 10), device=device, name="x")  # (batch, sequence_size, input_size)
+  h_0 = Tensor.random((1, 5), device=device, name="h_0")  # (batch, hidden_size)
 
   model = Net()
   out, h_n = model(x, h_0)
+  out.backward()
   draw_dot(out, path="graphs/rnn")
 
   y_ref, h_n_ref = numpy_rnn(x, h_0, model)

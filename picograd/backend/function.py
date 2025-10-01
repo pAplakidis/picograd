@@ -34,6 +34,7 @@ class OPS(Enum):
   Unsqueeze = auto()
   Squeeze = auto()
   Transpose = auto()
+  Cat = auto()
   
   # Reduce ops
   SUM = auto()
@@ -354,19 +355,21 @@ class Unsqueeze(Function):
   def forward(self, a: "Tensor", axis):
     self.a = a
     self.axis = axis
+    self.original_shape = a.shape
     return self.MovementOps.unsqueeze(a, axis)
   
   def backward(self, grad_out):
-    self.MovementOps.unsqueeze_back(self.a, grad_out, self.axis)
+    self.MovementOps.unsqueeze_back(self.a, grad_out, self.axis, self.original_shape)
 
 class Squeeze(Function):
   def forward(self, a: "Tensor", axis):
     self.a = a
     self.axis = axis
+    self.original_shape = a.shape
     return self.MovementOps.squeeze(a, axis)
   
   def backward(self, grad_out):
-    self.MovementOps.squeeze_back(self.a, grad_out, self.axis)
+    self.MovementOps.squeeze_back(self.a, grad_out, self.axis, self.original_shape)
 
 class Transpose(Function):
   def forward(self, a: "Tensor", axes: Tuple[int] = None):

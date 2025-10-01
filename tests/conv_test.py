@@ -17,7 +17,7 @@ def train(t_in, gt):
   epochs = 10
   for i in range(epochs):
     print("[+] epoch", i+1)
-    conv1 = nn.Conv2d(3, 6, 3)
+    conv1 = nn.Conv2D(3, 6, 3)
     t_in.layer = conv1
     t1 = conv1(t_in)
 

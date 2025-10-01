@@ -279,6 +279,55 @@ class Tensor:
     out._backward = lambda: func.backward(out.grad if self.device.name == Devices.CPU else out.device_grad)
     return out
 
+  @staticmethod
+  def cat(tensors: list["Tensor"], axis=0):
+    """Concatenate a sequence of tensors along an existing axis"""
+
+    assert len(tensors) > 0, "Cat expects a non-empty list of tensors"
+    # assert all(isinstance(t, "Tensor") for t in tensors), "Cat expects a list of Tensors"
+    base_shape = list(tensors[0].shape)
+    for t in tensors[1:]:
+      for i, (a, b) in enumerate(zip(base_shape, t.shape)):
+        if i == axis:
+          continue
+        assert a == b, f"Cat expects all tensors to have the same shape except along axis {axis}, but got shapes {base_shape} vs {t.shape}"
+
+    device = tensors[0].device
+    requires_grad = any(t.requires_grad for t in tensors)
+
+    datas = [t.data for t in tensors]
+    out_data = np.concatenate(datas, axis=axis)
+    out = Tensor(
+      out_data,
+      _prev=set(tensors),
+      device=device,
+      requires_grad=requires_grad
+    )
+    out.prev_op = OPS.Cat
+
+    def _backward():
+      if out.grad is None: return
+
+      sizes = [t.shape[axis] for t in tensors]
+      grads = np.split(out.grad, np.cumsum(sizes)[:-1], axis=axis)
+      for t, g in zip(tensors, grads):
+        if not t.requires_grad: continue
+        if t.grad is None:
+          t.grad = g
+        else:
+          t.grad += g
+    out._backward = _backward
+    return out
+
+  @staticmethod
+  def stack(tensors: list["Tensor"], axis=0):
+    """
+    Stack tensors along a new axis (wrapper over cat)
+    Equivalent to: cat([t.unsqueeze(axis) for t in tensors], axis=axis)
+    """
+    assert len(tensors) > 0, "Stack expects a non-empty list of tensors"
+    return Tensor.cat([t.unsqueeze(axis) for t in tensors], axis=axis)
+
   # Slices
   # def __getitem__(self, indices):         return self.data[indices]
   # def __setitem__(self, indices, value):  self.data[indices] = value

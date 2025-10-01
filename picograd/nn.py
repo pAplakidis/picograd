@@ -107,7 +107,7 @@ class Linear(Layer):
     return self.t_out
 
 
-class Conv2d(Layer):
+class Conv2D(Layer):
   def __init__(self, in_channels: int, out_channels: int, kernel_size: int, stride=1, padding=0):
     super().__init__()
     self.type = LayerType.CONV2D
@@ -284,13 +284,25 @@ class RNN(Layer):
 
     y = Tensor.zeros((x.shape[0], x.shape[1], self.hidden_size), device=self.device, name="rnn_out") # output tensor
     h_prev = Tensor.zeros((x.shape[0], self.hidden_size), device=self.device, name="h_0") if h_0 is None else h_0
-    # FIXME: graph is wrong
-    for t in range(x.shape[1]):
-      x_t = x[:, t, :]                  # (batch, input_size)
+
+    # TODO: cleaner solution graph is wrong due to slicing
+    # for t in range(x.shape[1]):
+    #   x_t = x[:, t, :]                  # (batch, input_size)
+    #   a_t = x_t @ self.u + h_prev @ self.weight + self.b
+    #   h_t = a_t.tanh()
+    #   o_t = h_t @ self.v + self.c       # (batch, hidden_size)
+    #   y[:, t, :] = o_t.softmax(axis=-1)
+    #   h_prev = h_t
+
+    ys = []
+    xs = [x[:, t, :] for t in range(x.shape[1])]
+    for x_t in xs:
       a_t = x_t @ self.u + h_prev @ self.weight + self.b
       h_t = a_t.tanh()
-      o_t = h_t @ self.v + self.c       # (batch, hidden_size)
-      y[:, t, :] = o_t.softmax(axis=-1)
+      o_t = h_t @ self.v + self.c
+      y_t = o_t.softmax()
+      ys.append(y_t)
       h_prev = h_t
 
+    y = Tensor.stack(ys, axis=1)  # (batch, seq_len, hidden_size)
     return y, h_prev

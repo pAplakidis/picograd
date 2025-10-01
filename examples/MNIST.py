@@ -30,7 +30,7 @@ def get_data():
 class Testnet(nn.Module):
   def __init__(self, out_feats):
     super(Testnet, self).__init__()
-    self.conv2d = nn.Conv2d(1, 1, 3)
+    self.conv2d = nn.Conv2D(1, 1, 3)
     self.bn2d = nn.BatchNorm2D(1)
     self.pool = nn.MaxPool2D()
     self.fc = nn.Linear(625, out_feats)
