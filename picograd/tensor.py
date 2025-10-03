@@ -260,6 +260,16 @@ class Tensor:
     Returns: New tensor resulting from the operation.
     """
 
+    # handle scalars
+    tensor_operands = []
+    for t in operands:
+      assert isinstance(t, Tensor) or isinstance(t, (int, float)), f"Operand {t} must be a Tensor or a scalar/numeric. Got {type(t)} for operand {t}."
+      if isinstance(t, (int, float)):
+        t = Tensor([t], name=str(t), requires_grad=False, device=self.device)
+      assert t.device.name == self.device.name, f"All tensors must be on the same device. Got {self.device.name} and {t.device.name}."
+      tensor_operands.append(t)
+    operands = tuple(tensor_operands)
+
     func = get_op(op_name, self.device.name)
     tensor_inputs = (self,) + operands
     prev = tensor_inputs
