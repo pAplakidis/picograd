@@ -44,11 +44,11 @@ class BinaryOps:
     if b.requires_grad: b.grad += a.data.T @ grad_out
 
   @staticmethod
-  def pow(a: "Tensor", b: float) -> np.ndarray: return a.data ** b
+  def pow(a: "Tensor", b: "Tensor") -> np.ndarray: return a.data ** b.data
 
   @staticmethod
-  def pow_back(a: "Tensor", b: float, grad_out: np.ndarray):
-    if a.requires_grad: a.grad += b * (a.data ** (b - 1)) * grad_out
+  def pow_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray):
+    if a.requires_grad: a.grad += b.data * (a.data ** (b.data - 1)) * grad_out
 
   @staticmethod
   def conv2d(A: "Tensor", Weight: "Tensor", Bias: "Tensor",

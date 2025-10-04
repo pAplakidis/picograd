@@ -3,7 +3,7 @@ import os
 import ctypes
 import numpy as np
 from sys import platform
-from typing import Optional
+from typing import Optional, Union
 
 from picograd.print_utils import *
 from picograd.backend.function import *
@@ -241,6 +241,10 @@ class Tensor:
     self.dtype = np.int64
     return self
 
+  def scalar_to_tensor(self, value: Union[int, float]):
+    assert isinstance(value, Tensor) or isinstance(value, (int, float)), f"Operand {value} must be a Tensor or a scalar (int/float). Got {type(value)}."
+    return Tensor([value], name=str(value), requires_grad=False, device=self.device) if isinstance(value, (int, float)) else value
+
   def create_op(
       self,
       op_name: str,
@@ -260,16 +264,7 @@ class Tensor:
     Returns: New tensor resulting from the operation.
     """
 
-    # handle scalars
-    tensor_operands = []
-    for t in operands:
-      assert isinstance(t, Tensor) or isinstance(t, (int, float)), f"Operand {t} must be a Tensor or a scalar/numeric. Got {type(t)} for operand {t}."
-      if isinstance(t, (int, float)):
-        t = Tensor([t], name=str(t), requires_grad=False, device=self.device)
-      assert t.device.name == self.device.name, f"All tensors must be on the same device. Got {self.device.name} and {t.device.name}."
-      tensor_operands.append(t)
-    operands = tuple(tensor_operands)
-
+    operands = tuple([self.scalar_to_tensor(t) for t in operands])
     func = get_op(op_name, self.device.name)
     tensor_inputs = (self,) + operands
     prev = tensor_inputs

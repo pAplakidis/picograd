@@ -170,7 +170,7 @@ class Dot(Function):
     self.BinaryOps().dot_back(self.a, self.b, grad_out)
 
 class Pow(Function):
-  def forward(self, a: "Tensor", b: float) -> "Tensor":
+  def forward(self, a: "Tensor", b: "Tensor") -> "Tensor":
     self.a, self.b = a, b
     return self.BinaryOps.pow(a, b)
 
