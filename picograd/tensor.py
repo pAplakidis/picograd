@@ -158,19 +158,19 @@ class Tensor:
 
   # TODO: implement all tensor generators + cuda
   @staticmethod
-  def random(shape: Tuple[int], name="t", dtype=np.float32, *args, **kwargs):
+  def random(shape: Tuple[int], dtype=np.float32, *args, **kwargs):
     return Tensor(np.random.randn(*shape).astype(dtype), *args, **kwargs)
   
   @staticmethod
-  def zeros(shape: Tuple[int], name="t", dtype=np.float32, *args, **kwargs):
+  def zeros(shape: Tuple[int], dtype=np.float32, *args, **kwargs):
     return Tensor(np.zeros(shape, dtype=dtype), *args, **kwargs)
   
   @staticmethod
-  def ones(shape: Tuple[int], name="t", dtype=np.float32, *args, **kwargs):
+  def ones(shape: Tuple[int], dtype=np.float32, *args, **kwargs):
     return Tensor(np.ones(shape, dtype=dtype), *args, **kwargs)
   
   @staticmethod
-  def eye(n: int, name="t", dtype=np.float32, *args, **kwargs):
+  def eye(n: int, dtype=np.float32, *args, **kwargs):
     return Tensor(np.eye(n, dtype=dtype), *args, **kwargs)
 
   def to(self, device: Device):

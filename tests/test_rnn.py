@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import sys
+import unittest
 import numpy as np
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -12,13 +13,22 @@ from picograd.draw_utils import draw_dot
 device = Device(Devices.CPU)
 print("[*] Using device", device.name, "\n")
 
-class Net(nn.Module):
+class RNNNet(nn.Module):
   def __init__(self):
-    super(Net, self).__init__()
+    super().__init__()
     self.rnn = nn.RNN(input_size=10, hidden_size=5, num_layers=1, batch_first=True)
 
   def forward(self, x, h_0):
     out, h_n = self.rnn(x, h_0)
+    return out, h_n
+
+class LSTMNet(nn.Module):
+  def __init__(self):
+    super().__init__()
+    self.lstm = nn.LSTM(input_size=10, hidden_size=5, num_layers=1)
+
+  def forward(self, x, h_0):
+    out, h_n = self.lstm(x, h_0)
     return out, h_n
 
 def numpy_rnn(x, h_0, model):
@@ -46,19 +56,30 @@ def numpy_rnn(x, h_0, model):
     h_prev = h_t
   return y, h_prev
 
-def test_rnn():
-  x = Tensor.random((1, 3, 10), device=device, name="x")  # (batch, sequence_size, input_size)
-  h_0 = Tensor.random((1, 5), device=device, name="h_0")  # (batch, hidden_size)
+class RecurrentTest(unittest.TestCase):
+  def test_rnn(self):
+    x = Tensor.random((1, 3, 10), device=device, name="x")  # (batch, sequence_size, input_size)
+    h_0 = Tensor.random((1, 5), device=device, name="h_0")  # (batch, hidden_size)
 
-  model = Net()
-  out, h_n = model(x, h_0)
-  out.backward()
-  draw_dot(out, path="graphs/rnn")
+    model = RNNNet()
+    out, h_n = model(x, h_0)
+    out.backward()
+    draw_dot(out, path="graphs/rnn")
 
-  y_ref, h_n_ref = numpy_rnn(x, h_0, model)
-  np.testing.assert_allclose(out.data, y_ref, atol=1e-5, rtol=1e-5)
-  print("[+] RNN OK")
+    y_ref, h_n_ref = numpy_rnn(x, h_0, model)
+    np.testing.assert_allclose(out.data, y_ref, atol=1e-5, rtol=1e-5)
+    print("[+] RNN OK")
+
+  def test_lstm(self):
+    x = Tensor.random((1, 3, 10), device=device, name="x")  # (batch, sequence_size, input_size)
+    h_0 = Tensor.random((1, 5), device=device, name="h_0")  # (batch, hidden_size)
+
+    model = LSTMNet()
+    out, h_n = model(x, h_0)
+    # out.backward()  # FIXME: ValueError: non-broadcastable output operand with shape (5,5) doesn't match the broadcast shape (5,5,5)
+    draw_dot(out, path="graphs/lstm")
+    print("[+] LSTM OK")
 
 
 if __name__ == "__main__":
-  test_rnn()
+  unittest.main()
