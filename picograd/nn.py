@@ -50,28 +50,40 @@ class Module:
   def __call__(self, *params):
     return self.forward(*params)
 
+  def get_layers(self):
+    layers = []
+    for _, v in self.__dict__.items():
+      if isinstance(v, Layer):
+        layers.append(v)
+    return layers
+
   def get_params(self):
-    # TODO: params are tensors(weights, biases, etc) not layers
-    self.params = []
-    for name, param in self.__dict__.items():
-      if isinstance(param, Layer):
-        self.params.append(param)
-    return self.params
+    params = []
+    for layer in self.get_layers():
+      params.extend(layer.parameters())
+    return params
 
 
-# TODO: for all Tensors defined inside the layers, set device to self.device
 class Layer:
   def __init__(self, device = Device(Devices.CPU)):
     self.type = None
     self.t_in = None
     self.t_out = None
-    self.weight = None
-    self.bias = None
     self.train = True
     self.device = device
+    self._params: dict[str, Tensor] = {}
 
     self.subgraph_name = None
     self._subgraph_nodes = []
+
+  def register_param(self, name: str, tensor: Tensor):
+    tensor.name = name
+    self._params[name] = tensor
+    return tensor
+
+  def parameters(self):
+    """Returns a list of Tensors registered on this layer."""
+    return list(self._params.values())
 
   def to(self, device: Device):
     self.device = device
@@ -100,6 +112,9 @@ class Linear(Layer):
       raise ValueError("Invalid initialization method")
     self.bias = Tensor(np.zeros((self.out_feats,)), name="linear-bias", device=self.device)
 
+    self.register_param("weight", self.weight)
+    self.register_param("bias", self.bias)
+
   def __call__(self, x: Tensor):
     assert len(x.shape) >= 2, "Input Tensor requires batch_size dimension"
     self.t_in = x
@@ -117,11 +132,14 @@ class Conv2D(Layer):
     self.stride = stride
     self.padding = padding
 
+    assert self.kernel_size % 2 != 0, "Conv2D kenrel_size must be odd"
+    assert self.kernel_size in [3, 5, 7, 9]
+
     self.weight = Tensor(np.random.uniform(0.0, 1.0, (out_channels, in_channels, kernel_size, kernel_size)), "conv2D_kernel", device=self.device)
     self.bias = Tensor(np.zeros((out_channels,)), name="bias", device=self.device)
 
-    assert self.kernel_size % 2 != 0, "Conv2D kenrel_size must be odd"
-    assert self.kernel_size in [3, 5, 7, 9]
+    self.register_param("weight", self.weight)
+    self.register_param("bias", self.bias)
 
   def __call__(self, x: Tensor):
     self.t_in = x
@@ -172,6 +190,9 @@ class BatchNorm1D(Layer):
     self.running_mean = Tensor.zeros((1, self.n_feats), requires_grad=False, name="batchnorm1d-running-mean", device=self.device)
     self.running_var  = Tensor.ones((1, self.n_feats), requires_grad=False, name="batchnorm1d-running-var", device=self.device)
 
+    self.register_param("weight", self.weight)
+    self.register_param("bias", self.bias)
+
   def __call__(self, x: Tensor):
     assert len(x.shape) == 2, "BatchNorm1D requires input of shape (batch_size, features)"
     assert x.shape[1] == self.n_feats, f"BatchNorm1D requires input with {self.n_feats} features, got {x.shape[1]}"
@@ -206,6 +227,9 @@ class BatchNorm2D(Layer):
     self.running_mean = Tensor.zeros((1, n_feats, 1, 1), requires_grad=False, name="batchnorm2d-running-mean", device=self.device)
     self.running_var  = Tensor.ones((1, n_feats, 1, 1), requires_grad=False, name="batchnorm2d-running-var", device=self.device)
 
+    self.register_param("weight", self.weight)
+    self.register_param("bias", self.bias)
+
   def __call__(self, x: Tensor):
     assert len(x.shape) == 4, f"BatchNorm2D requires input of shape (N,C,H,W), got {x.shape}"
     N, C, H, W = x.shape
@@ -237,6 +261,9 @@ class LayerNorm(Layer):
 
     self.weight = Tensor.ones(self.normalized_shape, name="layernorm-gamma", device=self.device)
     self.bias   = Tensor.zeros(self.normalized_shape, name="layernorm-beta", device=self.device)
+
+    self.register_param("weight", self.weight)
+    self.register_param("bias", self.bias)
 
   def __call__(self, x: Tensor):
     axes = tuple(range(-len(self.normalized_shape), 0)) # normalize across last len(normalized_shape) dims
@@ -272,11 +299,16 @@ class RNN(Layer):
     self.bidirectional = bidirectional
     
     # FIXME: optim - learnable paramaters are no longer weight and bias (add to a params[] list and modify optim)
-    self.u      = Tensor.random((input_size, hidden_size), device=self.device, name="rnn_u")  # input to hidden weight
-    self.v      = Tensor.random((hidden_size, hidden_size), device=self.device, name="rnn_v") # hidden to output weight
-    self.weight = Tensor.random((hidden_size, hidden_size), device=self.device, name="rnn_w") # hidden to hidden weight
-    self.b      = Tensor.zeros((hidden_size,), device=self.device, name="rnn_b") if bias else None
-    self.c      = Tensor.zeros((hidden_size,), device=self.device, name="rnn_c") if bias else None
+    self.u = self.register_param('u',           Tensor.random((input_size, hidden_size), device=self.device, name="rnn_u"))
+    self.v = self.register_param('v',           Tensor.random((hidden_size, hidden_size), device=self.device, name="rnn_v"))
+    self.weight = self.register_param("weight", Tensor.random((hidden_size, hidden_size), device=self.device, name="rnn_w"))
+
+    if bias:
+      self.b = self.register_param('b', Tensor.zeros((hidden_size,), device=self.device, name="rnn_b"))
+      self.c = self.register_param('c', Tensor.zeros((hidden_size,), device=self.device, name="rnn_c"))
+    else:
+      self.b = None
+      self.c = None
 
   def __call__(self, x: Tensor, h_0: Tensor=None):
     """"""
