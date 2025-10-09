@@ -452,13 +452,11 @@ class MovementOps:
       a.grad += np.expand_dims(grad_out, axis=axis).reshape(original_shape)
 
   @staticmethod
-  def unsqueeze(a: "Tensor", axis: int) -> np.ndarray:
-    a.data = np.expand_dims(a.data, axis=axis)
-    return a.data
+  def unsqueeze(a: "Tensor", axis: int) -> np.ndarray: return np.expand_dims(a.data, axis=axis)
   
   @staticmethod
   def unsqueeze_back(a: "Tensor", grad_out: np.ndarray, axis: int, original_shape: Tuple[int]):
-    if a.requires_grad: a.grad == np.sum(grad_out, axis=axis).reshape(original_shape)
+    if a.requires_grad: a.grad = np.sum(grad_out, axis=axis).reshape(original_shape)
   
 
 # TODO:

@@ -374,7 +374,7 @@ class LSTM(Layer):
     self.w_hi = self.register_param("w_hi", Tensor.random((hidden_size, hidden_size), device=self.device, name="lstm_w_hi"))
     self.w_hf = self.register_param("w_hf", Tensor.random((hidden_size, hidden_size), device=self.device, name="lstm_w_hf"))
     self.w_ho = self.register_param("w_ho", Tensor.random((hidden_size, hidden_size), device=self.device, name="lstm_w_ho"))
-    self.w_hc = self.register_param("w_ho", Tensor.random((hidden_size, hidden_size), device=self.device, name="lstm_w_ho"))
+    self.w_hc = self.register_param("w_hc", Tensor.random((hidden_size, hidden_size), device=self.device, name="lstm_w_ho"))
 
     if bias:
       self.b_i = self.register_param("b_i", Tensor.zeros((hidden_size,), device=self.device, name="lstm_b_i"))
@@ -397,12 +397,11 @@ class LSTM(Layer):
     h_prev = Tensor.zeros((batch_size, self.hidden_size), device=self.device) if h_0 is None else h_0
     c_prev = Tensor.zeros((batch_size, self.hidden_size), device=self.device) if c_0 is None else c_0
 
-    y      = Tensor.zeros((x.shape[0], x.shape[1], self.hidden_size), device=self.device, name="rnn_out")
-    h_prev = Tensor.zeros((x.shape[0], self.hidden_size), device=self.device, name="h_0") if h_0 is None else h_0
-    x_seq = x.transpose((0, 1, 2)) # (seq_len, batch, input_size)
+    y      = Tensor.zeros((batch_size, seq_len, self.hidden_size), device=self.device, name="rnn_out")
+    h_prev = Tensor.zeros((batch_size, self.hidden_size), device=self.device, name="h_0") if h_0 is None else h_0
 
     ys = []
-    xs = [x[:, t, :] for t in range(x.shape[1])]
+    xs = [x[:, t, :] for t in range(seq_len)]
     for x_t in xs:
       i_t = (x_t @ self.w_i + h_prev @ self.w_hi + self.b_i).sigmoid()
       f_t = (x_t @ self.w_f + h_prev @ self.w_hf + self.b_f).sigmoid()

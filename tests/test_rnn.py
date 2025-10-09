@@ -76,7 +76,7 @@ class RecurrentTest(unittest.TestCase):
 
     model = LSTMNet()
     out, h_n = model(x, h_0)
-    # out.backward()  # FIXME: ValueError: non-broadcastable output operand with shape (5,5) doesn't match the broadcast shape (5,5,5)
+    out.backward()
     draw_dot(out, path="graphs/lstm")
     print("[+] LSTM OK")
 
