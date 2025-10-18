@@ -64,7 +64,6 @@ class RecurrentTest(unittest.TestCase):
     model = RNNNet()
     out, h_n = model(x, h_0)
     out.backward()
-    draw_dot(out, path="graphs/rnn")
 
     y_ref, h_n_ref = numpy_rnn(x, h_0, model)
     np.testing.assert_allclose(out.data, y_ref, atol=1e-5, rtol=1e-5)
@@ -77,7 +76,6 @@ class RecurrentTest(unittest.TestCase):
     model = LSTMNet()
     out, h_n = model(x, h_0)
     out.backward()
-    draw_dot(out, path="graphs/lstm")
     print("[+] LSTM OK")
 
 

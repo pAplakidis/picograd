@@ -78,7 +78,6 @@ class ConvNetIntegrationTest(unittest.TestCase):
         loss.backward()
         optim.step()
 
-        if batch_idx == 0 and i == 0: pg.draw_dot(loss, path="graphs/mnist")
         print(f"Loss: {loss.mean().item:.2f}")
         break
       print(f"Avg loss: {np.array(epoch_losses).mean()}")

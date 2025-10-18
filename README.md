@@ -42,7 +42,7 @@ Examples
 Tests
 
 ```bash
-./test/ops_test.py
+python3 -m unittest discover -s tests -p "test_*.py" -v
 ```
 
 Code
@@ -70,7 +70,7 @@ draw_dot(e, path="graphs/test")
 You can set debug levels by assigning the debug value to DEBUG env variable.
 
 ```bash
-DEBUG=3 ./test/test_dot.py
+DEBUG=3 ./test/test_ops.py
 ```
 
 ## TODO
