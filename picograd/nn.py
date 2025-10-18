@@ -115,11 +115,27 @@ class Linear(Layer):
     self.register_param("weight", self.weight)
     self.register_param("bias", self.bias)
 
-  def __call__(self, x: Tensor):
+  def __call__(self, x: Tensor) -> Tensor:
     assert len(x.shape) >= 2, "Input Tensor requires batch_size dimension"
     self.t_in = x
     self.t_out = x.linear(self.weight, self.bias)
     return self.t_out
+    
+
+class Conv1D(Layer):
+  def __init__(self, in_channels: int, out_channels: int, kernel_size: int, stride=1, padding=0):
+    super.__init__()
+    self.type = LayerType.CONV1D
+    self.in_channels = in_channels
+    self.out_channels = out_channels
+    self.kernel_size = kernel_size
+    self.stride = stride
+    self.padding = padding
+
+    # TODO:
+
+  def __call__(self, x: Tensor) -> Tensor:
+    return None
 
 
 class Conv2D(Layer):
@@ -141,7 +157,7 @@ class Conv2D(Layer):
     self.register_param("weight", self.weight)
     self.register_param("bias", self.bias)
 
-  def __call__(self, x: Tensor):
+  def __call__(self, x: Tensor) -> Tensor:
     self.t_in = x
     self.t_out = x.conv2d(self.weight, self.bias, self.in_channels, self.out_channels, self.stride, self.padding, debug=False)
     return self.t_out
@@ -155,7 +171,7 @@ class MaxPool2D(Layer):
     self.filter = filter
     self.stride = stride
 
-  def __call__(self, x: Tensor):
+  def __call__(self, x: Tensor) -> Tensor:
     self.t_in = x
     self.t_out = x.maxpool2d(self.filter, self.stride)
     return self.t_out
@@ -170,7 +186,7 @@ class AvgPool2D(Layer):
     self.stride = stride
     self.padding = padding
 
-  def __call__(self, x: Tensor):
+  def __call__(self, x: Tensor) -> Tensor:
     self.t_in = x
     self.t_out = x.avgpool2d(self.filter, self.stride, self.padding)
     return self.t_out
@@ -193,7 +209,7 @@ class BatchNorm1D(Layer):
     self.register_param("weight", self.weight)
     self.register_param("bias", self.bias)
 
-  def __call__(self, x: Tensor):
+  def __call__(self, x: Tensor) -> Tensor:
     assert len(x.shape) == 2, "BatchNorm1D requires input of shape (batch_size, features)"
     assert x.shape[1] == self.n_feats, f"BatchNorm1D requires input with {self.n_feats} features, got {x.shape[1]}"
 
@@ -230,7 +246,7 @@ class BatchNorm2D(Layer):
     self.register_param("weight", self.weight)
     self.register_param("bias", self.bias)
 
-  def __call__(self, x: Tensor):
+  def __call__(self, x: Tensor) -> Tensor:
     assert len(x.shape) == 4, f"BatchNorm2D requires input of shape (N,C,H,W), got {x.shape}"
     N, C, H, W = x.shape
     assert C == self.n_feats, f"Expected {self.n_feats} channels, got {C}"
@@ -265,7 +281,7 @@ class LayerNorm(Layer):
     self.register_param("weight", self.weight)
     self.register_param("bias", self.bias)
 
-  def __call__(self, x: Tensor):
+  def __call__(self, x: Tensor) -> Tensor:
     axes = tuple(range(-len(self.normalized_shape), 0)) # normalize across last len(normalized_shape) dims
     mean = x.mean(axis=axes, keepdims=True)
     std  = x.std(axis=axes, keepdims=True)

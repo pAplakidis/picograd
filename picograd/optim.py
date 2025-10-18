@@ -124,3 +124,81 @@ class AdamW(Optim):
       # decoupled weight decay
       if self.weight_decay:
         p.data -= self.lr * self.weight_decay * p.data
+
+
+# Learning Rate Schedulers
+
+class ReduceLROnPlateau:
+  def __init__(
+    self,
+    optmizer: Optim,
+    mode="min",
+    factor=0.1,
+    patience=10,
+    threshold=1e-4,
+    threshhold_mode="rel",
+    cooldown=0,
+    min_lr=0.0,
+    eps=1e-8,
+    verbose=False
+  ):
+    self.optimizer = optmizer
+    self.mode = mode                        # 'min' or 'max'
+    self.factor = factor
+    self.patience = patience
+    self.threshold = threshold
+    self.threshhold_mode = threshhold_mode  # 'rel' or 'abs'
+    self.cooldown = cooldown
+    self.min_lr = min_lr
+    self.eps = eps
+    self.verbose = verbose
+
+    self.best = None
+    self.num_bad_epochs = 0
+    self.in_cooldown = False
+
+  def _is_better(self, metric):
+    if self.best is None:
+      return True
+    
+    if self.mode == "min":
+      if self.threshhold_mode == "rel":
+        return metric < self.best * (1 - self.threshold)
+      else:
+        return metric < self.best - self.threshold
+    else:
+      if self.threshhold_mode == "rel":
+        return metric > self.best * (1 + self.threshold)
+      else:
+        return metric > self.best + self.threshold
+
+  def _reduce_lr(self):
+    old_lr = self.optimizer.lr
+    new_lr = max(old_lr * self.factor, self.min_lr)
+    if old_lr - new_lr > self.eps:
+      self.optimizer.lr = new_lr
+
+  def step(self, metric):
+    if self.best is None:
+      self.best = metric
+      return
+    
+    if self.in_cooldown:
+      self.cooldown_counter -= 1
+      if self.cooldown_counter <= 0:
+        self.in_cooldown = False
+
+    if self._is_better(metric):
+      self.best = metric
+      self.num_bad_epochs = 0
+    else:
+      self.num_bad_epochs += 1
+
+    if (not self.in_cooldown) and (self.num_bad_epochs > self.patience):
+      self._reduce_lr()
+      if self.verbose:
+        print(f"[ReduceLROnPlateau] Reducing learning rate to: {self.optimizer.lr:.6e}")
+
+      self.in_cooldown = True
+      self.cooldown_counter = self.cooldown
+      self.num_bad_epochs = 0

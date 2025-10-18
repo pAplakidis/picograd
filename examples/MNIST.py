@@ -11,12 +11,12 @@ from tqdm import tqdm
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import picograd as pg
 import picograd.nn as nn
-from picograd.optim import AdamW
+from picograd.optim import AdamW, ReduceLROnPlateau
 from picograd.loss import CrossEntropyLoss
 
 BS = 16
-LR = 1e-6
-EPOCHS = 30
+LR = 1e-5
+EPOCHS = 10
 
 device = pg.Device(pg.Devices.CPU)
 # device = pg.Device(pg.Devices.CUDA) if pg.is_cuda_available() else pg.Device(pg.Devices.CPU)
@@ -35,11 +35,10 @@ class Testnet(nn.Module):
     self.conv2d = nn.Conv2D(1, 1, 3)
     self.bn2d = nn.BatchNorm2D(1)
     self.pool = nn.MaxPool2D()
-    # self.fc = nn.Linear(625, out_feats)
-    self.fc = nn.Linear(784, out_feats)
+    self.fc = nn.Linear(625, out_feats)
 
   def forward(self, x):
-    # x = self.pool(self.bn2d(self.conv2d(x))).relu()
+    x = self.pool(self.bn2d(self.conv2d(x))).relu()
     x = x.reshape(x.shape[0], -1) # TODO: use flatten when done fixing it
     x = self.fc(x)
     return x.softmax()
@@ -51,6 +50,7 @@ if __name__ == '__main__':
   in_feats = X_train.shape[1] * X_train.shape[2]
   model = Testnet(10).to(device)
   optim = AdamW(model.get_params(), lr=LR)
+  scheduler = ReduceLROnPlateau(optmizer=optim, factor=0.5, patience=2, min_lr=1e-8, verbose=True)
 
   # Training Loop
   losses = []
@@ -88,6 +88,7 @@ if __name__ == '__main__':
       if batch_idx == 0 and i == 0: pg.draw_dot(loss, path="graphs/mnist")
       t.set_description(f"Loss: {loss.mean().item:.2f} - Acc: {acc:.2f}")
     print(f"Avg loss: {np.array(epoch_losses).mean():.4f} - Avg acc: {np.array(epoch_accs).mean():.2f}")
+    scheduler.step(np.array(epoch_losses).mean())
 
   plt.plot(losses)
   plt.plot(accuracies)
