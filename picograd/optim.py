@@ -32,14 +32,15 @@ class SGD(Optim):
     for p in self.params:
       if getattr(p, "grad", None) is None:
         continue
-    p.data -= self.lr * p.grad
+      p.data -= self.lr * p.grad
 
 class Adam(Optim):
-  def __init__(self, params, lr=0.001, b1=0.9, b2=0.999, eps=1e-8):
+  def __init__(self, params, lr=0.001, b1=0.9, b2=0.999, eps=1e-8, weight_decay=0.0):
     super().__init__(params, lr)
     self.b1 = b1
     self.b2 = b2
     self.eps = eps
+    self.weight_decay = weight_decay
 
     self.state = {}
     self.t = 0
@@ -63,9 +64,13 @@ class Adam(Optim):
       m = st['m']
       v = st['v']
 
+      # L2 regularization style
+      if self.weight_decay:
+        g.data = g.data + self.weight_decay * p.data
+
       # update biased first and second moment estimates
-      m[:] = self.b1 * m + (1.0 - self.b1) * g
-      v[:] = self.b2 * v + (1.0 - self.b2) * (g * g)
+      m[:] = self.b1 * m + (1.0 - self.b1) * g        # Momentum
+      v[:] = self.b2 * v + (1.0 - self.b2) * (g * g)  # RMSProp
 
       # bias correction
       m_hat = m / (1.0 - (self.b1 ** self.t))
@@ -73,3 +78,49 @@ class Adam(Optim):
 
       # update parameters (in-place)
       p.data -= self.lr * m_hat / (np.sqrt(v_hat) + self.eps)
+
+  
+class AdamW(Optim):
+  def __init__(self, params, lr=0.001, b1=0.9, b2=0.999, eps=1e-8, weight_decay=0.01):
+    super().__init__(params, lr)
+    self.b1 = b1
+    self.b2 = b2
+    self.eps = eps
+    self.weight_decay = weight_decay
+
+    self.state = {}
+    self.t = 0
+
+    for p in self.params:
+      self.state[id(p)] = {
+        'm': np.zeros_like(p.data),
+        'v': np.zeros_like(p.data)
+      }
+  
+  def step(self):
+    self.t += 1
+    max_grad_norm = 1.0
+    self.clip_grad_norm_(max_grad_norm)
+
+    for p in self.params:
+      g = getattr(p, "grad", None)
+      if g is None:
+        continue
+      st = self.state[id(p)]
+      m = st['m']
+      v = st['v']
+
+      # update biased first and second moment estimates
+      m[:] = self.b1 * m + (1.0 - self.b1) * g        # Momentum
+      v[:] = self.b2 * v + (1.0 - self.b2) * (g * g)  # RMSProp
+
+      # bias correction
+      m_hat = m / (1.0 - (self.b1 ** self.t))
+      v_hat = v / (1.0 - (self.b2 ** self.t))
+
+      # update parameters (in-place)
+      p.data -= self.lr * m_hat / (np.sqrt(v_hat) + self.eps)
+
+      # decoupled weight decay
+      if self.weight_decay:
+        p.data -= self.lr * self.weight_decay * p.data
