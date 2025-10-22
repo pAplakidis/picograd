@@ -5,8 +5,19 @@ from typing import Tuple
 from picograd.util import *
 from .math import *
 
+def reduce_grad(grad: np.ndarray, shape: tuple) -> np.ndarray:
+  """Reduce broadcasted gradient `grad` back to `shape`."""
 
-# TODO: backward ops should keep gradients in the device memory
+  # Step 1: collapse extra leading dims
+  while grad.ndim > len(shape): grad = grad.sum(axis=0)
+
+  # Step 2: sum over axes where original shape had 1 (broadcasted dims)
+  for axis, dim in enumerate(shape):
+    if dim == 1: grad = grad.sum(axis=axis, keepdims=True)
+
+  return grad
+
+
 class BinaryOps:
   @staticmethod
   def add(a: "Tensor", b: "Tensor", block_size: Tuple[int] = (8, 8, 8)) -> np.ndarray: # type: ignore
@@ -464,3 +475,52 @@ class ReduceOps:
     grid = ((batch_size + block_size[0] - 1) // block_size[0], 1, 1)
     args = z.device.manager.prep_kargs(z.device_data, y.device_data, z.device_grad, batch_size, n_classes)
     z.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=batch_size * n_classes)
+
+
+# TODO: implement shapetracker to remove numpy from here
+class MovementOps:
+  @staticmethod
+  def reshape(a: "Tensor", new_shape: Tuple[int]) -> np.ndarray: return a.device_data
+
+  @staticmethod
+  def reshape_back(a: "Tensor", grad_out: np.ndarray, original_shape: Tuple[int]):
+    if a.requires_grad: a.device_grad = cuda_add_gpu(a.device_grad, grad_out, a.device.manager, original_shape)
+
+  @staticmethod
+  def transpose(a: "Tensor", axes: Tuple[int] = None) -> np.ndarray: return a.device_data
+
+  # TODO: implement transpose_back
+  @staticmethod
+  def transpose_back(a: "Tensor", grad_out: np.ndarray, axes: Tuple[int] = None):
+    if a.requires_grad: return None
+
+  @staticmethod
+  def expand(a: "Tensor", new_shape: Tuple[int]) -> np.ndarray: return np.broadcast_to(a.data, new_shape)
+
+  @staticmethod
+  def expand_back(a: "Tensor", grad_out: np.ndarray, original_shape: Tuple[int]):
+    if a.requires_grad: a.grad += reduce_grad(grad_out, original_shape)
+  
+  @staticmethod
+  def permute(a: "Tensor", axes: Tuple[int]) -> np.ndarray: return np.transpose(a.data, axes)
+
+  @staticmethod
+  def permute_back(a: "Tensor", grad_out: np.ndarray, axes: Tuple[int]):
+    if a.requires_grad:
+      reverse_axes = np.argsort(axes)
+      a.grad += np.transpose(grad_out, reverse_axes)
+
+  @staticmethod
+  def squeeze(a: "Tensor", axis: Tuple[int]) -> np.ndarray: return np.squeeze(a.data, axis=axis)
+  
+  @staticmethod
+  def squeeze_back(a: "Tensor", grad_out: np.ndarray, axis: int, original_shape: Tuple[int]):
+    if a.requires_grad:
+      a.grad += np.expand_dims(grad_out, axis=axis).reshape(original_shape)
+
+  @staticmethod
+  def unsqueeze(a: "Tensor", axis: int) -> np.ndarray: return np.expand_dims(a.data, axis=axis)
+  
+  @staticmethod
+  def unsqueeze_back(a: "Tensor", grad_out: np.ndarray, axis: int, original_shape: Tuple[int]):
+    if a.requires_grad: a.grad = np.sum(grad_out, axis=axis).reshape(original_shape)

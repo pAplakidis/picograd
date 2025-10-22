@@ -409,13 +409,6 @@ class MovementOps:
     if a.requires_grad: a.grad += grad_out.reshape(original_shape)
 
   @staticmethod
-  def view(a: "Tensor", new_shape: Tuple[int]) -> np.ndarray: return a.data.reshape(new_shape)
-
-  @staticmethod
-  def view_back(a: "Tensor", grad_out: np.ndarray, original_shape: Tuple[int]):
-    if a.requires_grad: a.grad += grad_out.reshape(original_shape)
-
-  @staticmethod
   def transpose(a: "Tensor", axes: Tuple[int] = None) -> np.ndarray:
     if axes is None: axes = tuple(reversed(range(a.data.ndim)))
     return np.transpose(a.data, axes)
