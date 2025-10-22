@@ -12,7 +12,6 @@ DEBUG = int(os.getenv("DEBUG", 0))
 PSEUDO_DEBUG = int(os.getenv("PSEUDO_DEBUG", 0))  # if 1, generate assembly code as string but don't print (helps with segfaults)
 
 
-# TODO: split into BOps, UOps, MOps, ROps classes
 class OPS(Enum):
   # Binary ops
   ADD = auto()
@@ -45,9 +44,11 @@ class OPS(Enum):
   ARGMAX = auto()
   ARGMIN = auto()
 
+  # Pooling
   MaxPool2D = auto()
   AvgPool2D = auto()
 
+  # Loss functions
   MSELoss = auto()
   MAELoss = auto()
   CrossEntropyLoss = auto()

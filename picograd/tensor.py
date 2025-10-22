@@ -78,9 +78,7 @@ class Tensor:
   @property
   def grad(self):
     assert self._grad is not None or self.device_grad is not None, "Tensor grad is not initialized."
-
-    if self.device.name != Devices.CPU and self.device_grad is not None:
-      self.device.manager.dev_grad_to_host(self, free=False)
+    if self.device.name != Devices.CPU and self.device_grad is not None: self.device.manager.dev_grad_to_host(self, free=False)
     return self._grad
 
   @grad.setter
@@ -275,7 +273,7 @@ class Tensor:
     else:
       out = Tensor(
         device_data=out_data,
-        shape=shape if shape is not None else (self.shape,),
+        shape=shape if shape is not None else self.shape,
         _prev=prev,
         device=self.device
       )
@@ -343,20 +341,20 @@ class Tensor:
   # Movement Ops
   # FIXME: view should not create a new tensor, but just change the shape and stride of the current one
   # TODO: shape value for cuda (reshape should not call any op on cuda (?))
-  def reshape(self, *args, **kwargs): shape = args if len(args) > 1 else args[0]; return self.create_op(OPS.Reshape, forward_args=(shape,), forward_kwargs=kwargs)
-  def view(self, *args, **kwargs):    return self.create_op(OPS.Reshape, forward_args=args, forward_kwargs=kwargs)
+  def reshape(self, *args, **kwargs): shape = args if len(args) > 1 else args[0]; return self.create_op(OPS.Reshape, forward_args=(shape,), forward_kwargs=kwargs, shape=shape)
+  def view(self, *args, **kwargs):    return self.create_op(OPS.Reshape, forward_args=args, forward_kwargs=kwargs, shape=args[0] if len(args) == 1 else args)
   def flatten(self):                  return self.reshape(-1) # TODO: axis
   def unsqueeze(self, axis):          return self.create_op(OPS.Unsqueeze, forward_args=(axis,))
   def squeeze(self, axis=0):          return self.create_op(OPS.Squeeze, forward_args=(axis,))
   @property
-  def T(self):                        return self.create_op(OPS.Transpose)
-  def transpose(self, axes):          return self.create_op(OPS.Transpose, forward_args=(axes,))
+  def T(self):                        return self.create_op(OPS.Transpose, shape=(tuple(reversed(self.shape))))
+  def transpose(self, axes=None):     return (axes := tuple(reversed(range(len(self.shape))))) or self.create_op(OPS.Transpose, forward_args=(axes,), shape=tuple(self.shape[i] for i in axes))
 
   # Binary Ops
   def __add__(self, other):     return self.create_op(OPS.ADD, operands=(other,))
   def __mul__(self, other):     return self.create_op(OPS.MUL, operands=(other,))
   def __matmul__(self, other):  return self.dot(other)
-  def dot(self, other):         return self.create_op(OPS.DOT, operands=(other,))
+  def dot(self, other):         return self.create_op(OPS.DOT, operands=(other,), shape=(self.shape[0], other.shape[1]))
   def __pow__(self, other):     return self.create_op(OPS.POW, operands=(other,))
   def __radd__(self, other):    return self + other
   def __sub__(self, other):     return self + (-other)

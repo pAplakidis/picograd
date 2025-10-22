@@ -205,6 +205,8 @@ class TestMovementOps(unittest.TestCase):
     assert t_out.shape == (5,), f"Expected shape (5,), got {t_out.shape}"
     print("[+] Transpose 1D Tensor Test OK")
 
+  # TODO: test squeeze and unsqueeze
+
 
 # --------------- Movement Ops ----------------
 class TestReduceOps(unittest.TestCase):
