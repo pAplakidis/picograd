@@ -30,6 +30,7 @@ class Tensor:
     device = Device(Devices.CPU),
     device_data: Optional[ctypes.c_void_p] = None,
     shape: Optional[Tuple] = None,
+    strides: Optional[Tuple[int]] = None,
   ):
 
     data = np.array(data) if data is not None else None
@@ -37,13 +38,26 @@ class Tensor:
     self._ctx = None  # TODO: use context like pytorch
 
     self.name = name
-    self._shape = shape if data is None else data.shape
     self.debug = DEBUG
     self.verbose = bool(VERBOSE)
     self.requires_grad = requires_grad
 
+    self._shape = shape if data is None else data.shape
     self._data = data if data is not None else np.zeros(self._shape)
     self._grad = np.zeros(self._shape) if requires_grad else None
+
+    # shapetracker
+    if strides is not None:
+      self._strides = tuple(strides)
+    else:
+      if self._data is not None:
+        # numpy strides are bytes -> convert to elements
+        self._strides = tuple(int(s // self._data.itemsize) for s in self._data.strides)
+      elif self._shape is not None:
+        self._strides = default_strides(self._shape)
+      else:
+        self._strides = None
+    self.is_contiguous = check_contiguous(self._shape, self._strides)
 
     self._prev = set(_prev)
     self.prev_op = None
@@ -69,9 +83,15 @@ class Tensor:
   def data(self, value):
     initial_shape = self.shape
     self._data = value
+
+    # update shapetracker
+    if isinstance(value, np.ndarray):
+      self._shape = value.shape
+      self._strides = tuple(int(s // value.itemsize) for s in value.strides)
+      self.is_contiguous = (self._strides == default_strides(self._shape))
+
     if self.device.name != Devices.CPU and self.device_data is not None:
-      if initial_shape != value.shape:
-        self._shape = value.shape
+      if initial_shape != value.shape: self._shape = value.shape
       self.device.manager.free_device_tensor(self.device_data)
       _, self._device_data = self.device.manager.np_to_device(value)
 
@@ -85,6 +105,7 @@ class Tensor:
   def grad(self, value):
     initial_shape = self.shape
     self._grad = value
+    if isinstance(value, np.ndarray): self._shape = value.shape
     # assert initial_shape == value.shape, "Tensor data shape does not match the initialized shape."  # TODO: check if we need grad.shape == data.shape
     if self.device.name != Devices.CPU and self.device_grad is not None:
       self.device.manager.free_device_tensor(self.device_grad)
@@ -120,7 +141,9 @@ class Tensor:
 
   @property
   def shape(self, idxs=None):
-    assert self._data is not None or self.device_data is not None, "Tensor shape is not initialized."
+    assert self._shape is not None or self._data is not None or self.device_data is not None, "Tensor shape is not initialized."
+    if idxs is None: return self._shape if self._data is None else self._data.shape
+
     if self._data is None:
       if self._shape is not None:
         return self._shape
@@ -137,6 +160,19 @@ class Tensor:
     if len(ret) == 1:
       ret = int(ret[0])
     return ret
+
+  @property
+  def strides(self):
+    if self._strides is not None: return tuple(self._strides)
+    if self._data is not None: return tuple(int(s // self._data.itemsize) for s in self._data.strides)
+    return None
+
+  @property
+  def nbytes(self):
+    if self._shape is None: return 0
+    n_elements = 1
+    for d in self._shape: n_elements *= d
+    return n_elements * np.dtype(self.dtype).itemsize
 
   def __repr__(self):
     if self.verbose:
@@ -247,6 +283,7 @@ class Tensor:
       self,
       op_name: str,
       shape: Optional[Tuple] = None,
+      strides: Optional[Tuple[int]] = None,
       operands: Tuple["Tensor"] = (),
       forward_args: Tuple = (),
       forward_kwargs: dict = {},
@@ -274,6 +311,7 @@ class Tensor:
       out = Tensor(
         device_data=out_data,
         shape=shape if shape is not None else self.shape,
+        strides=strides if strides is not None else default_strides(shape if shape is not None else self.shape),
         _prev=prev,
         device=self.device
       )
@@ -281,6 +319,23 @@ class Tensor:
     out.prev_op = op_name
     out._backward = lambda: func.backward(out.grad if self.device.name == Devices.CPU else out.device_grad)
     return out
+
+  def contiguous(self):
+    if self.is_contiguous: return self
+    # allocate contiguous buffer and copy using a strided->contiguous copy kernel (similar to add_strided logic but copying)
+    new = Tensor(shape=self.shape, device=self.device, requires_grad=self.requires_grad)
+    if self.device.name == Devices.CPU:
+      new._data = np.empty(self.shape, dtype=self.dtype)
+      # use numpy fancy indexing or np.copyto with view:
+      np.copyto(new._data, self.data)  # copying from strided view into contiguous array
+      new._strides = default_strides(new._shape)
+      new.is_contiguous = True
+      return new
+    else:
+      # device: call device.manager.strided_to_contig(self.device_data, self.shape, self.strides)
+      dst_ptr = self.device.manager.allocate_device_memory_for_shape(self.shape, dtype=self.dtype)
+      self.device.manager.copy_strided_to_contig(self.device_data, self.shape, self.strides, dst_ptr)
+      return Tensor(device_data=dst_ptr, shape=self.shape, strides=default_strides(self.shape), device=self.device)
 
   @staticmethod
   def cat(tensors: list["Tensor"], axis=0):
@@ -347,8 +402,8 @@ class Tensor:
   def unsqueeze(self, axis):          return self.create_op(OPS.Unsqueeze, forward_args=(axis,))
   def squeeze(self, axis=0):          return self.create_op(OPS.Squeeze, forward_args=(axis,))
   @property
-  def T(self):                        return self.create_op(OPS.Transpose, shape=(tuple(reversed(self.shape))))
-  def transpose(self, axes=None):     return (axes := tuple(reversed(range(len(self.shape))))) or self.create_op(OPS.Transpose, forward_args=(axes,), shape=tuple(self.shape[i] for i in axes))
+  def T(self):                        return self.create_op(OPS.Transpose, shape=(tuple(reversed(self.shape))), strides=tuple(reversed(self.strides)))
+  def transpose(self, axes=None):     return (axes := tuple(reversed(range(len(self.shape))))) or self.create_op(OPS.Transpose, forward_args=(axes,), shape=tuple(self.shape[i] for i in axes), strides=tuple(self.strides[i] for i in axes))
 
   # Binary Ops
   def __add__(self, other):     return self.create_op(OPS.ADD, operands=(other,))

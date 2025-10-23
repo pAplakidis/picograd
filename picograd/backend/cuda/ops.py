@@ -5,7 +5,7 @@ from typing import Tuple
 from picograd.util import *
 from .math import *
 
-def reduce_grad(grad: np.ndarray, shape: tuple) -> np.ndarray:
+def reduce_grad(grad: np.ndarray, shape: tuple):
   """Reduce broadcasted gradient `grad` back to `shape`."""
 
   # Step 1: collapse extra leading dims
@@ -20,7 +20,7 @@ def reduce_grad(grad: np.ndarray, shape: tuple) -> np.ndarray:
 
 class BinaryOps:
   @staticmethod
-  def add(a: "Tensor", b: "Tensor", block_size: Tuple[int] = (8, 8, 8)) -> np.ndarray: # type: ignore
+  def add(a: "Tensor", b: "Tensor", block_size: Tuple[int] = (8, 8, 8)): # type: ignore
     """Add two homogeneous tensors of any dimension (1D, 2D, 3D) using CUDA."""
     kernel_code = a.device.manager.load_kernel("add.cu")
     kfunc = a.device.manager.compile_kernel(kernel_code, b"add_kernel")
@@ -46,7 +46,7 @@ class BinaryOps:
     return d_C
 
   @staticmethod
-  def add_back(a: "Tensor", b: "Tensor", grad_out: ctypes.c_void_p, block_size: Tuple[int] = (8, 8, 8)) -> np.ndarray:
+  def add_back(a: "Tensor", b: "Tensor", grad_out: ctypes.c_void_p, block_size: Tuple[int] = (8, 8, 8)):
     """Backward pass for addition operation."""
 
     if not a.requires_grad and not b.requires_grad: return
@@ -73,7 +73,7 @@ class BinaryOps:
       a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=n_flops)
 
   @staticmethod
-  def mul(a: "Tensor", b: "Tensor", block_size: Tuple[int] = (8, 8, 8)) -> np.ndarray:
+  def mul(a: "Tensor", b: "Tensor", block_size: Tuple[int] = (8, 8, 8)):
     """Pointwise multiplication"""
     assert a.shape == b.shape, "Tensors must have the same shape"
 
@@ -101,7 +101,7 @@ class BinaryOps:
     return d_C
 
   @staticmethod
-  def mul_back(a: "Tensor", b: "Tensor", grad_out: ctypes.c_void_p,  block_size=(8, 8, 8)) -> np.ndarray:
+  def mul_back(a: "Tensor", b: "Tensor", grad_out: ctypes.c_void_p,  block_size=(8, 8, 8)):
     """Backward pass for pointwise multiplication operation."""
     if not a.requires_grad and not b.requires_grad: return
 
@@ -151,7 +151,7 @@ class BinaryOps:
       # free_device_tensor(a.device.manager, d_temp_b)  # FIXME: segfaults
 
   @staticmethod
-  def dot(a: "Tensor", b: "Tensor") -> np.ndarray:
+  def dot(a: "Tensor", b: "Tensor"):
     """Matrix multiplication using CUDA."""
     assert len(a.shape) == 2 and len(b.shape) == 2, "Both tensors must be 2D (matrices)"
     assert a.shape[1] == b.shape[0], "Inner dimensions must match"
@@ -178,7 +178,7 @@ class BinaryOps:
     return d_C
 
   @staticmethod
-  def dot_back(a: "Tensor", b: "Tensor", grad_out: ctypes.c_void_p) -> np.ndarray:
+  def dot_back(a: "Tensor", b: "Tensor", grad_out: ctypes.c_void_p):
     if not a.requires_grad and not b.requires_grad: return
 
     assert len(a.shape) == 2 and len(b.shape) == 2, "Both tensors must be 2D (matrices)"
@@ -247,7 +247,7 @@ class BinaryOps:
     a: "Tensor", w: "Tensor", b:"Tensor",
     in_channels: int, out_channels: int, stride: int = 1, padding: int = 0,
     block_size: Tuple[int] = (256, 1, 1)
-  ) -> np.ndarray:
+  ):
     assert len(a.shape) == 4, "Input must be 4D (B, C, H, W)"
     assert a.shape[1] == in_channels, "Input channels do not match"
     assert len(w.shape) == 4, "Kernel must be 4D (C_out, C_in, H, W)"
@@ -334,7 +334,7 @@ class BinaryOps:
 
 class UnaryOps:
   @staticmethod
-  def relu(a: "Tensor", block_size: Tuple[int] = (256, 1, 1)) -> np.ndarray:
+  def relu(a: "Tensor", block_size: Tuple[int] = (256, 1, 1)):
     kernel_code = a.device.manager.load_kernel("relu.cu")
     kfunc = a.device.manager.compile_kernel(kernel_code, b"relu_kernel")
 
@@ -362,7 +362,7 @@ class UnaryOps:
     a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=size)
 
   @staticmethod
-  def softmax(a: "Tensor", block_size: Tuple[int] = (256, 1, 1)) -> np.ndarray:
+  def softmax(a: "Tensor", block_size: Tuple[int] = (256, 1, 1)):
     assert len(a.shape) == 2, "Softmax is only implemented for 2D tensors (batch_size, num_classes)"
 
     kernel_code = a.device.manager.load_kernel("softmax.cu")
@@ -404,42 +404,42 @@ class UnaryOps:
     a.device.manager.launch_kernel(kfunc, grid, block_size, args, shared_mem=shared_mem, n_flops=n_flops)
 
   @staticmethod
-  def sigmoid(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
+  def sigmoid(a: "Tensor"): raise NotImplementedError("This op is not implemented yet")
   
   @staticmethod
-  def tanh(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
+  def tanh(a: "Tensor"): raise NotImplementedError("This op is not implemented yet")
   
   @staticmethod
-  def abs(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
+  def abs(a: "Tensor"): raise NotImplementedError("This op is not implemented yet")
   
   @staticmethod
-  def neg(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
+  def neg(a: "Tensor"): raise NotImplementedError("This op is not implemented yet")
   
   @staticmethod
-  def sqrt(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
+  def sqrt(a: "Tensor"): raise NotImplementedError("This op is not implemented yet")
   
   @staticmethod
-  def exp(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
+  def exp(a: "Tensor"): raise NotImplementedError("This op is not implemented yet")
   
   @staticmethod
-  def log(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
+  def log(a: "Tensor"): raise NotImplementedError("This op is not implemented yet")
   
   @staticmethod
-  def normalize(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
+  def normalize(a: "Tensor"): raise NotImplementedError("This op is not implemented yet")
   
   @staticmethod
-  def batchnorm(a: "Tensor") -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
+  def batchnorm(a: "Tensor"): raise NotImplementedError("This op is not implemented yet")
 
 
 class ReduceOps:
   @staticmethod
-  def maxpool2d(a: "Tensor", filter=(2, 2), stride=1) -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
+  def maxpool2d(a: "Tensor", filter=(2, 2), stride=1): raise NotImplementedError("This op is not implemented yet")
 
   @staticmethod
   def maxpool2d_back(a: "Tensor", grad_out: ctypes.c_void_p, mask: np.ndarray, filter: Tuple[int], stride: int): raise NotImplementedError("This op is not implemented yet")
 
   @staticmethod
-  def avgpool2d(a: "Tensor", filter=(2, 2), stride=1) -> np.ndarray: raise NotImplementedError("This op is not implemented yet")
+  def avgpool2d(a: "Tensor", filter=(2, 2), stride=1): raise NotImplementedError("This op is not implemented yet")
 
   @staticmethod
   def avgpool2d_back(a: "Tensor", grad_out: ctypes.c_void_p, filter: Tuple[int], stride: int): raise NotImplementedError("This op is not implemented yet")
@@ -447,7 +447,7 @@ class ReduceOps:
   # loss functions
 
   @staticmethod
-  def cross_entropy(z: "Tensor", y: "Tensor", block_size=(256, 1, 1)) -> np.ndarray:
+  def cross_entropy(z: "Tensor", y: "Tensor", block_size=(256, 1, 1)):
     assert len(z.shape) == 2, "Z Tensor must be 2D (batch_size, num_classes)"
     assert len(y.shape) == 1, "Ground-truth Y must be 1D (batch_size,)"
     assert z.shape[0] == y.shape[0], "Z Tensor and ground-truth Y must have the same batch size"
@@ -477,32 +477,62 @@ class ReduceOps:
     z.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=batch_size * n_classes)
 
 
-# TODO: implement shapetracker to remove numpy from here
 class MovementOps:
   @staticmethod
-  def reshape(a: "Tensor", new_shape: Tuple[int]) -> np.ndarray: return a.device_data
+  def reshape(a: "Tensor", new_shape: Tuple[int]): return a.device_data
 
   @staticmethod
   def reshape_back(a: "Tensor", grad_out: np.ndarray, original_shape: Tuple[int]):
     if a.requires_grad: a.device_grad = cuda_add_gpu(a.device_grad, grad_out, a.device.manager, original_shape)
 
   @staticmethod
-  def transpose(a: "Tensor", axes: Tuple[int] = None) -> np.ndarray: return a.device_data
+  def transpose(a: "Tensor", axes: Tuple[int] = None): return a.device_data
 
   # TODO: implement transpose_back
   @staticmethod
   def transpose_back(a: "Tensor", grad_out: np.ndarray, axes: Tuple[int] = None):
-    if a.requires_grad: return None
+    if not a.requires_grad: return
+
+    kernel_code = a.device.manager.load_kernel("transpose_back.cu")
+    kfunc = a.device.manager.compile_kernel(kernel_code, b"transpose_back_kernel")
+
+    axes = axes if axes is not None else tuple(reversed(range(len(a.shape))))
+    shape_np      = np.array(a.shape,   dtype=np.int64)
+    in_stride_np  = np.array(a.strides, dtype=np.int64)  # stride of grad_out
+    out_stride_np = np.array(a.strides, dtype=np.int64)
+    axes_np       = np.array(axes,      dtype=np.int32)
+
+    _, d_shape      = a.device.manager.np_to_device(shape_np)
+    _, d_in_stride  = a.device.manager.np_to_device(in_stride_np)
+    _, d_out_stride = a.device.manager.np_to_device(out_stride_np)
+    _, d_axes       = a.device.manager.np_to_device(axes_np)
+
+    total = 1
+    for d in a.shape: total *= d
+
+    block_size = (256, 1, 1)
+    grid = ((total+255)//256, 1, 1)
+    args = a.device.manager.prep_kargs(
+      grad_out,               # const float* in_ptr    (grad_out GPU pointer)
+      a.device_grad,          # float* out_ptr          (a.grad GPU pointer)
+      d_shape,                # long long* shape
+      d_in_stride,            # long long* in_stride
+      d_out_stride,           # long long* out_stride
+      d_axes,                 # int* axes  (forward perm)
+      np.int32(len(a.shape)), # ndim
+      np.int64(total)         # total_elems
+    )
+    a.device.manager.launch_kernel(kfunc, grid, block_size, args, n_flops=total)
 
   @staticmethod
-  def expand(a: "Tensor", new_shape: Tuple[int]) -> np.ndarray: return np.broadcast_to(a.data, new_shape)
+  def expand(a: "Tensor", new_shape: Tuple[int]): return np.broadcast_to(a.data, new_shape)
 
   @staticmethod
   def expand_back(a: "Tensor", grad_out: np.ndarray, original_shape: Tuple[int]):
     if a.requires_grad: a.grad += reduce_grad(grad_out, original_shape)
   
   @staticmethod
-  def permute(a: "Tensor", axes: Tuple[int]) -> np.ndarray: return np.transpose(a.data, axes)
+  def permute(a: "Tensor", axes: Tuple[int]): return np.transpose(a.data, axes)
 
   @staticmethod
   def permute_back(a: "Tensor", grad_out: np.ndarray, axes: Tuple[int]):
@@ -511,7 +541,7 @@ class MovementOps:
       a.grad += np.transpose(grad_out, reverse_axes)
 
   @staticmethod
-  def squeeze(a: "Tensor", axis: Tuple[int]) -> np.ndarray: return np.squeeze(a.data, axis=axis)
+  def squeeze(a: "Tensor", axis: Tuple[int]): return np.squeeze(a.data, axis=axis)
   
   @staticmethod
   def squeeze_back(a: "Tensor", grad_out: np.ndarray, axis: int, original_shape: Tuple[int]):
@@ -519,7 +549,7 @@ class MovementOps:
       a.grad += np.expand_dims(grad_out, axis=axis).reshape(original_shape)
 
   @staticmethod
-  def unsqueeze(a: "Tensor", axis: int) -> np.ndarray: return np.expand_dims(a.data, axis=axis)
+  def unsqueeze(a: "Tensor", axis: int): return np.expand_dims(a.data, axis=axis)
   
   @staticmethod
   def unsqueeze_back(a: "Tensor", grad_out: np.ndarray, axis: int, original_shape: Tuple[int]):

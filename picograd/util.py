@@ -10,3 +10,14 @@ def is_cuda_available():
     return True
   except (subprocess.CalledProcessError, FileNotFoundError):
     return False
+
+def default_strides(shape):
+  # numpy-style contiguous row-major strides (for float32 = 4 bytes)
+  stride = 1
+  strides = []
+  for dim in reversed(shape):
+    strides.append(stride)
+    stride *= dim
+  return tuple(reversed(strides))
+
+def check_contiguous(shape, strides): return strides == default_strides(shape)
