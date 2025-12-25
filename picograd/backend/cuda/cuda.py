@@ -3,11 +3,12 @@ import time
 import ctypes
 import tempfile
 import subprocess
+import numpy as np
 from typing import Tuple, List, Optional
 
 from picograd.print_utils import *
+from picograd.backend.device import DeviceManager
 from .error import CUDA_ERRORS
-from .utils import *
 from .types import *
 
 try:
@@ -20,10 +21,14 @@ except OSError as e:
 KERNELS_PATH = "picograd/backend/cuda/kernels"
 PSEUDO_DEBUG = int(os.getenv("PSEUDO_DEBUG", 0))  # if 1, generate assembly code as string but don't print (helps with segfaults)
 
+TILE_SIZE = 16
 
-class CudaDevice:
-  def __init__(self, debug: int = 1):
-    self.debug = debug  # debug levels: 0: no debug, 1: basic debug, 2: kernel level
+
+class CudaDeviceManager(DeviceManager):
+  def __init__(self, device_name, debug: int = 1):
+    super().__init__(device_name, debug=debug)
+    self.tile_size = TILE_SIZE
+
     self.ctx = CUcontext()
     self.module = None
     self.kernels = {}
@@ -35,10 +40,10 @@ class CudaDevice:
     self.check_cuda(cuda.cuEventCreate(ctypes.byref(self.end_event), 0), "cuEventCreate (end)")
 
   def __del__(self):
+    for kernel in self.kernels: del kernel
+
     self.check_cuda(cuda.cuEventDestroy(self.start_event), "cuEventDestroy (start)")
     self.check_cuda(cuda.cuEventDestroy(self.end_event), "cuEventDestroy (end)")
-
-    # TODO: garbage collect self.allocations and self.kernels
 
     if self.module: self.check_cuda(cuda.cuModuleUnload(self.module), "cuModuleUnload")
     self.check_cuda(cuda.cuCtxDestroy(self.ctx), "cuCtxDestroy")
@@ -108,7 +113,7 @@ class CudaDevice:
     """Gets CUDA device and context, then initializes CUDA driver API."""
 
     if self.debug >= 2 and not PSEUDO_DEBUG:
-      print(f"{color_green("[Cuda]")} Initializing...")
+      print(f"{color_green('[Cuda]')} Initializing...")
 
     self.check_cuda(cuda.cuInit(0), "cuInit")
     device = CUdevice() 
@@ -122,7 +127,7 @@ class CudaDevice:
       return self.kernels[kernel_name]
 
     if self.debug >= 2 and not PSEUDO_DEBUG:
-      print(f"{color_green("[Cuda]")} Compiling kernel {color_green(kernel_name)}")
+      print(f"{color_green('[Cuda]')} Compiling kernel {color_green(kernel_name)}")
 
     self.program = nvrtcProgram()
     nvrtc.nvrtcCreateProgram.restype = nvrtcResult
@@ -140,10 +145,12 @@ class CudaDevice:
       b"--fmad=false",
       b"--gpu-architecture=compute_75",
     ]
-    if self.debug >= 2 and not PSEUDO_DEBUG:
+    if self.debug >= 2:
       opts += [
+        b"-G",
         b"--device-debug",
         b"--generate-line-info",
+        b"-lineinfo"
       ]
     self.check_nvrtc(
       nvrtc.nvrtcCompileProgram(self.program, len(opts), (ctypes.c_char_p * len(opts))(*opts)),
@@ -183,11 +190,11 @@ class CudaDevice:
     """Frees device memory pointed to by ptr."""
     self.check_cuda(cuda.cuMemFree(ptr), "cuMemFree")
 
-  def memcpy_htod(self, dst: CUdeviceptr, src: ctypes.c_void_p, size: int):
+  def cuda_memcpy_htod(self, dst: CUdeviceptr, src: ctypes.c_void_p, size: int):
     """Copies data from host to device memory."""
     self.check_cuda(cuda.cuMemcpyHtoD(dst, ctypes.c_void_p(src), size), "cuMemcpyHtoD", sync=True)
 
-  def memcpy_dtoh(self, dst: ctypes.c_void_p, src: CUdeviceptr, size):
+  def cuda_memcpy_dtoh(self, dst: ctypes.c_void_p, src: CUdeviceptr, size):
     """Copies data from device to host memory."""
     self.check_cuda(cuda.cuMemcpyDtoH(ctypes.c_void_p(dst), src, size), "cuMemcpyDtoH", sync=True)
 
@@ -197,12 +204,13 @@ class CudaDevice:
       grid: Tuple,
       block: Tuple,
       args: List[ctypes.c_void_p],
+      shared_mem: int = 0,
       n_flops: Optional[int] = None
     ):
     """Launches a CUDA kernel with the given grid and block dimensions and arguments."""
 
     if self.debug >= 2 and not PSEUDO_DEBUG:
-      print(f"{color_green("[Cuda]")} Launching kernel {color_yellow(kfunc)} with grid {color_yellow(grid)} and block {color_yellow(block)}")
+      print(f"{color_green('[Cuda]')} Launching kernel {color_yellow(kfunc)} with grid {color_yellow(grid)} and block {color_yellow(block)}")
 
     # FIXME: start_event and end_event cause Segmentation fault (undeterministically) for consecutive kernel launches
     # event-based profiling
@@ -213,12 +221,23 @@ class CudaDevice:
     if not len(grid) == 3 or not len(block) == 3:
       raise ValueError(f"Unsupported grid/block dimensions: grid={grid}, block={block}. Must be 2D or 3D.")
 
+    cuda.cuLaunchKernel.restype = CUresult
+    cuda.cuLaunchKernel.argtypes = [
+      CUfunction,
+      ctypes.c_uint, ctypes.c_uint, ctypes.c_uint,  # gridDim (blocks in x, y, z)
+      ctypes.c_uint, ctypes.c_uint, ctypes.c_uint,  # blockDim (threads per block in x, y, z)
+      ctypes.c_uint,                                # sharedMemBytes (shared memory per block in bytes)
+      ctypes.c_void_p,                              # hStream (CUstream, 0 for default)
+      ctypes.POINTER(ctypes.c_void_p),              # void** kernelParams (array of pointers to arguments or NULL)
+      ctypes.c_void_p                               # void** extra (reserved for future use, usually NULL)
+    ]
+
     arg_buff = (ctypes.c_void_p * len(args))(*[ctypes.addressof(a) for a in args])
     self.check_cuda(cuda.cuLaunchKernel(
       kfunc,
       grid[0], grid[1], grid[2],      # grid dimensions (blocks)
       block[0], block[1], block[2],   # block dimensions (threas per block)
-      0, 0,                           # shared mem and stream
+      shared_mem, 0,                           # shared mem and stream
       arg_buff, 0
     ), "cuLaunchKernel", sync=True)
 
@@ -236,9 +255,28 @@ class CudaDevice:
       elapsed_s = elapsed_ms / 1000.0
       gflops = n_flops / (elapsed_s * 1e9)
       if self.debug >= 1 and not PSEUDO_DEBUG:
-        # print(f"{color_yellow("[Cuda-Perf]")} Kernel time: {color_red(f"{elapsed_ms.value:.3f} ms — GFLOPs: {gflops:.2f}")}")
-        print(f"{color_yellow("[Cuda-Perf]")} Kernel time: {color_red(f"{elapsed_ms:.4f} ms — GFLOPs: {gflops:.2f}")}")
+        print(f"{color_yellow('[Cuda-Perf]')} Kernel time: {color_red(f'{elapsed_ms:.4f} ms — GFLOPs: {gflops:.2f}')}")
     else:
       if self.debug >= 1 and not PSEUDO_DEBUG:
         # print(f"{color_yellow('[Cuda-Perf]')} Kernel time: {elapsed_ms.value:.3f} ms")
         print(f"{color_yellow('[Cuda-Perf]')} Kernel time: {elapsed_ms:.4f} ms")
+
+  # -------
+  # GENERIC DEVICE INTERFACE METHODS
+  # -------
+
+  def allocate_device_memory(self, T: np.ndarray) -> ctypes.c_void_p:
+    """Allocate device memory for tensor."""
+    return self.cuda_malloc(T.nbytes)
+
+  def copy_data_to_device(self, d_T: ctypes.c_void_p, T_flat: np.ndarray):
+    """Copy data from host to device."""
+    self.cuda_memcpy_htod(d_T, T_flat.ctypes.data, T_flat.nbytes)
+
+  def copy_data_to_host(self, d_T: ctypes.c_void_p, T_flat: np.ndarray):
+    """Copy data from device to host."""
+    self.cuda_memcpy_dtoh(T_flat.ctypes.data, d_T, T_flat.nbytes)
+
+  def free_device_tensor(self, d_T: ctypes.c_void_p):
+    """Free tensor from device memory."""
+    self.cuda_free(d_T)

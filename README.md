@@ -1,4 +1,5 @@
 # PICOGRAD
+
 A from-scratch toy implementation of neural networks, backpropagation, etc
 
 ### Note that this library is a work in progress, therefore some features and ops might cause errors or have not been implemented yet.
@@ -35,19 +36,13 @@ sudo apt-get install graphviz
 Examples
 
 ```bash
-./examples/MNIST_test.py
-./examples/MNIST_simple.py
+./examples/MNIST.py
 ```
 
 Tests
 
 ```bash
-./test/ops_test.py
-```
-
-NOTE: cuda might contain bugs that cause segmentation faults. To help reduce the change of that, run:
-```bash
-DEBUG=3 PSEUDO_DEBUG=1 ./test/test_dot.py
+python3 -m unittest discover -s tests -p "test_*.py" -v
 ```
 
 Code
@@ -56,10 +51,10 @@ Code
 from picograd import Tensor
 from picograd.draw_utils import draw_dot
 
-a = Tensor(np.random.randn(100, 50), device=device)
-b = Tensor(np.random.randn(50, 100)).to(device)
+a = Tensor.random((100, 50))
+b = Tensor.random((50, 100))
 c = a.dot(b)
-d = Tensor(np.random.randn(100, 100), device=device)
+d = Tensor.random((100, 100))
 e = c + d
 e.backward()
 draw_dot(e, path="graphs/test")
@@ -74,23 +69,30 @@ draw_dot(e, path="graphs/test")
 
 You can set debug levels by assigning the debug value to DEBUG env variable.
 
+```bash
+DEBUG=3 ./test/test_ops.py
+```
+
 ## TODO
 
-- Implement CUDA activation functions (and other unary ops)
-- Implement CUDA pooling
-- Implement BatchNorm1D and 2D (+CUDA)
-- debug & optimize CUDA and memory leaks (device data should not be moved to host in ops)
-- cudaMallocManaged
-
-- Test on actual neural networks, efficientnet, etc (full training and evaluation of simple models)
+- CUDA activation functions (and other unary ops)
+- CUDA pooling
+- BatchNorm1D & 2D, LayerNorm (+CUDA)
 - Unit tests
+- RNN, LSTM, GRU
+- Attention, self-attention, transformer
+- Lazy buffers, scheduler, linearizer, kernel fusion
 
 ## BUGS
 
-- CUDA MNIST not learning
+- MNIST_simple (cuda) - illegal address on relu out.grad read + out of memory after some iterations
 
 ### DONE
 
+- Residual connections
+- CrossEntropyLoss CUDA
+- debug & optimize CUDA and memory leaks (device data should not be moved to host in ops)
+- CUDA sometimes segfaults for relu and softmax kernels
 - cuda conv-net
 - ops.py + function.py
 - conv2d, maxpool, etc
@@ -117,3 +119,5 @@ You can set debug levels by assigning the debug value to DEBUG env variable.
 
 - GEMM with tensorcores
 - OpenCL ops
+- cudaMallocManaged
+- Test on actual neural networks, efficientnet, etc (full training and evaluation of simple models)

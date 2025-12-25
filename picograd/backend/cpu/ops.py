@@ -1,39 +1,20 @@
 import numpy as np
-from enum import Enum, auto
+from numpy.lib.stride_tricks import as_strided
 from typing import Tuple
 
 from picograd.util import *
 
+def reduce_grad(grad: np.ndarray, shape: tuple) -> np.ndarray:
+  """Reduce broadcasted gradient `grad` back to `shape`."""
 
-class OPS(Enum):
-  # Binary ops
-  ADD = auto()
-  MUL = auto()
-  DOT = auto()
-  POW = auto()
+  # Step 1: collapse extra leading dims
+  while grad.ndim > len(shape): grad = grad.sum(axis=0)
 
-  # Unary ops
-  ReLU = auto()
-  Tanh = auto()
-  Softmax = auto()
-  Sigmoid = auto()
+  # Step 2: sum over axes where original shape had 1 (broadcasted dims)
+  for axis, dim in enumerate(shape):
+    if dim == 1: grad = grad.sum(axis=axis, keepdims=True)
 
-  MSELoss = auto()
-  MAELoss = auto()
-  CrossEntropyLoss = auto()
-  BCELoss = auto()
-
-  Conv2D = auto()
-
-  Reshape = auto()
-  Flatten = auto()
-  Unsqueeze = auto()
-  
-  # Reduce ops
-  MaxPool2D = auto()
-  AvgPool2D = auto()
-
-  def __str__(self): return self.name
+  return grad
 
 
 # TODO: create @jit decorator that uses jit.compile() to execute the op (LLVM)
@@ -43,20 +24,16 @@ class BinaryOps:
 
   @staticmethod
   def add_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray):
-    if a.requires_grad: a.grad += grad_out
-    if b.requires_grad: 
-      if b.grad.shape != grad_out.shape:
-        b.grad += np.sum(grad_out, axis=0)
-      else:
-        b.grad += grad_out
+    if a.requires_grad: a.grad += reduce_grad(grad_out, a.data.shape)
+    if b.requires_grad: b.grad += reduce_grad(grad_out, b.data.shape)
 
   @staticmethod
   def mul(a: "Tensor", b: "Tensor") -> np.ndarray: return a.data * b.data
 
   @staticmethod
   def mul_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray):
-    if a.requires_grad: a.grad += b.data * grad_out
-    if b.requires_grad: b.grad += a.data * grad_out
+    if a.requires_grad: a.grad += reduce_grad(b.data * grad_out, a.data.shape)
+    if b.requires_grad: b.grad += reduce_grad(a.data * grad_out, b.data.shape)
 
   @staticmethod
   def dot(a: "Tensor", b: "Tensor") -> np.ndarray: return a.data @ b.data
@@ -65,6 +42,13 @@ class BinaryOps:
   def dot_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray):
     if a.requires_grad: a.grad += grad_out @ b.data.T
     if b.requires_grad: b.grad += a.data.T @ grad_out
+
+  @staticmethod
+  def pow(a: "Tensor", b: "Tensor") -> np.ndarray: return a.data ** b.data
+
+  @staticmethod
+  def pow_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray):
+    if a.requires_grad: a.grad += b.data * (a.data ** (b.data - 1)) * grad_out
 
   @staticmethod
   def conv2d(A: "Tensor", Weight: "Tensor", Bias: "Tensor",
@@ -81,6 +65,22 @@ class BinaryOps:
     assert w.shape[1] % 2 == 1, "Kernel dimensions must be odd"
     assert a.shape[2] >= w.shape[1] and a.shape[3] >= w.shape[2], "Input must be larger than or equal to kernel dimensions"
 
+    def im2col(a, kernel_size, stride):
+      BS, C, H, W = a.shape
+      H_out = (H - kernel_size)//stride + 1
+      W_out = (W - kernel_size)//stride + 1
+
+      shape = (BS, C, H_out, W_out, kernel_size, kernel_size)
+      strides = (
+        a.strides[0],
+        a.strides[1],
+        stride * a.strides[2],
+        stride * a.strides[3],
+        a.strides[2],
+        a.strides[3],
+      )
+      return as_strided(a, shape=shape, strides=strides)
+
     BS, C_in, H, W = a.shape
     C_out, _, kernel_size, _ = w.shape
 
@@ -95,20 +95,12 @@ class BinaryOps:
     else:
       a_padded = a
 
-    for batch in range(BS):
-      for out_c in range(out_channels):
-        for i in range(H_out):
-          for j in range(W_out):
-            val = b[out_c]  # add bias once per output element
-            for in_c in range(in_channels):
-              # sliding window start indices
-              h_start = i * stride
-              w_start = j * stride
-
-              # convolution sum for this position
-              window = a_padded[batch, in_c, h_start:h_start+kernel_size, w_start:w_start+kernel_size]
-              val += np.sum(window * w[out_c, in_c])
-            out[batch, out_c, i, j] = val
+    cols = im2col(a_padded, kernel_size, stride)    # (BS, in_c, H_out, W_out, k, k)
+    cols = cols.reshape(BS, in_channels, H_out, W_out, -1).transpose(0,2,3,1,4).reshape(BS, H_out*W_out, -1)  # (BS, H_out * W_out, in_c * k * k)
+    w_flat = w.reshape(out_channels, -1)            # (out_c, in_c * k * k)
+    out_flat = cols @ w_flat.T                      # (BS, H_out*W_out, out_c)
+    out = out_flat.transpose(0,2,1).reshape(BS, out_channels, H_out, W_out)
+    out += b[:, None, None]
     return out
 
   @staticmethod
@@ -166,20 +158,8 @@ class BinaryOps:
     if Weight.requires_grad: Weight.grad = grad_w
     if Bias.requires_grad: Bias.grad = grad_b
 
-class UnaryOps:
-  @staticmethod
-  def relu(a: "Tensor") -> np.ndarray: return np.maximum(a.data, np.zeros_like(a.data))
 
-  @staticmethod
-  def relu_back(a: "Tensor", grad_out: np.ndarray):
-    if a.requires_grad: a.grad += np.where(a.data > 0, grad_out, 0)
-  
-  @staticmethod
-  def sigmoid(a: "Tensor") -> np.ndarray: pass
-  
-  @staticmethod
-  def tanh(a: "Tensor") -> np.ndarray: pass
-  
+class UnaryOps:
   @staticmethod
   def abs(a: "Tensor") -> np.ndarray: pass
   
@@ -199,25 +179,126 @@ class UnaryOps:
   def normalize(a: "Tensor") -> np.ndarray: pass
   
   @staticmethod
-  def softmax(a: "Tensor") -> np.ndarray:
-    exp_val = np.exp(a.data - np.max(a.data, axis=1, keepdims=True))
-    return exp_val / np.sum(exp_val, axis=1, keepdims=True)
-
-  @staticmethod
-  def softmax_back(a: "Tensor", out: np.ndarray, grad_out: np.ndarray):
-    if not a.requires_grad: return
-
-    a.grad = np.zeros_like(out)
-    for i in range(out.shape[0]):
-      s = out[i].reshape(-1, 1)
-      jacobian = np.diagflat(s) - np.dot(s, s.T)
-      a.grad[i] = np.dot(jacobian, grad_out[i])
-  
-  @staticmethod
   def batchnorm(a: np.ndarray) -> np.ndarray: pass
 
+  @staticmethod
+  def relu(a: "Tensor") -> np.ndarray: return np.maximum(a.data, np.zeros_like(a.data))
+
+  @staticmethod
+  def relu_back(a: "Tensor", grad_out: np.ndarray):
+    if a.requires_grad: a.grad += np.where(a.data > 0, grad_out, 0)
+  
+  @staticmethod
+  def sigmoid(a: "Tensor") -> np.ndarray: pass
+  
+  @staticmethod
+  def tanh(a: "Tensor") -> np.ndarray: pass
+  
+  @staticmethod
+  def softmax(a: "Tensor", axis: int) -> np.ndarray:
+    exp_val = np.exp(a.data - np.max(a.data, axis=axis, keepdims=True))
+    return exp_val / np.sum(exp_val, axis=axis, keepdims=True)
+
+  @staticmethod
+  def softmax_back(a: "Tensor", out: np.ndarray, grad_out: np.ndarray, axis: int):
+    if not a.requires_grad: return
+    dot = np.sum(grad_out * out, axis=axis, keepdims=True)
+    grad_in = (grad_out - dot) * out
+    a.grad += grad_in
+    
+  @staticmethod
+  def tanh(a: "Tensor") -> np.ndarray: return np.tanh(a.data)
+
+  @staticmethod
+  def tanh_back(a: "Tensor", grad_out: np.ndarray):
+    if a.requires_grad: a.grad += (1 - np.tanh(a.data)**2) * grad_out
+
+  @staticmethod
+  def sigmoid(a: "Tensor") -> np.ndarray: return np.exp(a.data) / (np.exp(a.data) + 1)
+
+  @staticmethod
+  def sigmoid_back(a: "Tensor", out: np.ndarray, grad_out: np.ndarray):
+    if a.requires_grad: a.grad += out * (1 - out) * grad_out
 
 class ReduceOps:
+  @staticmethod
+  def max(a: "Tensor", axis: int, keepdims: bool) -> np.ndarray:
+    res = np.max(a.data, axis=axis, keepdims=keepdims)
+    return res if keepdims else res[np.newaxis]
+
+  @staticmethod
+  def max_back(a: "Tensor", grad_out, axis: int, keepdims: bool):
+    if not a.requires_grad: return
+    if not keepdims and axis is not None:
+      grad_out = np.expand_dims(grad_out, axis=axis)
+    a.grad = (a.data == np.max(a.data, axis=axis, keepdims=True)) * grad_out
+
+  @staticmethod
+  def min(a: "Tensor", axis: int, keepdims: bool) -> np.ndarray:
+    res = np.min(a.data, axis=axis, keepdims=keepdims)
+    return res if keepdims else res[np.newaxis]
+
+  @staticmethod
+  def min_back(a: "Tensor", grad_out, axis: int, keepdims: bool):
+    if not a.requires_grad: return
+    if not keepdims and axis is not None:
+      grad_out = np.expand_dims(grad_out, axis=axis)
+    a.grad = (a.data == np.min(a.data, axis=axis, keepdims=True)) * grad_out
+
+  @staticmethod
+  def sum(a: "Tensor", axis: int, keepdims: bool) -> np.ndarray:
+    res = np.sum(a.data, axis=axis, keepdims=keepdims)
+    return res if keepdims else res[np.newaxis]
+
+  @staticmethod
+  def sum_back(a: "Tensor", grad_out, axis: int, keepdims: bool):
+    if not a.requires_grad: return
+    if not keepdims and axis is not None:
+      grad_out = np.expand_dims(grad_out, axis=axis)
+    a.grad = np.ones_like(a.data) * grad_out
+
+  @staticmethod
+  def mean(a: "Tensor", axis: int, keepdims: bool) -> np.ndarray:
+    res  = np.mean(a.data, axis=axis, keepdims=keepdims)
+    return res if keepdims else res[np.newaxis]
+
+  @staticmethod
+  def mean_back(a: "Tensor", grad_out, axis: int, keepdims: bool):
+    if not a.requires_grad: return
+    if not keepdims and axis is not None:
+      grad_out = np.expand_dims(grad_out, axis=axis)
+    a.grad = np.ones_like(a.data) * grad_out / a.data.size
+
+  @staticmethod
+  def std(a: "Tensor", axis: int, keepdims: bool) -> np.ndarray:
+    res = np.std(a.data, axis=axis, keepdims=keepdims)
+    return res if keepdims else res[np.newaxis]
+
+  @staticmethod
+  def std_back(a: "Tensor", grad_out, axis: int, keepdims: bool):
+    if not a.requires_grad: return
+    mean = np.mean(a.data, axis=axis, keepdims=True)
+    std = np.std(a.data, axis=axis, keepdims=True)
+    if not keepdims and axis is not None:
+      grad_out = np.expand_dims(grad_out, axis=axis)
+    a.grad = (a.data - mean) * grad_out / (std * a.data.size)
+
+  @staticmethod
+  def argmax(a: "Tensor", axis: int, keepdims: bool) -> np.ndarray:
+    res = np.argmax(a.data, axis=axis, keepdims=keepdims)
+    return res if keepdims else res[np.newaxis]
+
+  @staticmethod
+  def argmax_back(a: "Tensor"): a.grad = np.zeros_like(a.data)
+
+  @staticmethod
+  def argmin(a: "Tensor", axis: int, keepdims: bool) -> np.ndarray:
+    res = np.argmin(a.data, axis=axis, keepdims=keepdims)
+    return res if keepdims else res[np.newaxis]
+
+  @staticmethod
+  def argmin_back(a: "Tensor"): a.grad = np.zeros_like(a.data)
+
   @staticmethod
   def maxpool2d(a: "Tensor", filter=(2, 2), stride=1) -> np.ndarray:
     assert len(a.shape) == 4, "Input must be 3D (BS, C, H, W)"
@@ -260,6 +341,9 @@ class ReduceOps:
 
   @staticmethod
   def avgpool2d(a: "Tensor", filter=(2, 2), stride=1) -> np.ndarray:
+    # TODO: assert dimensionality
+    # TODO: handle channels and padding as well
+    # TODO: double-check if stride is used correctly
     assert len(a.shape) == 4, "Input must be 3D (BS, C, H, W)"
 
     BS, channels, height, width = a.shape
@@ -293,6 +377,80 @@ class ReduceOps:
         grad_share = grad_out[:, :, i, j][:, :, None, None] / (filter[0] * filter[1])
         grad_input[:, :, h_start:h_end, w_start:w_end] += grad_share
     a.grad = grad_input if a.grad is None else a.grad + grad_input
+
+  # loss functions
+
+  @staticmethod
+  def cross_entropy(z: "Tensor", y: "Tensor") -> np.ndarray:
+    assert len(z.shape) == 2, "Z Tensor must be 2D (batch_size, num_classes)"
+    assert len(y.shape) == 1, "Ground-truth Y must be 1D (batch_size,)"
+    assert z.shape[0] == y.shape[0], "Z Tensor and ground-truth Y must have the same batch size"
+
+    y.data = y.data.astype(np.int32)
+    y_pred_clipped = np.clip(z.data, 1e-7, 1 - 1e-7)
+    # loss_val = -np.sum(y.data * np.log(y_pred_clipped), axis=1)
+    return -np.log(y_pred_clipped[np.arange(y.shape[0]), y.data])
+
+  @staticmethod
+  def cross_entropy_back(z: "Tensor", y: "Tensor") -> np.ndarray:
+    if not z.requires_grad: return
+    batch_size, n_classes = z.shape
+    y_one_hot = np.zeros((batch_size, n_classes))
+    y_one_hot[np.arange(batch_size), y.data] = 1
+    z.grad = (z.data - y_one_hot) / batch_size  # Average gradient over batch
+
+
+class MovementOps:
+  @staticmethod
+  def reshape(a: "Tensor", new_shape: Tuple[int]) -> np.ndarray: return a.data.reshape(new_shape)
+
+  @staticmethod
+  def reshape_back(a: "Tensor", grad_out: np.ndarray, original_shape: Tuple[int]):
+    if a.requires_grad: a.grad += grad_out.reshape(original_shape)
+
+  @staticmethod
+  def transpose(a: "Tensor", axes: Tuple[int] = None) -> np.ndarray:
+    if axes is None: axes = tuple(reversed(range(a.data.ndim)))
+    return np.transpose(a.data, axes)
+
+  @staticmethod
+  def transpose_back(a: "Tensor", grad_out: np.ndarray, axes: Tuple[int] = None):
+    if axes is None: axes = tuple(reversed(range(a.data.ndim)))
+    if a.requires_grad:
+      reverse_axes = np.argsort(axes)
+      a.grad += np.transpose(grad_out, reverse_axes)
+
+  @staticmethod
+  def expand(a: "Tensor", new_shape: Tuple[int]) -> np.ndarray: return np.broadcast_to(a.data, new_shape)
+
+  @staticmethod
+  def expand_back(a: "Tensor", grad_out: np.ndarray, original_shape: Tuple[int]):
+    if a.requires_grad: a.grad += reduce_grad(grad_out, original_shape)
+  
+  @staticmethod
+  def permute(a: "Tensor", axes: Tuple[int]) -> np.ndarray: return np.transpose(a.data, axes)
+
+  @staticmethod
+  def permute_back(a: "Tensor", grad_out: np.ndarray, axes: Tuple[int]):
+    if a.requires_grad:
+      reverse_axes = np.argsort(axes)
+      a.grad += np.transpose(grad_out, reverse_axes)
+
+  @staticmethod
+  def squeeze(a: "Tensor", axis: Tuple[int]) -> np.ndarray: return np.squeeze(a.data, axis=axis)
+  
+  @staticmethod
+  def squeeze_back(a: "Tensor", grad_out: np.ndarray, axis: int, original_shape: Tuple[int]):
+    if a.requires_grad:
+      a.grad += np.expand_dims(grad_out, axis=axis).reshape(original_shape)
+
+  @staticmethod
+  def unsqueeze(a: "Tensor", axis: int) -> np.ndarray: return np.expand_dims(a.data, axis=axis)
+  
+  @staticmethod
+  def unsqueeze_back(a: "Tensor", grad_out: np.ndarray, axis: int, original_shape: Tuple[int]):
+    if a.requires_grad: a.grad = np.sum(grad_out, axis=axis).reshape(original_shape)
+  
 
 # TODO:
 """

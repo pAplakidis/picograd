@@ -1,114 +1,204 @@
 import numpy as np
-from picograd.tensor import Tensor
-
-def manual_update(params, lr):
-  for i in range(len(params)):
-    if params[i].layer != None:
-      if params[i].w != None:
-        #params[i].w += -lr * params[i].w.grad
-        # NOTE: using lr decreases loss while -lr increases it, BUT -lr is the correct one
-        params[i].w += lr * params[i].w.grad
-        params[i].layer.weight = params[i].w
-      if params[i].b != None:
-        #params[i].b += -lr * params[i].b.grad
-        params[i].b += lr * params[i].b.grad
-        params[i].layer.bias = params[i].b
-
-  return params
-
-def reset_grad(params):
-  for i in range(len(params)):
-    params[i].grad = np.ones_like(params[i].grad)
-  return params
+from picograd import Tensor
 
 class Optim:
   def __init__(self, params, lr=0.001):
-    self.params = params
+    self.params = [p for p in params if isinstance(p, Tensor)]
     self.lr = lr
 
   # not zero_grad since we reset it to ones
   def zero_grad(self):
-    for i in range(len(self.params)):
-      self.params[i].t_in.grad = np.zeros_like(self.params[i].t_in.grad)
-      self.params[i].t_out.grad = np.zeros_like(self.params[i].t_out.grad)
-    return self.params
+    for p in self.params:
+      if hasattr(p, "grad") and p.grad is not None:
+        p.grad = np.zeros_like(p.grad)
+    return self
 
-  def reset_grad(self):
-    for i in range(len(self.params)):
-      self.params[i].t_in.grad = np.ones_like(self.params[i].t_in.grad)
-      self.params[i].t_out.grad = np.ones_like(self.params[i].t_out.grad)
-    return self.params
+  def clip_grad_norm_(self, max_norm):
+    # Global norm clip: compute total norm and scale if needed
+    total_norm_sq = 0.0
+    for p in self.params:
+      if getattr(p, "grad", None) is not None:
+        total_norm_sq += float((p.grad**2).sum())
+    total_norm = np.sqrt(total_norm_sq)
+    if total_norm > max_norm:
+      scale = max_norm / (total_norm + 1e-6)
+      for p in self.params:
+        if getattr(p, "grad", None) is not None:
+          p.grad *= scale
 
 
 class SGD(Optim):
   def step(self):
-    # gradient clipping
-    max_grad_norm = 1.0
-    for param in self.params:
-      if not hasattr(param, 'weight') or param.weight is None or not hasattr(param, 'bias') or param.bias is None:
+    for p in self.params:
+      if getattr(p, "grad", None) is None:
         continue
-
-      np.clip(param.weight.grad, -max_grad_norm, max_grad_norm, out=param.weight.grad)
-      np.clip(param.bias.grad, -max_grad_norm, max_grad_norm, out=param.bias.grad)
-
-    for i in range(len(self.params)):
-      if not hasattr(self.params[i], 'weight') or self.params[i].weight is None or not hasattr(self.params[i], 'bias') or self.params[i].bias is None:
-        continue
-
-      self.params[i].weight.data -= self.lr * self.params[i].weight.grad
-      self.params[i].bias.data -= self.lr * self.params[i].bias.grad
+      p.data -= self.lr * p.grad
 
 class Adam(Optim):
-  def __init__(self, params, lr=0.001, b1=0.9, b2=0.999, eps=1e-8):
+  def __init__(self, params, lr=0.001, b1=0.9, b2=0.999, eps=1e-8, weight_decay=0.0):
     super().__init__(params, lr)
     self.b1 = b1
     self.b2 = b2
     self.eps = eps
+    self.weight_decay = weight_decay
 
-    self.mt_1_weight = [None] * len(self.params)
-    self.ut_1_weight = [None] * len(self.params)
-    self.mt_1_bias = [None] * len(self.params)
-    self.ut_1_bias = [None] * len(self.params)
-    for i in range(len(self.params)):
-      if not hasattr(self.params[i], 'weight') or self.params[i].weight is None or not hasattr(self.params[i], 'bias') or self.params[i].bias is None:
-        continue
+    self.state = {}
+    self.t = 0
 
-      self.mt_1_weight[i] = np.zeros_like(self.params[i].weight.grad)
-      self.ut_1_weight[i] = np.zeros_like(self.params[i].weight.grad)
-
-      self.mt_1_bias[i] = np.zeros_like(self.params[i].bias.grad)
-      self.ut_1_bias[i] = np.zeros_like(self.params[i].bias.grad)
+    for p in self.params:
+      self.state[id(p)] = {
+        'm': np.zeros_like(p.data),
+        'v': np.zeros_like(p.data)
+      }
 
   def step(self):
-    # gradient clipping
+    self.t += 1
     max_grad_norm = 1.0
-    for param in self.params:
-      if not hasattr(param, 'weight') or param.weight is None or not hasattr(param, 'bias') or param.bias is None:
+    self.clip_grad_norm_(max_grad_norm)
+
+    for p in self.params:
+      g = getattr(p, "grad", None)
+      if g is None:
         continue
+      st = self.state[id(p)]
+      m = st['m']
+      v = st['v']
 
-      np.clip(param.weight.grad, -max_grad_norm, max_grad_norm, out=param.weight.grad)
-      np.clip(param.bias.grad, -max_grad_norm, max_grad_norm, out=param.bias.grad)
+      # L2 regularization style
+      if self.weight_decay:
+        g.data = g.data + self.weight_decay * p.data
 
-    for i in range(len(self.params)):
-      if not hasattr(self.params[i], 'weight') or self.params[i].weight is None or not hasattr(self.params[i], 'bias') or self.params[i].bias is None:
+      # update biased first and second moment estimates
+      m[:] = self.b1 * m + (1.0 - self.b1) * g        # Momentum
+      v[:] = self.b2 * v + (1.0 - self.b2) * (g * g)  # RMSProp
+
+      # bias correction
+      m_hat = m / (1.0 - (self.b1 ** self.t))
+      v_hat = v / (1.0 - (self.b2 ** self.t))
+
+      # update parameters (in-place)
+      p.data -= self.lr * m_hat / (np.sqrt(v_hat) + self.eps)
+
+  
+class AdamW(Optim):
+  def __init__(self, params, lr=0.001, b1=0.9, b2=0.999, eps=1e-8, weight_decay=0.01):
+    super().__init__(params, lr)
+    self.b1 = b1
+    self.b2 = b2
+    self.eps = eps
+    self.weight_decay = weight_decay
+
+    self.state = {}
+    self.t = 0
+
+    for p in self.params:
+      self.state[id(p)] = {
+        'm': np.zeros_like(p.data),
+        'v': np.zeros_like(p.data)
+      }
+  
+  def step(self):
+    self.t += 1
+    max_grad_norm = 1.0
+    self.clip_grad_norm_(max_grad_norm)
+
+    for p in self.params:
+      g = getattr(p, "grad", None)
+      if g is None:
         continue
+      st = self.state[id(p)]
+      m = st['m']
+      v = st['v']
 
-      # weight
-      mt_weight = self.b1 * self.mt_1_weight[i] + (1 - self.b1) * self.params[i].weight.grad
-      ut_weight = self.b2 * self.ut_1_weight[i] + (1 - self.b2) * self.params[i].weight.grad**2
-      mt_hat_w = mt_weight / (1 - self.b1)
-      ut_hat_w = ut_weight / (1 - self.b2)
-      self.params[i].weight.data -= self.lr * mt_hat_w / (np.sqrt(ut_hat_w) + self.eps)
+      # update biased first and second moment estimates
+      m[:] = self.b1 * m + (1.0 - self.b1) * g        # Momentum
+      v[:] = self.b2 * v + (1.0 - self.b2) * (g * g)  # RMSProp
 
-      self.mt_1_weight[i] = mt_weight
-      self.ut_1_weight[i] = ut_weight
+      # bias correction
+      m_hat = m / (1.0 - (self.b1 ** self.t))
+      v_hat = v / (1.0 - (self.b2 ** self.t))
 
-      # bias
-      mt_bias = self.b1 * self.mt_1_bias[i] + (1 - self.b1) * self.params[i].bias.grad
-      ut_bias = self.b2 * self.ut_1_bias[i] + (1 - self.b2) * self.params[i].bias.grad**2
-      mt_hat_b = mt_bias / (1 - self.b1)
-      ut_hat_b = ut_bias / (1 - self.b2)
-      self.params[i].bias.data -= self.lr * mt_hat_b / (np.sqrt(ut_hat_b) + self.eps)
+      # update parameters (in-place)
+      p.data -= self.lr * m_hat / (np.sqrt(v_hat) + self.eps)
 
-      self.mt_1_bias[i] = mt_bias
-      self.ut_1_bias[i] = ut_bias
+      # decoupled weight decay
+      if self.weight_decay:
+        p.data -= self.lr * self.weight_decay * p.data
+
+
+# Learning Rate Schedulers
+
+class ReduceLROnPlateau:
+  def __init__(
+    self,
+    optmizer: Optim,
+    mode="min",
+    factor=0.1,
+    patience=10,
+    threshold=1e-4,
+    threshhold_mode="rel",
+    cooldown=0,
+    min_lr=0.0,
+    eps=1e-8,
+    verbose=False
+  ):
+    self.optimizer = optmizer
+    self.mode = mode                        # 'min' or 'max'
+    self.factor = factor
+    self.patience = patience
+    self.threshold = threshold
+    self.threshhold_mode = threshhold_mode  # 'rel' or 'abs'
+    self.cooldown = cooldown
+    self.min_lr = min_lr
+    self.eps = eps
+    self.verbose = verbose
+
+    self.best = None
+    self.num_bad_epochs = 0
+    self.in_cooldown = False
+
+  def _is_better(self, metric):
+    if self.best is None:
+      return True
+    
+    if self.mode == "min":
+      if self.threshhold_mode == "rel":
+        return metric < self.best * (1 - self.threshold)
+      else:
+        return metric < self.best - self.threshold
+    else:
+      if self.threshhold_mode == "rel":
+        return metric > self.best * (1 + self.threshold)
+      else:
+        return metric > self.best + self.threshold
+
+  def _reduce_lr(self):
+    old_lr = self.optimizer.lr
+    new_lr = max(old_lr * self.factor, self.min_lr)
+    if old_lr - new_lr > self.eps:
+      self.optimizer.lr = new_lr
+
+  def step(self, metric):
+    if self.best is None:
+      self.best = metric
+      return
+    
+    if self.in_cooldown:
+      self.cooldown_counter -= 1
+      if self.cooldown_counter <= 0:
+        self.in_cooldown = False
+
+    if self._is_better(metric):
+      self.best = metric
+      self.num_bad_epochs = 0
+    else:
+      self.num_bad_epochs += 1
+
+    if (not self.in_cooldown) and (self.num_bad_epochs > self.patience):
+      self._reduce_lr()
+      if self.verbose:
+        print(f"[ReduceLROnPlateau] Reducing learning rate to: {self.optimizer.lr:.6e}")
+
+      self.in_cooldown = True
+      self.cooldown_counter = self.cooldown
+      self.num_bad_epochs = 0

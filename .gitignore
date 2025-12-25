@@ -6,3 +6,4 @@ graphs/
 media/
 lib/
 mnist_data/
+**/.DS_Store
