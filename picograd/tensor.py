@@ -31,9 +31,10 @@ class Tensor:
     device_data: Optional[ctypes.c_void_p] = None,
     shape: Optional[Tuple] = None,
     strides: Optional[Tuple[int]] = None,
+    lazy=True
   ):
-
     data = np.array(data) if data is not None else None
+    self.lazy = lazy
     self.device= list(_prev)[0].device if len(list(_prev)) > 0 else device
     self._ctx = None  # TODO: use context like pytorch
 
@@ -64,7 +65,7 @@ class Tensor:
     self.layer = None
     self._backward = lambda: None
 
-    self._device_data = device_data
+    self._device_data = device_data # TODO: if device_data is none, shape is not none and device != CPU, allocate memory of shape on the device
     self._device_grad = None
     if device.name != Devices.CPU: self.to(device)
 
@@ -175,10 +176,7 @@ class Tensor:
     return n_elements * np.dtype(self.dtype).itemsize
 
   def __repr__(self):
-    if self.verbose:
-      return f"{color_yellow('Tensor')} (name={self.name}, shape={self.shape}, device={self.device.name}, data=\n{self.data}\n, grad=\n{self.grad}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
-    else:
-      return f"{color_yellow('Tensor')} (name={self.name}, shape={self.shape}, device={self.device.name}, data=\n{self.data}\n, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
+    return f"{color_yellow('Tensor')} (name={self.name}, shape={self.shape}, device={self.device.name}, data=\n{self.data}\n, grad=\n{self.grad}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
     
   def __del__(self):
     # if self.device_data is not None:
@@ -263,7 +261,7 @@ class Tensor:
         print("[grad]\n", node.grad)
       if node.prev_op != None:
         print("====++++****++++====\n[OP]:", node.prev_op ,"\n====++++****++++====")
-  
+
   # TODO: handle cuda as well
   def float(self):
     self.data = self.data.astype(np.float32)
@@ -278,6 +276,9 @@ class Tensor:
   def scalar_to_tensor(self, value: Union[int, float]):
     assert isinstance(value, Tensor) or isinstance(value, (int, float)), f"Operand {value} must be a Tensor or a scalar (int/float). Got {type(value)}."
     return Tensor([value], name=str(value), requires_grad=False, device=self.device) if isinstance(value, (int, float)) else value
+
+  def realize(self):
+    pass
 
   def create_op(
       self,
@@ -303,17 +304,28 @@ class Tensor:
     func = get_op(op_name, self.device.name)
     tensor_inputs = (self,) + operands
     prev = tensor_inputs
-    out_data = func.forward(*tensor_inputs, *forward_args, **forward_kwargs)
+    
+    out_data = None
+    if not self.lazy:
+      out_data = func.forward(*tensor_inputs, *forward_args, **forward_kwargs)
 
     if self.device.name == Devices.CPU:
-      out = Tensor(out_data, _prev=prev, device=self.device)
+      out = Tensor(
+        out_data,
+        shape=shape if shape is not None else self.shape,
+        strides=strides if strides is not None else default_strides(shape if shape is not None else self.shape),
+        _prev=prev,
+        device=self.device,
+        lazy=self.lazy,
+      )
     else:
       out = Tensor(
         device_data=out_data,
         shape=shape if shape is not None else self.shape,
         strides=strides if strides is not None else default_strides(shape if shape is not None else self.shape),
         _prev=prev,
-        device=self.device
+        device=self.device,
+        lazy=self.lazy,
       )
 
     out.prev_op = op_name

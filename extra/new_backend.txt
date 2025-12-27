@@ -1,0 +1,116 @@
+# MAKE PICOGRAD AN AI COMPILER - SCALABILITY
+
+# Replace backend with this workflow:
+- LazyBuffer + realise()
+- Graph => AST => linear ops (linearizer) => schedule items (scheduler) => UOps => kernel code => compiled code
+- JIT (OpenCL, CUDA, CLANG, LLVM)
+
+check out these notes: https://mesozoic-egg.github.io/tinygrad-notes
+
+----
+
+DEBUG levels:
+- TODO
+
+-----
+
+LazyBuffer:
+- .realize()
+  * don't compute until called
+  * build AST
+  * kernel fusion (backlog)
+
+JIT:
+- UOps => device code
+- Compiles it (e.g. nvrtc for cuda)
+- executes it
+- caches kernels for reuse
+
+Scheduler:
+- input => AST
+- load, store, compute (elementwise add, mul, etc)
+
+Shapetracker
+- TODO
+
+Linearizer:
+- Flatten AST into linear UOps (define order of UOp execution)
+
+UOps:
+- intermediate representation before converting to device code
+- Ops like:
+  * UOp.LOAD
+  * UOp.STORE
+  * UOp.ALU (add, mul, dot, etc)
+  * UOp.CONST
+
+-----
+
+- Ops like matmul and conv2D can be computed as substitutions + elementwise
+- elementwise ops are the same (same logic, only operator changes)
+- same with reduce ops (?)
+
+-----
+
+Lifecycle of c = (a*b).sum()
+1. create LazyOps (e.g. LazyOp(Op.MUL, inputs=[a, b]), LazyOp(Op.REDUCE, axis=[...]))
+2. .realize() or .numpy() creates AST, triggers kernel creation and execution (realised == result/data computed and stored in device memory)
+    e.g. AST: reduce(mul(a, b)) (UOps are concerned about operators as well - UOps.CONST, LOAD, etc)
+3. AST => Scheduler => ScheduleItems
+4. Linearizer: Schedule => UOps
+  e.g.:
+    DEFINE_VAR idx0
+    LOAD a[idx0]
+    LOAD b[idx0]
+    ALU mul ...
+    REDUCE_ADD ...
+    ...
+    STORE result
+  basically UOps are like tinygrad assembly instructions
+5. UOps => Kernel source code (CUDA, OpenCL, CLANG, LLVM<vectorized C>)
+6. Compile kernel => Cache => execute
+7. return value, c is in memory, LazyBuffer realized
+
+
+Tinygrad Tensor -> LazyBuffer -> LazyOps -> AST
+                     |
+                     v
+                 realize()
+                     |
+                     v
+               Scheduler (loop planning)
+                     |
+                     v
+             Linearizer → UOps
+                     |
+                     v
+          Backend Codegen → Kernel source
+                     |
+                     v
+           JIT Compiler (NVRTC, LLVM...)
+                     |
+                     v
+                 Execute kernel
+
+
+
+Graph (LazyOps)
+      ↓
+AST (fused LazyOp tree)
+      ↓
+Scheduler  →  Schedule Items (loop structure, memory planning)
+      ↓
+Linearizer → Linear Ops (flattened loop + op sequence)
+      ↓
+UOps (tinygrad IR)
+      ↓
+Kernel Code (CUDA / Metal / CLang / OpenCL / LLVM)
+      ↓
+Compiled code (via JIT)
+
+
+---------------
+
+NOTES:
+
+.realize(), .tolist(), .numpy() all trigger computation

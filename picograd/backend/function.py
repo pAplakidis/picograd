@@ -13,6 +13,11 @@ PSEUDO_DEBUG = int(os.getenv("PSEUDO_DEBUG", 0))  # if 1, generate assembly code
 
 
 class OPS(Enum):
+  # allocation
+  CONST = auto()
+  LOAD = auto()
+  STORE = auto()
+
   # Binary ops
   ADD = auto()
   MUL = auto()
