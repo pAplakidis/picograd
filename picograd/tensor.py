@@ -11,6 +11,7 @@ from picograd.backend.cpu.ops import *
 from picograd.util import *
 from picograd.backend.device import Devices, Device
 
+DEBUG = int(os.getenv("DEBUG", 0))
 VERBOSE = int(os.getenv("VERBOSE", 0))
 
 # init c++ library
@@ -39,7 +40,6 @@ class Tensor:
     self._ctx = None  # TODO: use context like pytorch
 
     self.name = name
-    self.debug = DEBUG
     self.verbose = bool(VERBOSE)
     self.requires_grad = requires_grad
 
@@ -48,6 +48,7 @@ class Tensor:
     self._grad = np.zeros(self._shape) if requires_grad else None
 
     # shapetracker
+    # NOTE: tensor[i, j] -> index(i, j) = i * stride[0] + j * stride[1] -> tensor.device_data + index(i, j) * itemsize
     if strides is not None:
       self._strides = tuple(strides)
     else:
@@ -175,8 +176,12 @@ class Tensor:
     for d in self._shape: n_elements *= d
     return n_elements * np.dtype(self.dtype).itemsize
 
+  # TODO: if DEBUG > 1, then print self.data and self.grad as well (avoids unecessary device memory copies)
   def __repr__(self):
-    return f"{color_yellow('Tensor')} (name={self.name}, shape={self.shape}, device={self.device.name}, data=\n{self.data}\n, grad=\n{self.grad}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
+    if self.device.name == Devices.CPU:
+      return f"{color_yellow('Tensor')} (name={self.name}, shape={self.shape}, device={self.device.name}, data=\n{self.data}\n, grad=\n{self.grad}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
+    else:
+      return f"{color_yellow('Tensor')} (name={self.name}, shape={self.shape}, device={self.device.name}, device_data={self.device_data}, device_grad={self.device_grad}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
     
   def __del__(self):
     # if self.device_data is not None:
@@ -406,8 +411,7 @@ class Tensor:
   def __equal__(self, other):             return np.equal(self.data, other.data)
 
   # Movement Ops
-  # FIXME: view should not create a new tensor, but just change the shape and stride of the current one
-  # TODO: shape value for cuda (reshape should not call any op on cuda (?))
+  # FIXME: view should not create a new tensor, but just change the shape and stride of the current one while reshape keeps the memory layout contiguous for the new tensor
   def reshape(self, *args, **kwargs): shape = args if len(args) > 1 else args[0]; return self.create_op(OPS.Reshape, forward_args=(shape,), forward_kwargs=kwargs, shape=shape)
   def view(self, *args, **kwargs):    return self.create_op(OPS.Reshape, forward_args=args, forward_kwargs=kwargs, shape=args[0] if len(args) == 1 else args)
   def flatten(self):                  return self.reshape(-1) # TODO: axis

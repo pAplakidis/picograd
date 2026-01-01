@@ -28,26 +28,23 @@ class Devices(Enum):
   def __str__(self): return self.name
 
 class Device:
-  def __init__(self, name: Devices, debug: int = DEBUG):
+  def __init__(self, name: Devices):
     self.name = name
-    self.debug = debug
 
     if name == Devices.CPU:
       self.manager = None
     elif name == Devices.CUDA:
       from picograd.backend.cuda.cuda import CudaDeviceManager
-      self.manager = CudaDeviceManager(name, debug=debug)
+      self.manager = CudaDeviceManager(name)
     else:
       raise NotImplementedError(f"Device {name} not implemented")
 
   def __str__(self): return str(self.name)
-
   def __repr__(self): return f"Device({self.name})"
 
 class DeviceManager:
-  def __init__(self, device_name: str, debug=DEBUG):
+  def __init__(self, device_name: str):
     self.device_name = device_name
-    self.debug = debug
 
   @staticmethod
   def flatten_tensor(T: np.ndarray) -> np.ndarray:
@@ -84,7 +81,7 @@ class DeviceManager:
   def host_data_to_dev(self, tensor: "Tensor"):
     assert tensor._data is not None, "Tensor data is None, cannot copy to device"
 
-    if tensor.device.manager.debug >= 1 and not PSEUDO_DEBUG:
+    if DEBUG >= 3 and not PSEUDO_DEBUG:
       start_time = time.time()
 
     T_flat = self.flatten_tensor(tensor._data)
@@ -92,11 +89,11 @@ class DeviceManager:
     self.copy_data_to_device(d_T, T_flat)
     tensor.device_data = d_T
     
-    if self.debug >= 1 and not PSEUDO_DEBUG:
+    if DEBUG >= 3 and not PSEUDO_DEBUG:
       print(f"{color_green('[Cuda]')} Tensor data copied to device - {color_red(f'{tensor._data.nbytes} bytes')} - {color_red(f'{(time.time() - start_time) * 1000:.4f} ms')}")
 
   def host_grad_to_dev(self, tensor: "Tensor"):
-    if tensor.device.manager.debug >= 1 and not PSEUDO_DEBUG:
+    if DEBUG >= 3 and not PSEUDO_DEBUG:
       start_time = time.time()
 
     grad_flat = self.flatten_tensor(tensor.grad)
@@ -104,13 +101,13 @@ class DeviceManager:
     self.copy_data_to_device(d_grad, grad_flat)
     tensor.device_grad = d_grad
 
-    if self.debug >= 1 and not PSEUDO_DEBUG:
+    if DEBUG >= 3 and not PSEUDO_DEBUG:
       print(f"{color_green('[Cuda]')} Tensor gradient copied to device - {color_red(f'{tensor._grad.nbytes} bytes')} - {color_red(f'{(time.time() - start_time) * 1000:.4f} ms')}")
 
   def dev_data_to_host(self, tensor: "Tensor", free=True):
     assert tensor.device_data is not None, "Tensor device data is None, cannot copy to host"
 
-    if tensor.device.manager.debug >= 1 and not PSEUDO_DEBUG:
+    if DEBUG >= 3 and not PSEUDO_DEBUG:
       start_time = time.time()
 
     data_flat = np.empty(tensor._shape, dtype=tensor.dtype).ravel()
@@ -121,13 +118,13 @@ class DeviceManager:
       self.free_device_tensor(tensor.device_data)
       tensor.device_data = None
 
-    if tensor.device.manager.debug >= 1 and not PSEUDO_DEBUG:
+    if DEBUG >= 3 and not PSEUDO_DEBUG:
       print(f"{color_green('[Cuda]')} Tensor data copied to host - {color_red(f'{tensor._data.nbytes} bytes')} - {color_red(f'{(time.time() - start_time) * 1000:.4f} ms')}")
 
   def dev_grad_to_host(self, tensor: "Tensor", free=True):
     assert tensor.device_grad is not None, "Tensor device grad is None, cannot copy to host"
 
-    if tensor.device.manager.debug >= 1 and not PSEUDO_DEBUG:
+    if DEBUG >= 3 and not PSEUDO_DEBUG:
       start_time = time.time()
 
     grad_flat = np.empty(tensor._shape, dtype=tensor.dtype).ravel()
@@ -138,7 +135,7 @@ class DeviceManager:
       self.free_device_tensor(tensor.device_grad)
       tensor.device_grad = None
 
-    if tensor.device.manager.debug >= 1 and not PSEUDO_DEBUG:
+    if DEBUG >= 3 and not PSEUDO_DEBUG:
       print(f"{color_green('[Cuda]')} Tensor gradient copied to host - {color_red(f'{tensor._grad.nbytes} bytes')} - {color_red(f'{(time.time() - start_time) * 1000:.4f} ms')}")
 
   def tensor_to_host(self, tensor: "Tensor"):

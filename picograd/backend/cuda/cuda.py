@@ -6,10 +6,10 @@ import subprocess
 import numpy as np
 from typing import Tuple, List, Optional
 
-from picograd.print_utils import *
-from picograd.backend.device import DeviceManager
 from .error import CUDA_ERRORS
 from .types import *
+from picograd.backend.device import DeviceManager
+from picograd.print_utils import *
 
 try:
   cuda = ctypes.CDLL('libcuda.so')
@@ -18,6 +18,7 @@ except OSError as e:
   # raise RuntimeError("Could not load CUDA libraries. Make sure CUDA is installed and the libraries are in your library path.") from e
   print("Could not load CUDA libraries. Make sure CUDA is installed and the libraries are in your library path.")
 
+DEBUG = int(os.getenv("DEBUG", 0))
 KERNELS_PATH = "picograd/backend/cuda/kernels"
 PSEUDO_DEBUG = int(os.getenv("PSEUDO_DEBUG", 0))  # if 1, generate assembly code as string but don't print (helps with segfaults)
 
@@ -25,9 +26,10 @@ TILE_SIZE = 16
 
 
 class CudaDeviceManager(DeviceManager):
-  def __init__(self, device_name, debug: int = 1):
-    super().__init__(device_name, debug=debug)
+  def __init__(self, device_name):
+    super().__init__(device_name)
     self.tile_size = TILE_SIZE
+    self.dev_name = device_name
 
     self.ctx = CUcontext()
     self.module = None
@@ -80,7 +82,7 @@ class CudaDeviceManager(DeviceManager):
       print(ptx_str)
       print("=================================\n")
 
-    if self.debug >= 4:
+    if DEBUG >= 4:
       with tempfile.TemporaryDirectory() as tmpdir:
         ptx_path = os.path.join(tmpdir, "kernel.ptx")
         cubin_path = os.path.join(tmpdir, "kernel.cubin")
@@ -112,7 +114,7 @@ class CudaDeviceManager(DeviceManager):
   def  init_cuda(self):
     """Gets CUDA device and context, then initializes CUDA driver API."""
 
-    if self.debug >= 2 and not PSEUDO_DEBUG:
+    if DEBUG >= 3 and not PSEUDO_DEBUG:
       print(f"{color_green('[Cuda]')} Initializing...")
 
     self.check_cuda(cuda.cuInit(0), "cuInit")
@@ -122,11 +124,11 @@ class CudaDeviceManager(DeviceManager):
 
   def compile_kernel(self, src: str, kernel_name: str):
     if kernel_name in self.kernels:
-      if self.debug >= 2 and not PSEUDO_DEBUG:
+      if DEBUG >= 3 and not PSEUDO_DEBUG:
         print(f"{color_green('[Cuda]')} Fetching compiled kernel {color_green(kernel_name)}.")
       return self.kernels[kernel_name]
 
-    if self.debug >= 2 and not PSEUDO_DEBUG:
+    if DEBUG >= 3 and not PSEUDO_DEBUG:
       print(f"{color_green('[Cuda]')} Compiling kernel {color_green(kernel_name)}")
 
     self.program = nvrtcProgram()
@@ -145,7 +147,7 @@ class CudaDeviceManager(DeviceManager):
       b"--fmad=false",
       b"--gpu-architecture=compute_75",
     ]
-    if self.debug >= 2:
+    if DEBUG >= 4:
       opts += [
         b"-G",
         b"--device-debug",
@@ -165,7 +167,7 @@ class CudaDeviceManager(DeviceManager):
     ptx_str = ctypes.string_at(ptx, ptx_size.value).decode()
 
     # Print PTX and SASS (intermediate repr and assembly)
-    if self.debug >= 3:
+    if DEBUG >= 5:
       self.print_ptx_and_sass(kernel_name, ptx_str)
 
     # load PTX module
@@ -209,7 +211,7 @@ class CudaDeviceManager(DeviceManager):
     ):
     """Launches a CUDA kernel with the given grid and block dimensions and arguments."""
 
-    if self.debug >= 2 and not PSEUDO_DEBUG:
+    if DEBUG >= 3 and not PSEUDO_DEBUG:
       print(f"{color_green('[Cuda]')} Launching kernel {color_yellow(kfunc)} with grid {color_yellow(grid)} and block {color_yellow(block)}")
 
     # FIXME: start_event and end_event cause Segmentation fault (undeterministically) for consecutive kernel launches
@@ -254,12 +256,14 @@ class CudaDeviceManager(DeviceManager):
       # elapsed_s = elapsed_ms.value / 1000.0
       elapsed_s = elapsed_ms / 1000.0
       gflops = n_flops / (elapsed_s * 1e9)
-      if self.debug >= 1 and not PSEUDO_DEBUG:
+      if DEBUG >= 3 and not PSEUDO_DEBUG:
         print(f"{color_yellow('[Cuda-Perf]')} Kernel time: {color_red(f'{elapsed_ms:.4f} ms — GFLOPs: {gflops:.2f}')}")
     else:
-      if self.debug >= 1 and not PSEUDO_DEBUG:
+      if DEBUG >= 3 and not PSEUDO_DEBUG:
         # print(f"{color_yellow('[Cuda-Perf]')} Kernel time: {elapsed_ms.value:.3f} ms")
         print(f"{color_yellow('[Cuda-Perf]')} Kernel time: {elapsed_ms:.4f} ms")
+    
+    return elapsed_ms, gflops if n_flops is not None else None
 
   # -------
   # GENERIC DEVICE INTERFACE METHODS

@@ -21,6 +21,9 @@ class CStyleRenderer():
   infinity: str = "INFINITY"
   nan: str = "NAN"
 
+  elementwise_ops = [OPS.ADD, OPS.MUL, OPS.POW]
+  binary_ops = [OPS.DOT, OPS.Conv2D]  # TODO: shape trick => elementwise
+
   def op_to_alu(self, op: OPS) -> str:
     if op == OPS.ADD: return "+"
     if op == OPS.MUL: return "*"
