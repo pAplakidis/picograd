@@ -9,8 +9,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from picograd.tensor import Tensor
 from picograd.backend.device import Devices, Device
 from picograd.backend.linearizer import *
-from picograd.backend.scheduler import Scheduler
-from picograd.backend.renderer.cuda_renderer import CUDARenderer
 
 device = Device(Devices.CUDA)
 lazy = True
@@ -28,16 +26,12 @@ d = a * b + c
 # a @ b + a
 # picograd.nn layers
 
-# TODO: move to tensor.py
-def realize(t: Tensor):
-  renderer = CUDARenderer(arch="sm_80")
-  scheduler = Scheduler(linearize(build_ast(t)), renderer)
-  scheduler.create_schedule()
-  scheduler.run_schedule()
-  print(a.device_data, b.device_data, c.device_data)
+# TODO: road to matmul
+# unary ops: unsqueeze, expand, permute, reshape, view
+# binary ops: elementwise add, mul
+# reduce ops: sum (w/ axis)
 
-# FIXME: the outputs must match (we don't use size anymore, so block_size and grid must be derived from tensor sizes)
-realize(d)
+d.realize()
 print("expected:", a.data * b.data + c.data)
 print("got:", d.data)
 assert np.allclose(a.data * b.data + c.data, d.data)

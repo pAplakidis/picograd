@@ -1,7 +1,6 @@
 import os
 import numpy as np
 
-from picograd.tensor import Tensor
 from picograd.print_utils import *
 from picograd.backend.uop import UOp
 from picograd.backend.dtypes import dtypes
@@ -72,11 +71,11 @@ class Scheduler:
         # TODO: don't use tensor._data (tensor might be 100% on the device)
         debug_str = f"{color_green(f'*** {self.mngr.dev_name} {id}')} {color_red(kernel_name)}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {sum(tensor._data.nbytes for uop in item.src for tensor in uop.arg) / (1024**3):.6f} GB"
         if item.op in (OPS.ADD, OPS.MUL):
-          debug_str += f"   {elapsed_ms:.4f} ms - {gflops:.4f} GFLOPs)   {item.op.name.lower()}"
+          debug_str += f"   ({elapsed_ms:.4f} ms - {gflops:.4f} GFLOPs)   {item.op.name.lower()}"
         print(debug_str)
 
   def run_kernel(self, kfunc, args: list, shape: tuple):
-    kargs = self.mngr.prep_kargs(*[arg.device_data if isinstance(arg, Tensor) else arg for arg in args])
+    kargs = self.mngr.prep_kargs(*[arg.device_data if hasattr(arg, "device_data") else arg for arg in args])
     block_size = (1, 1, 1)
     grid = (np.prod(shape), 1, 1)
     n_flops = np.prod(shape)

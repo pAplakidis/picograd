@@ -1,8 +1,9 @@
 from __future__ import annotations
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from picograd.tensor import Tensor
 from picograd.backend.function import OPS
+if TYPE_CHECKING: from picograd.tensor import Tensor
 
 
 @dataclass(eq=False)

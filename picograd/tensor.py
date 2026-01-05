@@ -10,6 +10,10 @@ from picograd.backend.function import *
 from picograd.backend.cpu.ops import *
 from picograd.util import *
 from picograd.backend.device import Devices, Device
+from picograd.backend.scheduler import Scheduler
+from picograd.backend.renderer.cstyle import CStyleRenderer
+from picograd.backend.renderer.cuda_renderer import CUDARenderer
+from picograd.backend.linearizer import linearize, build_ast
 
 DEBUG = int(os.getenv("DEBUG", 0))
 VERBOSE = int(os.getenv("VERBOSE", 0))
@@ -282,8 +286,16 @@ class Tensor:
     assert isinstance(value, Tensor) or isinstance(value, (int, float)), f"Operand {value} must be a Tensor or a scalar (int/float). Got {type(value)}."
     return Tensor([value], name=str(value), requires_grad=False, device=self.device) if isinstance(value, (int, float)) else value
 
+  def get_renderer(self) -> CStyleRenderer:
+    if self.device.name == Devices.CPU: raise NotImplementedError("CPU renderer not implemented yet")
+    if self.device.name == Devices.CUDA: return CUDARenderer(arch="sm_80")
+    raise NotImplementedError(f"Renderer not implemented for {t.device.name} yet")
+
   def realize(self):
-    pass
+    renderer = self.get_renderer()
+    scheduler = Scheduler(linearize(build_ast(self)), renderer)
+    scheduler.create_schedule()
+    scheduler.run_schedule()
 
   def create_op(
       self,

@@ -16,19 +16,21 @@ class CUDARenderer(CStyleRenderer):
   def __reduce__(self):
     return self.__class__, (self.arch,)
 
-  # TODO: make this generic
+  def get_args(args): return [f"data{i}" for i in range(len(args))]
+
+  # TODO: make this generic (create a list "kernel" with tokens and then render it)
   def elementwise(self, op, dtype, arg, shape: tuple[int,...]):
     alu = self.op_to_alu(op)
     # size_t = np.prod(shape)
     size_t = '_'.join([str(s) for s in shape])
-    kernel_name = f"{self.elementwise_kernel_name}_{size_t}"
+    kernel_name = f"{self.elementwise_kernel_name}_{op.name}_{size_t}"
 
     func = f"""
-{self.kernel_typedef} {kernel_name}(float *data0, float *data1, float *data2)
+{self.kernel_typedef} {kernel_name}({dtype.name} *data0, {dtype.name} *data1, {dtype.name} *data2)
 {{
-  int gidx0 = blockIdx.x; /* 16 */
-  float val0 = *(data1 + gidx0);
-  float val1 = *(data2 + gidx0);
+  int gidx0 = blockIdx.x;
+  {dtype.name}  val0 = *(data1 + gidx0);
+  {dtype.name}  val1 = *(data2 + gidx0);
   *(data0 + gidx0) = (val0 {alu} val1);
 }}
     """

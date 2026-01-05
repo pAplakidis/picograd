@@ -58,14 +58,6 @@ class CudaDeviceManager(DeviceManager):
       raise RuntimeError(f"[CUDA ERROR] {func_name} failed: {err_msg} (code {result})")
     if sync: cuda.cuCtxSynchronize()  # synchronous wait for CUDA ops to finish
 
-  @staticmethod
-  def load_kernel(file_path: str) -> str:
-    """Reads a kernel file and returns its contents as a string."""
-
-    with open(os.path.join(KERNELS_PATH, file_path), 'r') as f:
-      kernel_code = f.read()
-    return kernel_code
-
   def check_nvrtc(self, result: int, func_name: str):
     """Checks if NVRTC function call was successful. Raises RuntimeError if not."""
 
@@ -75,6 +67,12 @@ class CudaDeviceManager(DeviceManager):
       log = ctypes.create_string_buffer(log_size.value)
       nvrtc.nvrtcGetProgramLog(self.program, log)
       raise RuntimeError(f"[NVRTC ERROR] {func_name} failed with code {result}:\n{log.value.decode()}")
+
+  @staticmethod
+  def load_kernel(file_path: str) -> str:
+    """Reads a kernel file and returns its contents as a string."""
+    with open(os.path.join(KERNELS_PATH, file_path), 'r') as f:
+      return f.read()
 
   def print_ptx_and_sass(self, kernel_name: str, ptx_str: str):
     if not PSEUDO_DEBUG:
@@ -113,14 +111,11 @@ class CudaDeviceManager(DeviceManager):
 
   def  init_cuda(self):
     """Gets CUDA device and context, then initializes CUDA driver API."""
-
-    if DEBUG >= 3 and not PSEUDO_DEBUG:
-      print(f"{color_green('[Cuda]')} Initializing...")
-
     self.check_cuda(cuda.cuInit(0), "cuInit")
     device = CUdevice() 
     self.check_cuda(cuda.cuDeviceGet(ctypes.byref(device), 0), "cuDeviceGet")
     self.check_cuda(cuda.cuCtxCreate(ctypes.byref(self.ctx), 0, device), "cuCtxCreate")
+    if DEBUG >= 3 and not PSEUDO_DEBUG: print(f"{color_green('[Cuda]')} Device initialized")
 
   def compile_kernel(self, src: str, kernel_name: str):
     if kernel_name in self.kernels:

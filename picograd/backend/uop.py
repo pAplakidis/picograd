@@ -8,6 +8,13 @@ from .dtypes import dtypes
 
 DEBUG = int(os.getenv("DEBUG", 0))
 
+# NOTE: UOp is a singleton - this checks if two UOps are identical (same op, dtype, src, arg) and reuses them
+# class UOpMetaClass(type):
+#   ucache:dict[tuple, weakref.ReferenceType[UOp]] = {}
+#   def __call__(cls, op:Ops, dtype:DType=dtypes.void, src:tuple[UOp,...]=tuple(), arg:Any=None, _buffer:Buffer|None=None):
+#     if (wret:=UOpMetaClass.ucache.get(key:=(op, dtype, src, arg), None)) is not None and (ret:=wret()) is not None: return ret
+#     UOpMetaClass.ucache[key] = ref = weakref.ref(created:=super().__call__(*key))
+
 class UOp:
   """ Intermediate representation in the compiler """
   def __init__(self, op: OPS, dtype: dtypes, src: tuple[UOp, ...] = tuple(), arg: Any = None, tag: Any = None):
