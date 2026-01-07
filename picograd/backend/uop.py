@@ -1,6 +1,6 @@
 from __future__ import annotations
 import os
-from typing import Any
+from typing import Any, Callable
 
 from .function import OPS
 from .dtypes import dtypes
@@ -15,6 +15,16 @@ DEBUG = int(os.getenv("DEBUG", 0))
 #     if (wret:=UOpMetaClass.ucache.get(key:=(op, dtype, src, arg), None)) is not None and (ret:=wret()) is not None: return ret
 #     UOpMetaClass.ucache[key] = ref = weakref.ref(created:=super().__call__(*key))
 
+def pretty_print(x:Any, rep:Callable, srcfn=lambda x: x.src, cache=None, d=0)->str:
+  def dfs(x:Any, cache:dict):
+    for s in srcfn(x) or []:
+      cache.setdefault(s, [len(cache), 0, False])[1] += 1
+      if cache[s][1] == 1: dfs(s, cache)
+  if cache is None: dfs(x, cache:={})
+  if (cx:=cache.setdefault(x, [0,0,False]))[2]: return f"{' '*d} x{cx[0]}"
+  cx[2], srcs = True, ('None' if srcfn(x) is None else ''.join(f'\n{pretty_print(s, rep, srcfn, cache, d+2)},' for s in srcfn(x)))
+  return f"{' '*d}{f'x{cx[0]}:=' * (cx[1]>1)}{rep(x)}" % srcs
+
 class UOp:
   """ Intermediate representation in the compiler """
   def __init__(self, op: OPS, dtype: dtypes, src: tuple[UOp, ...] = tuple(), arg: Any = None, tag: Any = None):
@@ -23,8 +33,7 @@ class UOp:
     self.src = src
     self.arg = arg
     self.tag = tag
-  # TODO: pretty_print UOp.src
-  def __repr__(self): return f"{type(self).__name__}({self.op}, {self.dtype}, arg={self.argstr()}{self.tagstr()}, src=({self.src}))"
+  def __repr__(self): return pretty_print(self, lambda x: f"{type(self).__name__}({x.op}, {x.dtype}, arg={x.argstr()}{x.tagstr()}, src=(%s))")
   def tagstr(self): return f", tag={self.tag}" if self.tag is not None else ""
   def argstr(self):
     if self.arg is None:

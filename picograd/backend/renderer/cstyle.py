@@ -21,17 +21,30 @@ class CStyleRenderer():
   infinity: str = "INFINITY"
   nan: str = "NAN"
 
+  assign = "="
+  semicolon = ";"
+  end_expr = f"{semicolon}\n"
+
   elementwise_ops = [OPS.ADD, OPS.MUL, OPS.POW]
   binary_ops = [OPS.DOT, OPS.Conv2D]  # TODO: shape trick => elementwise
 
+  @staticmethod
+  def parenthesis(expr: str) -> str: return f"({expr})"
+
+  @staticmethod
+  def curly_braces(expr: str) -> str: return f"{{\n{expr}\n}}"
+
+  @staticmethod
+  def for_loop(var: str, start: str, end: str, body: str) -> str: return ' '.join([f"for (int {var} = {start}; {var} < {end}; {var}++)", CStyleRenderer.curly_braces(body)])
+
   def op_to_alu(self, op: OPS) -> str:
-    if op == OPS.ADD: return "+"
-    if op == OPS.MUL: return "*"
+    if op == OPS.ADD: return " + "
+    if op == OPS.MUL: return " * "
 
     raise NotImplementedError(f"Unsupported op: {op}")
 
 def elementwise(op, dtype, arg):
-  func = """#include <stddef.h>
+  prg = """#include <stddef.h>
   float E_4_4(float* data0, float* data1, float* data2, size_t N){
     for (size_t gidx0 = 0; gidx0 < N; gidx0++) {
       float val0 = data1[gidx0];
@@ -39,3 +52,4 @@ def elementwise(op, dtype, arg):
       data0[gidx0] = val0 + val1;
     }
   }"""
+  return prg

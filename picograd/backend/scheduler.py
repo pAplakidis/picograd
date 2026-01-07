@@ -11,6 +11,8 @@ from picograd.backend.linearizer import *
 DEBUG = int(os.getenv("DEBUG", 0))
 
 
+# TODO: check out [ https://mesozoic-egg.github.io/tinygrad-notes/scheduleitem.html ]
+# TODO: ScheduleItem => Linear Representation (UOps) [ https://mesozoic-egg.github.io/tinygrad-notes/uops.html ]
 class ScheduleItem:
   pass
 
@@ -49,24 +51,28 @@ class Scheduler:
         print(item)
       self.lower_item(item, id)
 
+  # TODO: proper UOps to CStyle [ https://mesozoic-egg.github.io/tinygrad-notes/backends.html ]
   def lower_item(self, item: UOp, id: int = 0):
     if DEBUG >= 1 and id == 0: print(f"<DEVICE> <ID> <KERNEL_NAME> <NUM_ELEMS> <DTYPE>    <NUM_ARGS>   <MEMORY_IN_GB> <kernel_time> - <GFLOPs> <op_type>")
+    # TODO: use pattern_matcher => self.renderer.render_code(item)
 
     # TODO: if LOAD, move data to device (if not already) - will be different later when tensors aren't allcoated in __init__()
-    # if item.op == OPS.LOAD:
-    #   tensor = item.arg[0]
-    #   tensor.device_data = tensor.device.manager.to_device(tensor.data)
-    #   return
+    if item.op == OPS.LOAD:
+      tensor = item.arg[0]
+      # tensor.device_data = tensor.device.manager.to_device(tensor.data)
+      if DEBUG >= 1: print(f"{color_green(f'*** {self.mngr.dev_name} {id}')} {color_yellow("copy")}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {sum(tensor._data.nbytes for uop in item.src for tensor in uop.arg) / (1024**3):.6f} GB")
+      return
 
     if item.op in (OPS.ADD, OPS.MUL):
       # TODO: make args more generic (cover all ops)
       args = [uop.arg[0] for uop in item.src if uop.op in (OPS.LOAD, OPS.ADD, OPS.MUL)] # input tensors
       args.insert(0, item.arg[0])  # output tensor
-      kernel_code, kernel_name = self.renderer.elementwise(item.op, dtypes.float32, (), shape=(args[0].shape))
-      if DEBUG >= 2: print(kernel_code)
+      kernel_code, kernel_name = self.renderer.elementwise(item.op, dtypes.float32, args, shape=(args[0].shape))
+      if DEBUG >= 2: print('\n', kernel_code, '\n')
 
       kfunc = self.mngr.compile_kernel(kernel_code, kernel_name.encode("utf-8"))
       elapsed_ms, gflops = self.run_kernel(kfunc, args, shape=args[0].shape)
+      # FIXME: GFLOPs are wrong
       if DEBUG >= 1:
         # TODO: don't use tensor._data (tensor might be 100% on the device)
         debug_str = f"{color_green(f'*** {self.mngr.dev_name} {id}')} {color_red(kernel_name)}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {sum(tensor._data.nbytes for uop in item.src for tensor in uop.arg) / (1024**3):.6f} GB"
