@@ -4,7 +4,7 @@ import numpy as np
 from picograd.print_utils import *
 from picograd.backend.uop import UOp
 from picograd.backend.dtypes import dtypes
-from picograd.backend.function import OPS
+from picograd.backend.function import OPS, BINARY_OPS,  MOVEMENT_OPS, REDUCE_OPS
 from picograd.backend.linearizer import *
 
 
@@ -49,6 +49,7 @@ class Scheduler:
     for id, item in enumerate(self.schedule):
       if DEBUG >= 2:
         print(item)
+        print()
       self.lower_item(item, id)
 
   # TODO: proper UOps to CStyle [ https://mesozoic-egg.github.io/tinygrad-notes/backends.html ]
@@ -63,26 +64,88 @@ class Scheduler:
       if DEBUG >= 1: print(f"{color_green(f'*** {self.mngr.dev_name} {id}')} {color_yellow("copy")}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {sum(tensor._data.nbytes for uop in item.src for tensor in uop.arg) / (1024**3):.6f} GB")
       return
 
+    if item.op == OPS.STORE:
+      tensor = item.arg[0]
+      # tensor.data = tensor.device.manager.to_host(tensor.device_data)
+      if DEBUG >= 1: print(f"{color_green(f'*** {self.mngr.dev_name} {id}')} {color_yellow("copy")}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {sum(tensor._data.nbytes for uop in item.src for tensor in uop.arg) / (1024**3):.6f} GB")
+      return
+
+    if item.op in MOVEMENT_OPS and DEBUG >= 1:
+      print(f"{color_green(f'*** {self.mngr.dev_name} {id}')} {color_yellow("copy")}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {sum(tensor._data.nbytes for uop in item.src for tensor in uop.arg) / (1024**3):.6f} GB {item.op.name.lower()}")
+
     if item.op in (OPS.ADD, OPS.MUL):
       # TODO: make args more generic (cover all ops)
-      args = [uop.arg[0] for uop in item.src if uop.op in (OPS.LOAD, OPS.ADD, OPS.MUL)] # input tensors
-      args.insert(0, item.arg[0])  # output tensor
-      kernel_code, kernel_name = self.renderer.elementwise(item.op, dtypes.float32, args, shape=(args[0].shape))
+      args = [uop.arg[0] for uop in item.src if uop.op in ([OPS.LOAD] + list(BINARY_OPS)+ list(MOVEMENT_OPS))] # input tensors
+      args = [item.arg[0]] + args # output tensor first
+      kernel_code, kernel_name, contiguous = self.renderer.elementwise(item.op, dtypes.float32, args)
       if DEBUG >= 2: print('\n', kernel_code, '\n')
 
       kfunc = self.mngr.compile_kernel(kernel_code, kernel_name.encode("utf-8"))
-      elapsed_ms, gflops = self.run_kernel(kfunc, args, shape=args[0].shape)
-      # FIXME: GFLOPs are wrong
+      elapsed_ms, gflops = self.run_elementwise_kernel(kfunc, args, shape=args[0].shape, contiguous=contiguous)
       if DEBUG >= 1:
         # TODO: don't use tensor._data (tensor might be 100% on the device)
         debug_str = f"{color_green(f'*** {self.mngr.dev_name} {id}')} {color_red(kernel_name)}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {sum(tensor._data.nbytes for uop in item.src for tensor in uop.arg) / (1024**3):.6f} GB"
         if item.op in (OPS.ADD, OPS.MUL):
           debug_str += f"   ({elapsed_ms:.4f} ms - {gflops:.4f} GFLOPs)   {item.op.name.lower()}"
         print(debug_str)
+      return
 
-  def run_kernel(self, kfunc, args: list, shape: tuple):
+    if item.op in REDUCE_OPS:
+      reduce_map = {
+        OPS.SUM: OPS.ADD,
+        # TODO: all reduce patterns
+      }
+      # args: (output, input)
+      out_tensor = item.arg[0]
+      in_tensor = item.src[0].arg[0]
+      out_shape = out_tensor.shape
+      in_shape = in_tensor.shape
+      
+      # handle axis and keepdims
+      if len(out_shape) == len(in_shape):
+        keepdims = True
+        dims = [i for i, (si, so) in enumerate(zip(in_shape, out_shape)) if so == 1 and si != 1]
+        assert len(dims) == 1, f"Ambiguous reduce dims: {dims}"
+        dim = dims[0]
+      elif len(out_shape) == len(in_shape) - 1:
+        keepdims = False
+        dims = []
+        j = 0
+        for i in range(len(in_shape)):
+          if j < len(out_shape) and in_shape[i] == out_shape[j]:
+            j += 1
+          else:
+            dims.append(i)
+        assert len(dims) == 1, f"Ambiguous reduce dims: {dims}"
+        dim = dims[0]
+      else:
+        raise RuntimeError(f"Cannot infer reduction axis: in={in_shape}, out={out_shape}")
+
+      if dim < 0: dim += len(in_tensor.shape)
+      kernel_code, kernel_name, out_shape = self.renderer.reduce(reduce_map[item.op], dtypes.float32, [out_tensor, in_tensor], shape=in_tensor.shape, dim=dim)
+      if DEBUG >= 2: print("\n", kernel_code, "\n")
+
+      kfunc = self.mngr.compile_kernel(kernel_code, kernel_name.encode("utf-8"))
+      elapsed_ms, gflops = self.run_reduce_kernel(kfunc, [out_tensor, in_tensor], out_shape)
+      if DEBUG >= 1:
+        print(
+          f"{color_green(f'*** {self.mngr.dev_name} {id}')}"
+          f" {color_red(kernel_name)} reduce"
+          f" ({elapsed_ms:.4f} ms - {gflops:.4f} GFLOPs)"
+        )
+      return
+
+  def run_elementwise_kernel(self, kfunc, args: list, shape: tuple, contiguous: bool):
     kargs = self.mngr.prep_kargs(*[arg.device_data if hasattr(arg, "device_data") else arg for arg in args])
-    block_size = (1, 1, 1)
-    grid = (np.prod(shape), 1, 1)
-    n_flops = np.prod(shape)
-    return self.mngr.launch_kernel(kfunc, grid, block_size, kargs, n_flops=n_flops)
+    numel = np.prod(shape)
+    block = (256, 1, 1)
+    grid = ((numel + 255) // 256, 1, 1)
+    n_flops = int(np.prod(shape))
+    return self.mngr.launch_kernel(kfunc, grid, block, kargs, n_flops=n_flops)
+
+  def run_reduce_kernel(self, kfunc, args: list, out_shape: tuple):
+    kargs = self.mngr.prep_kargs(*[arg.device_data for arg in args])
+    grid = (int(np.prod(out_shape)), 1, 1)
+    block = (1, 1, 1)
+    n_flops = int(np.prod(out_shape)) # FLOPs ≈ output_elems × reduce_dim
+    return self.mngr.launch_kernel(kfunc, grid, block, kargs, n_flops=n_flops)
