@@ -110,6 +110,7 @@ class DeviceManager:
     if DEBUG >= 3 and not PSEUDO_DEBUG:
       start_time = time.time()
 
+    if not tensor.is_contiguous: tensor = tensor.contiguous()
     data_flat = np.empty(tensor._shape, dtype=tensor.dtype).ravel()
     self.copy_data_to_host(tensor.device_data, data_flat)
     tensor._data = data_flat.reshape(tensor._shape)
@@ -144,7 +145,10 @@ class DeviceManager:
     self.dev_grad_to_host(tensor)
 
   # GENERIC DEVICE INTERFACE METHODS
-  def allocate_device_memory(self, T: np.ndarray) -> ctypes.c_void_p: raise NotImplementedError("allocate_device_memory is not implemented for this device manager")
+  def allocate_device_memory(self, x) -> ctypes.c_void_p: raise NotImplementedError("allocate_device_memory is not implemented for this device manager")
   def copy_data_to_device(self, d_T: ctypes.c_void_p, T_flat: np.ndarray): raise NotImplementedError("copy_data_to_device is not implemented for this device manager")
   def copy_data_to_host(self, d_T: ctypes.c_void_p, T_flat: np.ndarray): raise NotImplementedError("copy_data_to_host is not implemented for this device manager")
+  def copy_device_to_device(self, d_src: ctypes.c_void_p, d_dst: ctypes.c_void_p, size: int): raise NotImplementedError("copy_device_to_device is not implemented for this device manager")
   def free_device_tensor(self, d_T: ctypes.c_void_p): raise NotImplementedError("free_device_tensor is not implemented for this device manager")
+  def compile_kernel(self, src: str, kernel_name: str) -> ctypes.c_void_p: raise NotImplementedError("compile_kernel is not implemented for this device manager")
+  def launch_kernel(self, kfunc: ctypes.c_void_p, grid: Tuple, block: Tuple, args: List[ctypes.c_void_p], shared_mem: int = 0, n_flops: Optional[int] = None) -> Tuple[float, Optional[float]]: raise NotImplementedError("launch_kernel is not implemented for this device manager")

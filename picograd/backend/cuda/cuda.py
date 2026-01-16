@@ -117,7 +117,61 @@ class CudaDeviceManager(DeviceManager):
     self.check_cuda(cuda.cuCtxCreate(ctypes.byref(self.ctx), 0, device), "cuCtxCreate")
     if DEBUG >= 3 and not PSEUDO_DEBUG: print(f"{color_green('[Cuda]')} Device initialized")
 
-  def compile_kernel(self, src: str, kernel_name: str):
+  def cuda_malloc(self, size: int) -> CUdeviceptr:
+    """Allocates device memory and returns a pointer to it."""
+
+    ptr = CUdeviceptr()
+    self.check_cuda(cuda.cuMemAlloc(ctypes.byref(ptr), size), "cuMemAlloc")
+    return ptr
+
+  def cuda_free(self, ptr: CUdeviceptr):
+    """Frees device memory pointed to by ptr."""
+    self.check_cuda(cuda.cuMemFree(ptr), "cuMemFree")
+
+  def cuda_memcpy_htod(self, dst: CUdeviceptr, src: ctypes.c_void_p, size: int):
+    """Copies data from host to device memory."""
+    self.check_cuda(cuda.cuMemcpyHtoD(dst, ctypes.c_void_p(src), size), "cuMemcpyHtoD", sync=True)
+
+  def cuda_memcpy_dtoh(self, dst: ctypes.c_void_p, src: CUdeviceptr, size):
+    """Copies data from device to host memory."""
+    self.check_cuda(cuda.cuMemcpyDtoH(ctypes.c_void_p(dst), src, size), "cuMemcpyDtoH", sync=True)
+
+  def cuda_memcpy_dtod(self, dst: CUdeviceptr, src: CUdeviceptr, size: int):
+    """Copies data inside the same device."""
+    return self.check_cuda(cuda.cuMemcpyDtoD(dst, src, size), "cuMemcpyDtoD", sync=True)
+
+  # -------
+  # GENERIC DEVICE INTERFACE METHODS
+  # -------
+
+  def allocate_device_memory(self, x) -> ctypes.c_void_p:
+    """Allocate device memory for tensor."""
+
+    if isinstance(x, np.ndarray):
+      nbytes = x.nbytes
+    elif isinstance(x, int):
+      nbytes = x
+    else:
+      raise ValueError("allocate_device_memory expects an integer (number of bytes) or a numpy ndarray.")
+    return self.cuda_malloc(nbytes)
+
+  def copy_data_to_device(self, d_T: ctypes.c_void_p, T_flat: np.ndarray):
+    """Copy data from host to device."""
+    self.cuda_memcpy_htod(d_T, T_flat.ctypes.data, T_flat.nbytes)
+
+  def copy_data_to_host(self, d_T: ctypes.c_void_p, T_flat: np.ndarray):
+    """Copy data from device to host."""
+    self.cuda_memcpy_dtoh(T_flat.ctypes.data, d_T, T_flat.nbytes)
+
+  def copy_device_to_device(self, d_src: ctypes.c_void_p, d_dst: ctypes.c_void_p, size: int):
+    """Copy data inside the same device"""
+    self.cuda_memcpy_dtod(d_dst, d_src, size)
+
+  def free_device_tensor(self, d_T: ctypes.c_void_p):
+    """Free tensor from device memory."""
+    self.cuda_free(d_T)
+
+  def compile_kernel(self, src: str, kernel_name: str) -> CUfunction:
     if kernel_name in self.kernels:
       if DEBUG >= 3 and not PSEUDO_DEBUG:
         print(f"{color_green('[Cuda]')} Fetching compiled kernel {color_green(kernel_name)}.")
@@ -176,25 +230,6 @@ class CudaDeviceManager(DeviceManager):
     self.kernels[kernel_name] = kfunc
     return kfunc
 
-  def cuda_malloc(self, size: int) -> CUdeviceptr:
-    """Allocates device memory and returns a pointer to it."""
-
-    ptr = CUdeviceptr()
-    self.check_cuda(cuda.cuMemAlloc(ctypes.byref(ptr), size), "cuMemAlloc")
-    return ptr
-
-  def cuda_free(self, ptr: CUdeviceptr):
-    """Frees device memory pointed to by ptr."""
-    self.check_cuda(cuda.cuMemFree(ptr), "cuMemFree")
-
-  def cuda_memcpy_htod(self, dst: CUdeviceptr, src: ctypes.c_void_p, size: int):
-    """Copies data from host to device memory."""
-    self.check_cuda(cuda.cuMemcpyHtoD(dst, ctypes.c_void_p(src), size), "cuMemcpyHtoD", sync=True)
-
-  def cuda_memcpy_dtoh(self, dst: ctypes.c_void_p, src: CUdeviceptr, size):
-    """Copies data from device to host memory."""
-    self.check_cuda(cuda.cuMemcpyDtoH(ctypes.c_void_p(dst), src, size), "cuMemcpyDtoH", sync=True)
-
   def launch_kernel(
       self,
       kfunc: CUfunction,
@@ -203,7 +238,7 @@ class CudaDeviceManager(DeviceManager):
       args: List[ctypes.c_void_p],
       shared_mem: int = 0,
       n_flops: Optional[int] = None
-    ):
+    ) -> Tuple[float, Optional[float]]:
     """Launches a CUDA kernel with the given grid and block dimensions and arguments."""
 
     if DEBUG >= 3 and not PSEUDO_DEBUG:
@@ -259,23 +294,3 @@ class CudaDeviceManager(DeviceManager):
         print(f"{color_yellow('[Cuda-Perf]')} Kernel time: {elapsed_ms:.4f} ms")
     
     return elapsed_ms, gflops if n_flops is not None else None
-
-  # -------
-  # GENERIC DEVICE INTERFACE METHODS
-  # -------
-
-  def allocate_device_memory(self, T: np.ndarray) -> ctypes.c_void_p:
-    """Allocate device memory for tensor."""
-    return self.cuda_malloc(T.nbytes)
-
-  def copy_data_to_device(self, d_T: ctypes.c_void_p, T_flat: np.ndarray):
-    """Copy data from host to device."""
-    self.cuda_memcpy_htod(d_T, T_flat.ctypes.data, T_flat.nbytes)
-
-  def copy_data_to_host(self, d_T: ctypes.c_void_p, T_flat: np.ndarray):
-    """Copy data from device to host."""
-    self.cuda_memcpy_dtoh(T_flat.ctypes.data, d_T, T_flat.nbytes)
-
-  def free_device_tensor(self, d_T: ctypes.c_void_p):
-    """Free tensor from device memory."""
-    self.cuda_free(d_T)
