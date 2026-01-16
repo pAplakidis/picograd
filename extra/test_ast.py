@@ -12,20 +12,37 @@ from picograd.backend.linearizer import *
 
 device = Device(Devices.CUDA)
 lazy = True
-shape = (100, 100)
-a = Tensor.random(shape, lazy=lazy, device=device, name="a")
-b = Tensor.random(shape, lazy=lazy, device=device, name="b")
-c = Tensor.random(shape, lazy=lazy, device=device, name="c")
 
-d = a * b + a * b + c
-# TODO: test cases for compiler
-# a * b + c
-# a * b + c * d
-# a * b + a
-# a * b + a * c
-# a @ b + c
-# a @ b + a
+# square arrays
+# shape = (100, 100)
+# a = Tensor.random(shape, lazy=lazy, device=device, name="a")
+# b = Tensor.random(shape, lazy=lazy, device=device, name="b")
+# c = Tensor.random(shape, lazy=lazy, device=device, name="c")
+
+# non square arrays
+a = Tensor.random((2, 4), lazy=lazy, device=device, name="a")
+b = Tensor.random((4, 3), lazy=lazy, device=device, name="b")
+
+# TODO: make this a unittest - cases for compiler:
+# d = a * b + c
+# d = a * b + c * d
+# d = a * b + a
+# d = a * b + a * c
+# d = a * b + a * b + c
+# d = a @ b + c
+d = a @ b #+ c
+# d = a @ b + a
 # picograd.nn layers
+
+# check = a.data * b.data + c.data
+# check = a.data * b.data + c.data * d.data
+# check = a.data * b.data + a.data
+# check = a.data * b.data + a.data * c.data
+# check = a.data * b.data + a.data * b.data + c.data
+# check = a.data @ b.data + c.data
+# check = a.data * b.data + a.data * b.data + c.data
+# picograd.nn layers
+check = a.data @ b.data # + c.data
 
 # TODO: road to matmul
 # unary ops: unsqueeze, expand, permute, reshape, view
@@ -33,6 +50,5 @@ d = a * b + a * b + c
 # reduce ops: sum (w/ axis)
 
 d.realize()
-check = a.data * b.data + a.data * b.data + c.data
 assert np.allclose(check, d.data)
 print("[+] OK")
