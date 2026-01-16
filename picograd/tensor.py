@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 import os
 import ctypes
 import numpy as np
+from numpy.lib.stride_tricks import as_strided
 from sys import platform
 from typing import Optional, Union
 
@@ -63,9 +65,8 @@ class Tensor:
         self._strides = default_strides(self._shape)
       else:
         self._strides = None
-    self.is_contiguous = check_contiguous(self._shape, self._strides)
-
-    self._prev = set(_prev)
+    
+    self._prev = tuple(dict.fromkeys(_prev))  # used to be set, but doesn't preserve order
     self.prev_op = None
     self.layer = None
     self._backward = lambda: None
@@ -174,18 +175,18 @@ class Tensor:
     return None
 
   @property
-  def nbytes(self):
-    if self._shape is None: return 0
-    n_elements = 1
-    for d in self._shape: n_elements *= d
-    return n_elements * np.dtype(self.dtype).itemsize
+  def is_contiguous(self): return check_contiguous(self._shape, self._strides)
 
-  # TODO: if DEBUG > 1, then print self.data and self.grad as well (avoids unecessary device memory copies)
+  @property
+  def ndim(self):
+    if self._shape is None: return 0
+    return len(self._shape)
+
+  @property
+  def nbytes(self): return int(np.prod(self.shape) * np.dtype(self.dtype).itemsize)
+
   def __repr__(self):
-    if self.device.name == Devices.CPU:
-      return f"{color_yellow('Tensor')} (name={self.name}, shape={self.shape}, device={self.device.name}, data=\n{self.data}\n, grad=\n{self.grad}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
-    else:
-      return f"{color_yellow('Tensor')} (name={self.name}, shape={self.shape}, device={self.device.name}, device_data={self.device_data}, device_grad={self.device_grad}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
+    return f"{color_yellow('Tensor')} (name={self.name}, shape={self.shape}, strides={self.strides}, device={self.device.name}, data={self.data if self.device.name == Devices.CPU else hex(self.device_data.value)}, grad={self.grad if self.device.name == Devices.CPU else hex(self.device_grad.value)}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
     
   def __del__(self):
     # if self.device_data is not None:
@@ -297,7 +298,7 @@ class Tensor:
     scheduler.create_schedule()
     scheduler.run_schedule()
 
-  def create_op(
+  def from_op(
       self,
       op_name: str,
       shape: Optional[Tuple] = None,
@@ -305,7 +306,7 @@ class Tensor:
       operands: Tuple["Tensor"] = (),
       forward_args: Tuple = (),
       forward_kwargs: dict = {},
-    ):
+    ) -> Tensor:
     """
     Generalized op creation for tensor operations.
     
@@ -318,11 +319,11 @@ class Tensor:
     """
 
     operands = tuple([self.scalar_to_tensor(t) for t in operands])
-    func = get_op(op_name, self.device.name)
+    if not self.lazy: func = get_op(op_name, self.device.name)
     tensor_inputs = (self,) + operands
     prev = tensor_inputs
     
-    out_data = None
+    out_data = (self.data if self.device.name == Devices.CPU else self.device_data) if op_name in MOVEMENT_OPS else None
     if not self.lazy:
       out_data = func.forward(*tensor_inputs, *forward_args, **forward_kwargs)
 
@@ -352,19 +353,35 @@ class Tensor:
   def contiguous(self):
     if self.is_contiguous: return self
     # allocate contiguous buffer and copy using a strided->contiguous copy kernel (similar to add_strided logic but copying)
-    new = Tensor(shape=self.shape, device=self.device, requires_grad=self.requires_grad)
     if self.device.name == Devices.CPU:
+      new = Tensor(shape=self.shape, device=self.device, requires_grad=self.requires_grad)
       new._data = np.empty(self.shape, dtype=self.dtype)
       # use numpy fancy indexing or np.copyto with view:
       np.copyto(new._data, self.data)  # copying from strided view into contiguous array
       new._strides = default_strides(new._shape)
       new.is_contiguous = True
       return new
-    else:
-      # device: call device.manager.strided_to_contig(self.device_data, self.shape, self.strides)
-      dst_ptr = self.device.manager.allocate_device_memory_for_shape(self.shape, dtype=self.dtype)
-      self.device.manager.copy_strided_to_contig(self.device_data, self.shape, self.strides, dst_ptr)
-      return Tensor(device_data=dst_ptr, shape=self.shape, strides=default_strides(self.shape), device=self.device)
+
+    # FIXME: works for expanded, but what about permute? (and other movement ops)
+    # TODO: !not memory/speed efficient! - requires kernel
+    # copy non-strided data to host, make contiguous on host, copy back to device
+
+    numel = required_numel(self.shape, self.strides)
+    host_flat = np.zeros(numel, dtype=self.dtype)
+
+    # FIXME: after permute, it points at the "wrong" address (?)
+    # self.device.manager.copy_data_to_host(ctypes.c_void_p(0x8400400), host_flat)
+    # FIXME: that's why this one works
+
+    self.device.manager.copy_data_to_host(self.device_data, host_flat)
+    # print(hex(self.device_data.value), host_flat)
+    strided_temp = as_strided(host_flat, shape=(self.shape), strides=(tuple(s * self.dtype.itemsize for s in self.strides)))
+    contig_host = np.ascontiguousarray(strided_temp)
+    dst_ptr = self.device.manager.allocate_device_memory(contig_host)
+    self.device.manager.copy_data_to_device(dst_ptr, contig_host)
+    self.device_data = dst_ptr
+    self._strides = default_strides(self.shape)
+    return self
 
   @staticmethod
   def cat(tensors: list["Tensor"], axis=0):
@@ -386,7 +403,7 @@ class Tensor:
     out_data = np.concatenate(datas, axis=axis)
     out = Tensor(
       out_data,
-      _prev=set(tensors),
+      _prev=tuple(dict.fromkeys(tensors)),
       device=device,
       requires_grad=requires_grad
     )
@@ -423,22 +440,31 @@ class Tensor:
   def __equal__(self, other):             return np.equal(self.data, other.data)
 
   # Movement Ops
+  # TODO: only reshape and flatten create new tensor, others just change shape/strides, but they try view first (+ view if contiguous)
   # FIXME: view should not create a new tensor, but just change the shape and stride of the current one while reshape keeps the memory layout contiguous for the new tensor
-  def reshape(self, *args, **kwargs): shape = args if len(args) > 1 else args[0]; return self.create_op(OPS.Reshape, forward_args=(shape,), forward_kwargs=kwargs, shape=shape)
-  def view(self, *args, **kwargs):    return self.create_op(OPS.Reshape, forward_args=args, forward_kwargs=kwargs, shape=args[0] if len(args) == 1 else args)
+  def reshape(self, *args, **kwargs): shape = args if len(args) > 1 else args[0]; return self.from_op(OPS.Reshape, forward_args=(shape,), forward_kwargs=kwargs, shape=shape)
+  def view(self, *args, **kwargs):    return self.from_op(OPS.Reshape, forward_args=args, forward_kwargs=kwargs, shape=args[0] if len(args) == 1 else args)
   def flatten(self):                  return self.reshape(-1) # TODO: axis
-  def unsqueeze(self, axis):          return self.create_op(OPS.Unsqueeze, forward_args=(axis,))
-  def squeeze(self, axis=0):          return self.create_op(OPS.Squeeze, forward_args=(axis,))
+  def unsqueeze(self, axis):          return self.from_op(OPS.Unsqueeze, forward_args=(axis,), shape=tuple(self.shape[:axis]) + (1,) + tuple(self.shape[axis:]), strides=tuple(self.strides[:axis]) + (0,) + tuple(self.strides[axis:]))
+  def squeeze(self, axis=0):          return self.from_op(OPS.Squeeze, forward_args=(axis,))
+  def expand(self, *sizes):           return self.from_op(OPS.Expand, forward_args=(), shape=sizes if len(sizes) > 1 else sizes[0], strides=tuple(s if o == n else 0 for o, n, s in zip(self.shape, sizes, self.strides)))
+  def permute(self, *axes):           return self.from_op(OPS.Permute, forward_args=axes, shape=tuple(self.shape[i] for i in axes), strides=tuple(self.strides[i] for i in axes))
   @property
-  def T(self):                        return self.create_op(OPS.Transpose, shape=(tuple(reversed(self.shape))), strides=tuple(reversed(self.strides)))
-  def transpose(self, axes=None):     return (axes := tuple(reversed(range(len(self.shape))))) or self.create_op(OPS.Transpose, forward_args=(axes,), shape=tuple(self.shape[i] for i in axes), strides=tuple(self.strides[i] for i in axes))
+  def T(self):                        return self.from_op(OPS.Transpose, shape=(tuple(reversed(self.shape))), strides=tuple(reversed(self.strides)))
+  def transpose(self, axes=None):     return (axes := tuple(reversed(range(len(self.shape))))) or self.from_op(OPS.Transpose, forward_args=(axes,), shape=tuple(self.shape[i] for i in axes))
 
   # Binary Ops
-  def __add__(self, other):     return self.create_op(OPS.ADD, operands=(other,))
-  def __mul__(self, other):     return self.create_op(OPS.MUL, operands=(other,))
+  def __add__(self, other):     return self.from_op(OPS.ADD, operands=(other,))
+  def __mul__(self, other):     return self.from_op(OPS.MUL, operands=(other,))
   def __matmul__(self, other):  return self.dot(other)
-  def dot(self, other):         return self.create_op(OPS.DOT, operands=(other,), shape=(self.shape[0], other.shape[1]))
-  def __pow__(self, other):     return self.create_op(OPS.POW, operands=(other,))
+  # NOTE: this uses the matmul trick [ https://mesozoic-egg.github.io/tinygrad-notes/20241203_matmul.html ]
+  def dot(self, other):         #return self.from_op(OPS.DOT, operands=(other,), shape=(self.shape[0], other.shape[1]))
+    a = self.unsqueeze(1).expand(self.shape[0], other.shape[-1], self.shape[-1])
+    b = other.unsqueeze(0).permute(0, 2, 1)
+    b = b.expand(self.shape[0], b.shape[1], b.shape[-1])
+    return (a * b).sum(axis=-1)
+    
+  def __pow__(self, other):     return self.from_op(OPS.POW, operands=(other,))
   def __radd__(self, other):    return self + other
   def __sub__(self, other):     return self + (-other)
   def __rsub__(self, other):    return other + (-self)
@@ -451,7 +477,7 @@ class Tensor:
     return x + bias if bias is not None else x
 
   def conv2d(self, weight: "Tensor", bias: "Tensor", in_channels: int, out_channels: int, stride: int = 1, padding: int = 0, debug=False):
-    return self.create_op(
+    return self.from_op(
       OPS.Conv2D,
       shape=(
         self.shape[0],
@@ -467,18 +493,29 @@ class Tensor:
   # TODO: support add, mul with scalars
   def __neg__(self):            return self * Tensor([-1], name="-1", requires_grad=False, device=self.device)
   def sqrt(self):               return self ** 0.5
-  def relu(self):               return self.create_op(OPS.ReLU, )
-  def softmax(self, axis=None): return self.create_op(OPS.Softmax, forward_args=(axis,))
-  def tanh(self):               return self.create_op(OPS.Tanh)
-  def sigmoid(self):            return self.create_op(OPS.Sigmoid)
+  def relu(self):               return self.from_op(OPS.ReLU, )
+  def softmax(self, axis=None): return self.from_op(OPS.Softmax, forward_args=(axis,))
+  def tanh(self):               return self.from_op(OPS.Tanh)
+  def sigmoid(self):            return self.from_op(OPS.Sigmoid)
 
   # Reduce Ops
-  def mean(self, axis=None, keepdims=False):    return self.create_op(OPS.MEAN, forward_args=(axis, keepdims))
-  def sum(self, axis=None, keepdims=False):     return self.create_op(OPS.SUM, forward_args=(axis, keepdims))
-  def max(self, axis=None, keepdims=False):     return self.create_op(OPS.MAX, forward_args=(axis, keepdims))
-  def min(self, axis=None, keepdims=False):     return self.create_op(OPS.MIN, forward_args=(axis, keepdims))
-  def std(self, axis=None, keepdims=False):     return self.create_op(OPS.STD, forward_args=(axis, keepdims))
-  def argmax(self, axis=None, keepdims=False):  return self.create_op(OPS.ARGMAX, forward_args=(axis, keepdims))
-  def argmin(self, axis=None, keepdims=False):  return self.create_op(OPS.ARGMIN, forward_args=(axis, keepdims))
-  def maxpool2d(self, filter=(2,2), stride=1):  return self.create_op(OPS.MaxPool2D, forward_args=(filter, stride))
-  def avgpool2d(self, filter=(2,2), stride=1):  return self.create_op(OPS.AvgPool2D, forward_args=(filter, stride))
+  # TODO: cleanup + fix other reduce ops as well
+  def sum(self, axis=None, keepdims=False):
+    # full reduction (sum all elements) - result is scalar or 1-element tensor
+    if axis is None:
+      return self.from_op(OPS.SUM, forward_args=(None, keepdims), shape=((1,) if keepdims else ()), strides=((0,) if keepdims else ()))
+
+    # normalize negative axis
+    if axis < 0: axis += len(self.shape)
+    assert 0 <= axis < len(self.shape), "axis out of bounds"
+
+    out_shape = (tuple(1 if i == axis else s for i, s in enumerate(self.shape)) if keepdims else tuple(s for i, s in enumerate(self.shape) if i != axis))
+    return self.from_op(OPS.SUM, forward_args=(axis, keepdims), shape=out_shape, strides=default_strides(out_shape))
+  def mean(self, axis=None, keepdims=False):    return self.from_op(OPS.MEAN, forward_args=(axis, keepdims))
+  def max(self, axis=None, keepdims=False):     return self.from_op(OPS.MAX, forward_args=(axis, keepdims))
+  def min(self, axis=None, keepdims=False):     return self.from_op(OPS.MIN, forward_args=(axis, keepdims))
+  def std(self, axis=None, keepdims=False):     return self.from_op(OPS.STD, forward_args=(axis, keepdims))
+  def argmax(self, axis=None, keepdims=False):  return self.from_op(OPS.ARGMAX, forward_args=(axis, keepdims))
+  def argmin(self, axis=None, keepdims=False):  return self.from_op(OPS.ARGMIN, forward_args=(axis, keepdims))
+  def maxpool2d(self, filter=(2,2), stride=1):  return self.from_op(OPS.MaxPool2D, forward_args=(filter, stride))
+  def avgpool2d(self, filter=(2,2), stride=1):  return self.from_op(OPS.AvgPool2D, forward_args=(filter, stride))

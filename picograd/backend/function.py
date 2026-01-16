@@ -38,6 +38,8 @@ class OPS(Enum):
   Unsqueeze = auto()
   Squeeze = auto()
   Transpose = auto()
+  Expand = auto()
+  Permute = auto()
   Cat = auto()
   
   # Reduce ops
@@ -61,6 +63,35 @@ class OPS(Enum):
 
   def __str__(self): return self.name
 
+BINARY_OPS = (
+  OPS.ADD,
+  OPS.MUL,
+  OPS.DOT,
+  # OPS.POW,
+  # OPS.Conv2D
+)
+
+MOVEMENT_OPS = (
+  # OPS.Reshape,
+  OPS.View,
+  OPS.Flatten,
+  OPS.Unsqueeze,
+  OPS.Squeeze,
+  OPS.Expand,
+  OPS.Permute,
+  # OPS.Transpose,
+  # OPS.Cat,
+)
+
+REDUCE_OPS = (
+  OPS.SUM,
+  # OPS.MEAN,
+  # OPS.MAX,
+  # OPS.MIN,
+  # OPS.STD,
+  # OPS.ARGMAX,
+  # OPS.ARGMIN,
+)
 
 def get_op(op_name: str, device_name: str):
   # Binary Ops
