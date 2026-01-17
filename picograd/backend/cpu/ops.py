@@ -246,9 +246,7 @@ class ReduceOps:
     a.grad = (a.data == np.min(a.data, axis=axis, keepdims=True)) * grad_out
 
   @staticmethod
-  def sum(a: "Tensor", axis: int, keepdims: bool) -> np.ndarray:
-    res = np.sum(a.data, axis=axis, keepdims=keepdims)
-    return res if keepdims else res[np.newaxis]
+  def sum(a: "Tensor", axis: int, keepdims: bool) -> np.ndarray:  return np.sum(a.data, axis=axis, keepdims=keepdims)
 
   @staticmethod
   def sum_back(a: "Tensor", grad_out, axis: int, keepdims: bool):
@@ -421,7 +419,7 @@ class MovementOps:
       a.grad += np.transpose(grad_out, reverse_axes)
 
   @staticmethod
-  def expand(a: "Tensor", new_shape: Tuple[int]) -> np.ndarray: return np.broadcast_to(a.data, new_shape)
+  def expand(a: "Tensor", axes: Tuple[int]) -> np.ndarray: return np.broadcast_to(a.data, axes)
 
   @staticmethod
   def expand_back(a: "Tensor", grad_out: np.ndarray, original_shape: Tuple[int]):

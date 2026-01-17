@@ -38,7 +38,7 @@ class Tensor:
     device_data: Optional[ctypes.c_void_p] = None,
     shape: Optional[Tuple] = None,
     strides: Optional[Tuple[int]] = None,
-    lazy=True
+    lazy=False
   ):
     data = np.array(data) if data is not None else None
     self.lazy = lazy
@@ -350,6 +350,20 @@ class Tensor:
     out._backward = lambda: func.backward(out.grad if self.device.name == Devices.CPU else out.device_grad)
     return out
 
+  def shape_for_reduce(self, axis, keepdims):
+    # full reduction (sum all elements) - result is scalar or 1-element tensor
+    if axis is None: return (1,)
+
+    # normalize negative axis
+    if axis < 0: axis += len(self.shape)
+    assert 0 <= axis < len(self.shape), "axis out of bounds"
+
+    return tuple(1 if i == axis else s for i, s in enumerate(self.shape)) if keepdims else tuple(s for i, s in enumerate(self.shape) if i != axis)
+
+  def strides_for_reduce(self, axis, keepdims, out_shape):
+      if axis is None: return (0,) if keepdims else ()
+      return default_strides(out_shape)
+
   def contiguous(self):
     if self.is_contiguous: return self
     # allocate contiguous buffer and copy using a strided->contiguous copy kernel (similar to add_strided logic but copying)
@@ -362,17 +376,11 @@ class Tensor:
       new.is_contiguous = True
       return new
 
-    # FIXME: works for expanded, but what about permute? (and other movement ops)
+    # TODO: test against other movement ops
     # TODO: !not memory/speed efficient! - requires kernel
     # copy non-strided data to host, make contiguous on host, copy back to device
-
     numel = required_numel(self.shape, self.strides)
     host_flat = np.zeros(numel, dtype=self.dtype)
-
-    # FIXME: after permute, it points at the "wrong" address (?)
-    # self.device.manager.copy_data_to_host(ctypes.c_void_p(0x8400400), host_flat)
-    # FIXME: that's why this one works
-
     self.device.manager.copy_data_to_host(self.device_data, host_flat)
     # print(hex(self.device_data.value), host_flat)
     strided_temp = as_strided(host_flat, shape=(self.shape), strides=(tuple(s * self.dtype.itemsize for s in self.strides)))
@@ -447,22 +455,24 @@ class Tensor:
   def flatten(self):                  return self.reshape(-1) # TODO: axis
   def unsqueeze(self, axis):          return self.from_op(OPS.Unsqueeze, forward_args=(axis,), shape=tuple(self.shape[:axis]) + (1,) + tuple(self.shape[axis:]), strides=tuple(self.strides[:axis]) + (0,) + tuple(self.strides[axis:]))
   def squeeze(self, axis=0):          return self.from_op(OPS.Squeeze, forward_args=(axis,))
-  def expand(self, *sizes):           return self.from_op(OPS.Expand, forward_args=(), shape=sizes if len(sizes) > 1 else sizes[0], strides=tuple(s if o == n else 0 for o, n, s in zip(self.shape, sizes, self.strides)))
-  def permute(self, *axes):           return self.from_op(OPS.Permute, forward_args=axes, shape=tuple(self.shape[i] for i in axes), strides=tuple(self.strides[i] for i in axes))
+  def expand(self, *sizes):           return self.from_op(OPS.Expand, forward_args=(sizes,), shape=sizes if len(sizes) > 1 else sizes[0], strides=tuple(s if o == n else 0 for o, n, s in zip(self.shape, sizes, self.strides)))
+  def permute(self, *axes):           return self.from_op(OPS.Permute, forward_args=(axes,), shape=tuple(self.shape[i] for i in axes), strides=tuple(self.strides[i] for i in axes))
   @property
   def T(self):                        return self.from_op(OPS.Transpose, shape=(tuple(reversed(self.shape))), strides=tuple(reversed(self.strides)))
   def transpose(self, axes=None):     return (axes := tuple(reversed(range(len(self.shape))))) or self.from_op(OPS.Transpose, forward_args=(axes,), shape=tuple(self.shape[i] for i in axes))
 
   # Binary Ops
-  def __add__(self, other):     return self.from_op(OPS.ADD, operands=(other,))
-  def __mul__(self, other):     return self.from_op(OPS.MUL, operands=(other,))
-  def __matmul__(self, other):  return self.dot(other)
+  def __add__(self, other):           return self.from_op(OPS.ADD, operands=(other,))
+  def __mul__(self, other):           return self.from_op(OPS.MUL, operands=(other,))
+  def __matmul__(self, other):        return self.dot(other)
   # NOTE: this uses the matmul trick [ https://mesozoic-egg.github.io/tinygrad-notes/20241203_matmul.html ]
   def dot(self, other):         #return self.from_op(OPS.DOT, operands=(other,), shape=(self.shape[0], other.shape[1]))
     a = self.unsqueeze(1).expand(self.shape[0], other.shape[-1], self.shape[-1])
     b = other.unsqueeze(0).permute(0, 2, 1)
     b = b.expand(self.shape[0], b.shape[1], b.shape[-1])
     return (a * b).sum(axis=-1)
+    # return (self.unsqueeze(1).expand(self.shape[0], other.shape[-1], self.shape[-1]) * other.unsqueeze(0).permute(0, 2, 1).expand(self.shape[0], other.shape[1], self.shape[-1])).sum(axis=-1)
+
     
   def __pow__(self, other):     return self.from_op(OPS.POW, operands=(other,))
   def __radd__(self, other):    return self + other
@@ -499,18 +509,8 @@ class Tensor:
   def sigmoid(self):            return self.from_op(OPS.Sigmoid)
 
   # Reduce Ops
-  # TODO: cleanup + fix other reduce ops as well
-  def sum(self, axis=None, keepdims=False):
-    # full reduction (sum all elements) - result is scalar or 1-element tensor
-    if axis is None:
-      return self.from_op(OPS.SUM, forward_args=(None, keepdims), shape=((1,) if keepdims else ()), strides=((0,) if keepdims else ()))
-
-    # normalize negative axis
-    if axis < 0: axis += len(self.shape)
-    assert 0 <= axis < len(self.shape), "axis out of bounds"
-
-    out_shape = (tuple(1 if i == axis else s for i, s in enumerate(self.shape)) if keepdims else tuple(s for i, s in enumerate(self.shape) if i != axis))
-    return self.from_op(OPS.SUM, forward_args=(axis, keepdims), shape=out_shape, strides=default_strides(out_shape))
+  # TODO: fix other reduce ops as well
+  def sum(self, axis=None, keepdims=False):     return self.from_op(OPS.SUM, forward_args=(axis, keepdims), shape=(out_shape := self.shape_for_reduce(axis, keepdims)), strides=self.strides_for_reduce(axis, keepdims, out_shape))
   def mean(self, axis=None, keepdims=False):    return self.from_op(OPS.MEAN, forward_args=(axis, keepdims))
   def max(self, axis=None, keepdims=False):     return self.from_op(OPS.MAX, forward_args=(axis, keepdims))
   def min(self, axis=None, keepdims=False):     return self.from_op(OPS.MIN, forward_args=(axis, keepdims))
