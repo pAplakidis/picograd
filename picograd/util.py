@@ -21,9 +21,6 @@ def default_strides(shape: Tuple) -> Tuple:
     stride *= dim
   return tuple(reversed(strides))
 
-def check_contiguous(shape: Tuple, strides: Tuple) -> bool:
-  return strides == default_strides(shape)
-
 def get_real_shape(shape: Tuple, strides: Tuple) -> Tuple[int]:
   """ Get the actual shape of a tensor given its shape and strides, accounting for broadcasted dimensions """
   return tuple(dim for dim, stride in zip(shape, strides) if stride != 0)

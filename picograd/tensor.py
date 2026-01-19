@@ -95,7 +95,6 @@ class Tensor:
     if isinstance(value, np.ndarray):
       self._shape = value.shape
       self._strides = tuple(int(s // value.itemsize) for s in value.strides)
-      self.is_contiguous = (self._strides == default_strides(self._shape))
 
     if self.device.name != Devices.CPU and self.device_data is not None:
       if initial_shape != value.shape: self._shape = value.shape
@@ -175,7 +174,7 @@ class Tensor:
     return None
 
   @property
-  def is_contiguous(self): return check_contiguous(self._shape, self._strides)
+  def is_contiguous(self): return self.strides == default_strides(self.shape)
 
   @property
   def ndim(self):
