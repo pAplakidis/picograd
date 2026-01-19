@@ -61,17 +61,17 @@ class Scheduler:
     if item.op == OPS.LOAD:
       tensor = item.arg[0]
       # tensor.device_data = tensor.device.manager.to_device(tensor.data)
-      if DEBUG >= 1: print(f"{color_green(f'*** {self.mngr.dev_name} {id}')} {color_yellow("copy")}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {sum(tensor._data.nbytes for uop in item.src for tensor in uop.arg) / (1024**3):.6f} GB")
+      if DEBUG >= 1: print(f"{color_green(f'*** {self.mngr.dev_name} {id}')} {color_yellow('copy')}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {sum(tensor._data.nbytes for uop in item.src for tensor in uop.arg) / (1024**3):.6f} GB")
       return
 
     if item.op == OPS.STORE:
       tensor = item.arg[0]
       # tensor.data = tensor.device.manager.to_host(tensor.device_data)
-      if DEBUG >= 1: print(f"{color_green(f'*** {self.mngr.dev_name} {id}')} {color_yellow("copy")}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {sum(tensor._data.nbytes for uop in item.src for tensor in uop.arg) / (1024**3):.6f} GB")
+      if DEBUG >= 1: print(f"{color_green(f'*** {self.mngr.dev_name} {id}')} {color_yellow('copy')}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {sum(tensor._data.nbytes for uop in item.src for tensor in uop.arg) / (1024**3):.6f} GB")
       return
 
     if item.op in MOVEMENT_OPS and DEBUG >= 1:
-      print(f"{color_green(f'*** {self.mngr.dev_name} {id}')} {color_yellow("copy")}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {sum(tensor._data.nbytes for uop in item.src for tensor in uop.arg) / (1024**3):.6f} GB {item.op.name.lower()}")
+      print(f"{color_green(f'*** {self.mngr.dev_name} {id}')} {color_yellow('copy')}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {sum(tensor._data.nbytes for uop in item.src for tensor in uop.arg) / (1024**3):.6f} GB {item.op.name.lower()}")
 
     if item.op in (OPS.ADD, OPS.MUL):
       # TODO: make args more generic (cover all ops)
