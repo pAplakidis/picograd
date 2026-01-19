@@ -465,14 +465,8 @@ class Tensor:
   def __add__(self, other):           return self.from_op(OPS.ADD, operands=(other,))
   def __mul__(self, other):           return self.from_op(OPS.MUL, operands=(other,))
   def __matmul__(self, other):        return self.dot(other)
-  # NOTE: this uses the matmul trick [ https://mesozoic-egg.github.io/tinygrad-notes/20241203_matmul.html ]
-  def dot(self, other):         #return self.from_op(OPS.DOT, operands=(other,), shape=(self.shape[0], other.shape[1]))
-    a = self.unsqueeze(1).expand(self.shape[0], other.shape[-1], self.shape[-1])
-    b = other.unsqueeze(0).permute(0, 2, 1)
-    b = b.expand(self.shape[0], b.shape[1], b.shape[-1])
-    return (a * b).sum(axis=-1)
-    # return (self.unsqueeze(1).expand(self.shape[0], other.shape[-1], self.shape[-1]) * other.unsqueeze(0).permute(0, 2, 1).expand(self.shape[0], other.shape[1], self.shape[-1])).sum(axis=-1)
-
+  # NOTE: if lazy, this uses the matmul trick [ https://mesozoic-egg.github.io/tinygrad-notes/20241203_matmul.html ]
+  def dot(self, other):               return (self.unsqueeze(1).expand(self.shape[0], other.shape[-1], self.shape[-1]) * other.unsqueeze(0).permute(0, 2, 1).expand(self.shape[0], other.shape[1], self.shape[-1])).sum(axis=-1) if self.lazy else self.from_op(OPS.DOT, operands=(other,), shape=(self.shape[0], other.shape[1]))
     
   def __pow__(self, other):     return self.from_op(OPS.POW, operands=(other,))
   def __radd__(self, other):    return self + other

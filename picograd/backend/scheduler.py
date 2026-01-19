@@ -127,12 +127,7 @@ class Scheduler:
 
       kfunc = self.mngr.compile_kernel(kernel_code, kernel_name.encode("utf-8"))
       elapsed_ms, gflops = self.run_reduce_kernel(kfunc, [out_tensor, in_tensor], out_shape)
-      if DEBUG >= 1:
-        print(
-          f"{color_green(f'*** {self.mngr.dev_name} {id}')}"
-          f" {color_red(kernel_name)} reduce"
-          f" ({elapsed_ms:.4f} ms - {gflops:.4f} GFLOPs)"
-        )
+      if DEBUG >= 1: print(f"{color_green(f'*** {self.mngr.dev_name} {id}')} {color_red(kernel_name)} reduce ({elapsed_ms:.4f} ms - {gflops:.4f} GFLOPs)")
       return
 
   def run_elementwise_kernel(self, kfunc, args: list, shape: tuple, contiguous: bool):
