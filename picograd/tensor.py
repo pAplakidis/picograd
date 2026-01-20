@@ -38,7 +38,8 @@ class Tensor:
     device_data: Optional[ctypes.c_void_p] = None,
     shape: Optional[Tuple] = None,
     strides: Optional[Tuple[int]] = None,
-    lazy=False
+    lazy=False,
+    dtype = np.float32,
   ):
     data = np.array(data) if data is not None else None
     self.lazy = lazy
@@ -50,8 +51,8 @@ class Tensor:
     self.requires_grad = requires_grad
 
     self._shape = shape if data is None else data.shape
-    self._data = data if data is not None else np.zeros(self._shape)
-    self._grad = np.zeros(self._shape) if requires_grad else None
+    self._data = np.zeros(self._shape, dtype=dtype) if data is None else data
+    self._grad = np.zeros(self._shape, dtype=dtype) if requires_grad else None
 
     # shapetracker
     # NOTE: tensor[i, j] -> index(i, j) = i * stride[0] + j * stride[1] -> tensor.device_data + index(i, j) * itemsize
@@ -186,6 +187,9 @@ class Tensor:
 
   def __repr__(self):
     return f"{color_yellow('Tensor')} (name={self.name}, shape={self.shape}, strides={self.strides}, device={self.device.name}, data={self.data if self.device.name == Devices.CPU else hex(self.device_data.value)}, grad={self.grad if self.device.name == Devices.CPU else hex(self.device_grad.value)}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
+
+  def __len__(self):
+    return self.shape[0]
     
   def __del__(self):
     # if self.device_data is not None:
@@ -290,6 +294,10 @@ class Tensor:
     if self.device.name == Devices.CPU: raise NotImplementedError("CPU renderer not implemented yet")
     if self.device.name == Devices.CUDA: return CUDARenderer(arch="sm_80")
     raise NotImplementedError(f"Renderer not implemented for {t.device.name} yet")
+
+  def tolist(self):
+    if self.lazy: self.realize()
+    return self.data.tolist()
 
   def realize(self):
     renderer = self.get_renderer()
