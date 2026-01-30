@@ -71,14 +71,14 @@ if __name__ == '__main__':
       out = model(X)
       loss = CrossEntropyLoss(out, Y)
       losses.append(loss.data[0])
-      epoch_losses.append(loss.mean().item)
+      epoch_losses.append(loss.mean().item())
 
       optim.zero_grad()
       loss.backward()
       optim.step()
 
       if batch_idx == 0 and i == 0: draw_dot(loss, path="graphs/mnist_simple.png")
-      t.set_description(f"Loss: {loss.mean().item:.2f}")
+      t.set_description(f"Loss: {loss.mean().item():.2f}")
 
     print(f"Avg loss: {np.array(epoch_losses).mean()}")
 

@@ -4,7 +4,7 @@ from picograd.tensor import Tensor
 
 
 class Linear(Layer):
-  def __init__(self, in_feats: int, out_feats: int, initialization: str = 'gaussian'):
+  def __init__(self, in_feats: int, out_feats: int, bias: bool = True, initialization: str = 'gaussian'):
     super().__init__()
     self.type = LayerType.LINEAR
     self.in_feats = in_feats
@@ -16,10 +16,12 @@ class Linear(Layer):
       self.weight = Tensor(np.random.randn(self.in_feats, self.out_feats) * np.sqrt(2. / (self.in_feats + self.out_feats)), name="linear-weight", device=self.device)
     else:
       raise ValueError("Invalid initialization method")
-    self.bias = Tensor(np.zeros((self.out_feats,)), name="linear-bias", device=self.device)
+    
+    self.bias = Tensor(np.zeros((self.out_feats,)), name="linear-bias", device=self.device) if bias else None
 
     self.register_param("weight", self.weight)
-    self.register_param("bias", self.bias)
+    if bias:
+      self.register_param("bias", self.bias)
 
   def __call__(self, x: Tensor) -> Tensor:
     assert len(x.shape) >= 2, "Input Tensor requires batch_size dimension"

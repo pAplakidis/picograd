@@ -143,7 +143,6 @@ class Tensor:
     if self._data is not None:
       self._data = self._data.astype(value)
 
-  @property
   def item(self, *args): return self.data.item(*args)
 
   @property
@@ -295,6 +294,21 @@ class Tensor:
     if self.device.name == Devices.CUDA: return CUDARenderer(arch="sm_80")
     raise NotImplementedError(f"Renderer not implemented for {t.device.name} yet")
 
+  def detach(self):
+    return Tensor(
+      data=self.data.copy() if self.device.name == Devices.CPU else None,
+      device_data=self.device_data,
+      shape=self.shape,
+      strides=self.strides,
+      requires_grad=False,
+      device=self.device,
+      lazy=self.lazy,
+    )
+
+  def numpy(self):
+    if self.lazy: self.realize()
+    return self.data
+
   def tolist(self):
     if self.lazy: self.realize()
     return self.data.tolist()
@@ -426,7 +440,6 @@ class Tensor:
 
     def _backward():
       if out.grad is None: return
-
       sizes = [t.shape[axis] for t in tensors]
       grads = np.split(out.grad, np.cumsum(sizes)[:-1], axis=axis)
       for t, g in zip(tensors, grads):
@@ -447,18 +460,23 @@ class Tensor:
     assert len(tensors) > 0, "Stack expects a non-empty list of tensors"
     return Tensor.cat([t.unsqueeze(axis) for t in tensors], axis=axis)
 
+  def masked_fill(self, mask, value):
+    self.data = np.where(mask.data if isinstance(mask, Tensor) else mask, value, self.data)
+    return self
+
   # Slices
   # def __getitem__(self, indices):         return self.data[indices]
   # def __setitem__(self, indices, value):  self.data[indices] = value
   def __getitem__(self, indices):         return Tensor(self.data[indices]) # FIXME: tempfix
   def __setitem__(self, indices, value):  self.data[indices] = value.data if isinstance(value, Tensor) else value
   def __equal__(self, other):             return np.equal(self.data, other.data)
+  # TODO: overload comparisons
 
   # Movement Ops
   # TODO: only reshape and flatten create new tensor, others just change shape/strides, but they try view first (+ view if contiguous)
   # FIXME: view should not create a new tensor, but just change the shape and stride of the current one while reshape keeps the memory layout contiguous for the new tensor
   def reshape(self, *args, **kwargs): shape = args if len(args) > 1 else args[0]; return self.from_op(OPS.Reshape, forward_args=(shape,), forward_kwargs=kwargs, shape=shape)
-  def view(self, *args, **kwargs):    return self.from_op(OPS.Reshape, forward_args=args, forward_kwargs=kwargs, shape=args[0] if len(args) == 1 else args)
+  def view(self, *shape):             return self.from_op(OPS.Reshape, forward_args=(shape,), shape=((shape[0],) if len(shape) == 1 else shape))
   def flatten(self):                  return self.reshape(-1) # TODO: axis
   def unsqueeze(self, axis):          return self.from_op(OPS.Unsqueeze, forward_args=(axis,), shape=tuple(self.shape[:axis]) + (1,) + tuple(self.shape[axis:]), strides=tuple(self.strides[:axis]) + (0,) + tuple(self.strides[axis:]))
   def squeeze(self, axis=0):          return self.from_op(OPS.Squeeze, forward_args=(axis,))
@@ -466,7 +484,15 @@ class Tensor:
   def permute(self, *axes):           return self.from_op(OPS.Permute, forward_args=(axes,), shape=tuple(self.shape[i] for i in axes), strides=tuple(self.strides[i] for i in axes))
   @property
   def T(self):                        return self.from_op(OPS.Transpose, shape=(tuple(reversed(self.shape))), strides=tuple(reversed(self.strides)))
-  def transpose(self, axes=None):     return (axes := tuple(reversed(range(len(self.shape))))) or self.from_op(OPS.Transpose, forward_args=(axes,), shape=tuple(self.shape[i] for i in axes))
+  def transpose(self, dim0: int, dim1: int):
+    ndim = len(self.shape)
+    if dim0 < 0: dim0 += ndim
+    if dim1 < 0: dim1 += ndim
+    axes = list(range(ndim))
+    axes[dim0], axes[dim1] = axes[dim1], axes[dim0]
+    axes = tuple(axes)
+    return self.from_op(OPS.Transpose, forward_args=(axes,), shape=tuple(self.shape[i] for i in axes))
+
 
   # Binary Ops
   def __add__(self, other):           return self.from_op(OPS.ADD, operands=(other,))
@@ -475,13 +501,13 @@ class Tensor:
   # NOTE: if lazy, this uses the matmul trick [ https://mesozoic-egg.github.io/tinygrad-notes/20241203_matmul.html ]
   def dot(self, other):               return (self.unsqueeze(1).expand(self.shape[0], other.shape[-1], self.shape[-1]) * other.unsqueeze(0).permute(0, 2, 1).expand(self.shape[0], other.shape[1], self.shape[-1])).sum(axis=-1) if self.lazy else self.from_op(OPS.DOT, operands=(other,), shape=(self.shape[0], other.shape[1]))
     
-  def __pow__(self, other):     return self.from_op(OPS.POW, operands=(other,))
-  def __radd__(self, other):    return self + other
-  def __sub__(self, other):     return self + (-other)
-  def __rsub__(self, other):    return other + (-self)
-  def __rmul__(self, other):    return self * other
-  def __truediv__(self, other): return self * other**-1
-  def __rtruediv__(self, other):return other * self**-1
+  def __pow__(self, other):           return self.from_op(OPS.POW, operands=(other,))
+  def __radd__(self, other):          return self + other
+  def __sub__(self, other):           return self + (-other)
+  def __rsub__(self, other):          return other + (-self)
+  def __rmul__(self, other):          return self * other
+  def __truediv__(self, other):       return self * other**-1
+  def __rtruediv__(self, other):      return other * self**-1
 
   def linear(self, weight: "Tensor", bias: Optional["Tensor"] = None):
     x = self * weight if len(weight.shape) == 1 else self.dot(weight)
@@ -501,7 +527,7 @@ class Tensor:
     )
 
   # Unary Ops
-  # TODO: support add, mul with scalars
+  # TODO: support add, mul with scalars + fix and test these ops
   def __neg__(self):            return self * Tensor([-1], name="-1", requires_grad=False, device=self.device)
   def sqrt(self):               return self ** 0.5
   def relu(self):               return self.from_op(OPS.ReLU, )

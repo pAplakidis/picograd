@@ -75,7 +75,7 @@ if __name__ == '__main__':
       out = model(X)
       loss = CrossEntropyLoss(out, Y)
       losses.append(loss.data[0])
-      epoch_losses.append(loss.mean().item)
+      epoch_losses.append(loss.mean().item())
 
       acc = (np.argmax(out.data, axis=1) == Y.data).mean()
       accuracies.append(acc)
@@ -86,7 +86,7 @@ if __name__ == '__main__':
       optim.step()
 
       if batch_idx == 0 and i == 0: pg.draw_dot(loss, path="graphs/mnist")
-      t.set_description(f"Loss: {loss.mean().item:.2f} - Acc: {acc:.2f}")
+      t.set_description(f"Loss: {loss.mean().item():.2f} - Acc: {acc:.2f}")
     print(f"Avg loss: {np.array(epoch_losses).mean():.4f} - Avg acc: {np.array(epoch_accs).mean():.2f}")
     scheduler.step(np.array(epoch_losses).mean())
 
