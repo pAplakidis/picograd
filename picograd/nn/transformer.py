@@ -4,7 +4,6 @@ from .self_attention import MultiHeadAttention
 from .layernorm import LayerNorm
 
 
-# FIXME: implement missing
 class FeedForward(nn.Module):
   """ a simple feed-forward neural network """
 
