@@ -185,7 +185,7 @@ class Tensor:
   def nbytes(self): return int(np.prod(self.shape) * np.dtype(self.dtype).itemsize)
 
   def __repr__(self):
-    return f"{color_yellow('Tensor')} (name={self.name}, shape={self.shape}, strides={self.strides}, device={self.device.name}, data={self.data if self.device.name == Devices.CPU else hex(self.device_data.value)}, grad={self.grad if self.device.name == Devices.CPU else hex(self.device_grad.value)}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
+    return f"{color_yellow('Tensor')} (name={self.name}, shape={self.shape}, strides={self.strides}, device={self.device.name}, data={self.data if self.device.name == Devices.CPU else hex(self.device_data.value)}{f', grad={self.grad if self.device.name == Devices.CPU else hex(self.device_grad.value)}' if self.requires_grad else ''}, requires_grad={self.requires_grad}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
 
   def __len__(self):
     return self.shape[0]

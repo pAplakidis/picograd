@@ -109,7 +109,6 @@ def train_model(model):
     logits, loss = model(xb, yb)
     # draw_dot(loss, path="graphs/gpt_loss_graph")
     optimizer.zero_grad() # TODO: (set_to_none=True)
-    print(loss)
     loss.backward()
     optimizer.step()
 
