@@ -174,14 +174,14 @@ class TestMovementOps(unittest.TestCase):
   def test_view(self):
     # Basic view
     t = Tensor.random((2, 3), device=device)
-    t_out = t.view((3, 2))
+    t_out = t.view(3, 2)
     assert t_out.shape == (3, 2), f"Expected shape (3, 2), got {t_out.shape}"
     t_out.backward()
     print("[+] View Test OK")
 
     # # View with zero dimensions
     # t = Tensor.random((0, 3), device=device)
-    # t_out = t.view((3, 0))
+    # t_out = t.view(3, 0)
     # assert t_out.shape == (3, 0), f"Expected shape (3, 0), got {t_out.shape}"
     # print("[+] View Zero-Dimension Test OK")
 

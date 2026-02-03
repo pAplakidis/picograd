@@ -72,13 +72,13 @@ class ConvNetIntegrationTest(unittest.TestCase):
         out = model(X)
         loss = CrossEntropyLoss(out, Y)
         losses.append(loss.data[0])
-        epoch_losses.append(loss.mean().item)
+        epoch_losses.append(loss.mean().item())
 
         optim.zero_grad()
         loss.backward()
         optim.step()
 
-        print(f"Loss: {loss.mean().item:.2f}")
+        print(f"Loss: {loss.mean().item():.2f}")
         break
       print(f"Avg loss: {np.array(epoch_losses).mean()}")
 

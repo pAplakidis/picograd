@@ -28,26 +28,23 @@ class Devices(Enum):
   def __str__(self): return self.name
 
 class Device:
-  def __init__(self, name: Devices, debug: int = DEBUG):
+  def __init__(self, name: Devices):
     self.name = name
-    self.debug = debug
 
     if name == Devices.CPU:
       self.manager = None
     elif name == Devices.CUDA:
       from picograd.backend.cuda.cuda import CudaDeviceManager
-      self.manager = CudaDeviceManager(name, debug=debug)
+      self.manager = CudaDeviceManager(name)
     else:
       raise NotImplementedError(f"Device {name} not implemented")
 
   def __str__(self): return str(self.name)
-
   def __repr__(self): return f"Device({self.name})"
 
 class DeviceManager:
-  def __init__(self, device_name: str, debug=DEBUG):
+  def __init__(self, device_name: str):
     self.device_name = device_name
-    self.debug = debug
 
   @staticmethod
   def flatten_tensor(T: np.ndarray) -> np.ndarray:
@@ -84,7 +81,7 @@ class DeviceManager:
   def host_data_to_dev(self, tensor: "Tensor"):
     assert tensor._data is not None, "Tensor data is None, cannot copy to device"
 
-    if tensor.device.manager.debug >= 1 and not PSEUDO_DEBUG:
+    if DEBUG >= 3 and not PSEUDO_DEBUG:
       start_time = time.time()
 
     T_flat = self.flatten_tensor(tensor._data)
@@ -92,11 +89,11 @@ class DeviceManager:
     self.copy_data_to_device(d_T, T_flat)
     tensor.device_data = d_T
     
-    if self.debug >= 1 and not PSEUDO_DEBUG:
+    if DEBUG >= 3 and not PSEUDO_DEBUG:
       print(f"{color_green('[Cuda]')} Tensor data copied to device - {color_red(f'{tensor._data.nbytes} bytes')} - {color_red(f'{(time.time() - start_time) * 1000:.4f} ms')}")
 
   def host_grad_to_dev(self, tensor: "Tensor"):
-    if tensor.device.manager.debug >= 1 and not PSEUDO_DEBUG:
+    if DEBUG >= 3 and not PSEUDO_DEBUG:
       start_time = time.time()
 
     grad_flat = self.flatten_tensor(tensor.grad)
@@ -104,15 +101,16 @@ class DeviceManager:
     self.copy_data_to_device(d_grad, grad_flat)
     tensor.device_grad = d_grad
 
-    if self.debug >= 1 and not PSEUDO_DEBUG:
+    if DEBUG >= 3 and not PSEUDO_DEBUG:
       print(f"{color_green('[Cuda]')} Tensor gradient copied to device - {color_red(f'{tensor._grad.nbytes} bytes')} - {color_red(f'{(time.time() - start_time) * 1000:.4f} ms')}")
 
   def dev_data_to_host(self, tensor: "Tensor", free=True):
     assert tensor.device_data is not None, "Tensor device data is None, cannot copy to host"
 
-    if tensor.device.manager.debug >= 1 and not PSEUDO_DEBUG:
+    if DEBUG >= 3 and not PSEUDO_DEBUG:
       start_time = time.time()
 
+    if not tensor.is_contiguous: tensor = tensor.contiguous()
     data_flat = np.empty(tensor._shape, dtype=tensor.dtype).ravel()
     self.copy_data_to_host(tensor.device_data, data_flat)
     tensor._data = data_flat.reshape(tensor._shape)
@@ -121,13 +119,13 @@ class DeviceManager:
       self.free_device_tensor(tensor.device_data)
       tensor.device_data = None
 
-    if tensor.device.manager.debug >= 1 and not PSEUDO_DEBUG:
+    if DEBUG >= 3 and not PSEUDO_DEBUG:
       print(f"{color_green('[Cuda]')} Tensor data copied to host - {color_red(f'{tensor._data.nbytes} bytes')} - {color_red(f'{(time.time() - start_time) * 1000:.4f} ms')}")
 
   def dev_grad_to_host(self, tensor: "Tensor", free=True):
     assert tensor.device_grad is not None, "Tensor device grad is None, cannot copy to host"
 
-    if tensor.device.manager.debug >= 1 and not PSEUDO_DEBUG:
+    if DEBUG >= 3 and not PSEUDO_DEBUG:
       start_time = time.time()
 
     grad_flat = np.empty(tensor._shape, dtype=tensor.dtype).ravel()
@@ -138,7 +136,7 @@ class DeviceManager:
       self.free_device_tensor(tensor.device_grad)
       tensor.device_grad = None
 
-    if tensor.device.manager.debug >= 1 and not PSEUDO_DEBUG:
+    if DEBUG >= 3 and not PSEUDO_DEBUG:
       print(f"{color_green('[Cuda]')} Tensor gradient copied to host - {color_red(f'{tensor._grad.nbytes} bytes')} - {color_red(f'{(time.time() - start_time) * 1000:.4f} ms')}")
 
   def tensor_to_host(self, tensor: "Tensor"):
@@ -147,7 +145,10 @@ class DeviceManager:
     self.dev_grad_to_host(tensor)
 
   # GENERIC DEVICE INTERFACE METHODS
-  def allocate_device_memory(self, T: np.ndarray) -> ctypes.c_void_p: raise NotImplementedError("allocate_device_memory is not implemented for this device manager")
+  def allocate_device_memory(self, x) -> ctypes.c_void_p: raise NotImplementedError("allocate_device_memory is not implemented for this device manager")
   def copy_data_to_device(self, d_T: ctypes.c_void_p, T_flat: np.ndarray): raise NotImplementedError("copy_data_to_device is not implemented for this device manager")
   def copy_data_to_host(self, d_T: ctypes.c_void_p, T_flat: np.ndarray): raise NotImplementedError("copy_data_to_host is not implemented for this device manager")
+  def copy_device_to_device(self, d_src: ctypes.c_void_p, d_dst: ctypes.c_void_p, size: int): raise NotImplementedError("copy_device_to_device is not implemented for this device manager")
   def free_device_tensor(self, d_T: ctypes.c_void_p): raise NotImplementedError("free_device_tensor is not implemented for this device manager")
+  def compile_kernel(self, src: str, kernel_name: str) -> ctypes.c_void_p: raise NotImplementedError("compile_kernel is not implemented for this device manager")
+  def launch_kernel(self, kfunc: ctypes.c_void_p, grid: Tuple, block: Tuple, args: List[ctypes.c_void_p], shared_mem: int = 0, n_flops: Optional[int] = None) -> Tuple[float, Optional[float]]: raise NotImplementedError("launch_kernel is not implemented for this device manager")

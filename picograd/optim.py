@@ -64,6 +64,7 @@ class Adam(Optim):
       m = st['m']
       v = st['v']
 
+      # FIXME: g is gradient not tensor
       # L2 regularization style
       if self.weight_decay:
         g.data = g.data + self.weight_decay * p.data

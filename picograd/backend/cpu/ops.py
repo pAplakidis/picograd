@@ -36,12 +36,32 @@ class BinaryOps:
     if b.requires_grad: b.grad += reduce_grad(a.data * grad_out, b.data.shape)
 
   @staticmethod
-  def dot(a: "Tensor", b: "Tensor") -> np.ndarray: return a.data @ b.data
+  def dot(a: "Tensor", b: "Tensor") -> np.ndarray: return np.matmul(a.data, b.data)
 
   @staticmethod
   def dot_back(a: "Tensor", b: "Tensor", grad_out: np.ndarray):
-    if a.requires_grad: a.grad += grad_out @ b.data.T
-    if b.requires_grad: b.grad += a.data.T @ grad_out
+    # Linear layer (weight matrix, 2D)
+    if b.data.ndim == 2:
+      if a.requires_grad:
+        a.grad += grad_out @ b.data.T # (B..., in) @ (in, out) -> (B..., out)
+
+      if b.requires_grad:
+        # collapse batch dims
+        a_flat = a.data.reshape(-1, a.data.shape[-1])         # (B*, in)
+        grad_flat = grad_out.reshape(-1, grad_out.shape[-1])  # (B*, out)
+        b.grad += a_flat.T @ grad_flat  # (in, out)
+    # Batched matmul (attention, etc.)
+    else:
+      # Swap last two dims to transpose only the "matrix" part
+      if a.requires_grad:
+        # grad_out @ B^T over last two dims
+        b_T = np.swapaxes(b.data, -1, -2)
+        a.grad += np.matmul(grad_out, b_T)
+
+      if b.requires_grad:
+        # A^T @ grad_out over last two dims
+        a_T = np.swapaxes(a.data, -1, -2)
+        b.grad += np.matmul(a_T, grad_out)
 
   @staticmethod
   def pow(a: "Tensor", b: "Tensor") -> np.ndarray: return a.data ** b.data
@@ -246,9 +266,7 @@ class ReduceOps:
     a.grad = (a.data == np.min(a.data, axis=axis, keepdims=True)) * grad_out
 
   @staticmethod
-  def sum(a: "Tensor", axis: int, keepdims: bool) -> np.ndarray:
-    res = np.sum(a.data, axis=axis, keepdims=keepdims)
-    return res if keepdims else res[np.newaxis]
+  def sum(a: "Tensor", axis: int, keepdims: bool) -> np.ndarray:  return np.sum(a.data, axis=axis, keepdims=keepdims)
 
   @staticmethod
   def sum_back(a: "Tensor", grad_out, axis: int, keepdims: bool):
@@ -421,7 +439,7 @@ class MovementOps:
       a.grad += np.transpose(grad_out, reverse_axes)
 
   @staticmethod
-  def expand(a: "Tensor", new_shape: Tuple[int]) -> np.ndarray: return np.broadcast_to(a.data, new_shape)
+  def expand(a: "Tensor", axes: Tuple[int]) -> np.ndarray: return np.broadcast_to(a.data, axes)
 
   @staticmethod
   def expand_back(a: "Tensor", grad_out: np.ndarray, original_shape: Tuple[int]):

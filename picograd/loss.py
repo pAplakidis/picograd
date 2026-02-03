@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import numpy as np
 from picograd.tensor import *
 from picograd.backend.function import *
@@ -78,9 +77,3 @@ def CrossEntropyLoss(z: Tensor, y: Tensor) -> Tensor:
 def NLLLoss(z: Tensor, y: Tensor, sigma=1.0):
   dist = np.random.normal(z.data, sigma)
   return None
-
-
-if __name__ == '__main__':
-  t1 = Tensor(np.random.rand(3))
-  t2 = Tensor(np.random.rand(3))
-  print(MSELoss(t1, t2))

@@ -13,6 +13,11 @@ PSEUDO_DEBUG = int(os.getenv("PSEUDO_DEBUG", 0))  # if 1, generate assembly code
 
 
 class OPS(Enum):
+  # allocation
+  CONST = auto()
+  LOAD = auto()
+  STORE = auto()
+
   # Binary ops
   ADD = auto()
   MUL = auto()
@@ -33,6 +38,8 @@ class OPS(Enum):
   Unsqueeze = auto()
   Squeeze = auto()
   Transpose = auto()
+  Expand = auto()
+  Permute = auto()
   Cat = auto()
   
   # Reduce ops
@@ -56,8 +63,41 @@ class OPS(Enum):
 
   def __str__(self): return self.name
 
+BINARY_OPS = (
+  OPS.ADD,
+  OPS.MUL,
+  OPS.DOT,
+  # OPS.POW,
+  # OPS.Conv2D
+)
+
+MOVEMENT_OPS = (
+  # OPS.Reshape,
+  OPS.View,
+  OPS.Flatten,
+  OPS.Unsqueeze,
+  OPS.Squeeze,
+  OPS.Expand,
+  OPS.Permute,
+  # OPS.Transpose,
+)
+
+REDUCE_OPS = (
+  OPS.SUM,
+  # OPS.MEAN,
+  # OPS.MAX,
+  # OPS.MIN,
+  # OPS.STD,
+  # OPS.ARGMAX,
+  # OPS.ARGMIN,
+)
 
 def get_op(op_name: str, device_name: str):
+  # # Allocation / memory
+  # if op_name == OPS.CONST:  return Const(device_name)
+  # if op_name == OPS.LOAD:   return Load(device_name)
+  # if op_name == OPS.STORE:  return Store(device_name)
+
   # Binary Ops
   if op_name == OPS.ADD:    return Add(device_name)
   if op_name == OPS.MUL:    return Mul(device_name)
@@ -71,18 +111,6 @@ def get_op(op_name: str, device_name: str):
   if op_name == OPS.Tanh:    return Tanh(device_name)
   if op_name == OPS.Sigmoid: return Sigmoid(device_name)
 
-  # Reduce Ops
-  if op_name == OPS.SUM:       return Sum(device_name)
-  if op_name == OPS.MEAN:      return Mean(device_name)
-  if op_name == OPS.MAX:       return Max(device_name)
-  if op_name == OPS.MIN:       return Min(device_name)
-  if op_name == OPS.ARGMAX:    return Argmax(device_name)
-  if op_name == OPS.ARGMIN:    return Argmin(device_name)
-  if op_name == OPS.STD:       return Std(device_name)
-  if op_name == OPS.MaxPool2D: return MaxPool2D(device_name)
-  if op_name == OPS.AvgPool2D: return AvgPool2D(device_name)
-  if op_name == OPS.CrossEntropyLoss: return CrossEntropy(device_name)
-
   # Movement Ops
   if op_name == OPS.Reshape:   return Reshape(device_name)
   if op_name == OPS.View:      return View(device_name)
@@ -90,8 +118,29 @@ def get_op(op_name: str, device_name: str):
   if op_name == OPS.Unsqueeze: return Unsqueeze(device_name)
   if op_name == OPS.Squeeze:   return Squeeze(device_name)
   if op_name == OPS.Transpose: return Transpose(device_name)
+  if op_name == OPS.Expand:    return Expand(device_name)
+  if op_name == OPS.Permute:   return Permute(device_name)
 
-  raise ValueError(f"Unknown op {op_name}")
+  # Reduce Ops
+  if op_name == OPS.SUM:    return Sum(device_name)
+  if op_name == OPS.MEAN:   return Mean(device_name)
+  if op_name == OPS.MAX:    return Max(device_name)
+  if op_name == OPS.MIN:    return Min(device_name)
+  if op_name == OPS.STD:    return Std(device_name)
+  if op_name == OPS.ARGMAX: return Argmax(device_name)
+  if op_name == OPS.ARGMIN: return Argmin(device_name)
+
+  # Pooling
+  if op_name == OPS.MaxPool2D: return MaxPool2D(device_name)
+  if op_name == OPS.AvgPool2D: return AvgPool2D(device_name)
+
+  # # Losses
+  # if op_name == OPS.MSELoss:          return MSELoss(device_name)
+  # if op_name == OPS.MAELoss:          return MAELoss(device_name)
+  # if op_name == OPS.CrossEntropyLoss: return CrossEntropyLoss(device_name)
+  # if op_name == OPS.BCELoss:          return BCELoss(device_name)
+
+  raise ValueError(f"Unknown or unsupported op {op_name}")
 
 
 class Function:
@@ -380,3 +429,21 @@ class Transpose(Function):
   
   def backward(self, grad_out):
     self.MovementOps.transpose_back(self.a, grad_out, self.axes)
+
+class Expand(Function):
+  def forward(self, a: "Tensor", axes: Tuple[int] = None):
+    self.a = a
+    self.axes = axes
+    return self.MovementOps.expand(a, axes)
+  
+  def backward(self, grad_out):
+    self.MovementOps.expand_back(self.a, grad_out, self.axes)
+
+class Permute(Function):
+  def forward(self, a: "Tensor", axes: Tuple[int] = None):
+    self.a = a
+    self.axes = axes
+    return self.MovementOps.permute(a, axes)
+  
+  def backward(self, grad_out):
+    self.MovementOps.permute_back(self.a, grad_out, self.axes)

@@ -6,10 +6,10 @@ import subprocess
 import numpy as np
 from typing import Tuple, List, Optional
 
-from picograd.print_utils import *
-from picograd.backend.device import DeviceManager
 from .error import CUDA_ERRORS
 from .types import *
+from picograd.backend.device import DeviceManager
+from picograd.print_utils import *
 
 try:
   cuda = ctypes.CDLL('libcuda.so')
@@ -18,6 +18,7 @@ except OSError as e:
   # raise RuntimeError("Could not load CUDA libraries. Make sure CUDA is installed and the libraries are in your library path.") from e
   print("Could not load CUDA libraries. Make sure CUDA is installed and the libraries are in your library path.")
 
+DEBUG = int(os.getenv("DEBUG", 0))
 KERNELS_PATH = "picograd/backend/cuda/kernels"
 PSEUDO_DEBUG = int(os.getenv("PSEUDO_DEBUG", 0))  # if 1, generate assembly code as string but don't print (helps with segfaults)
 
@@ -25,9 +26,10 @@ TILE_SIZE = 16
 
 
 class CudaDeviceManager(DeviceManager):
-  def __init__(self, device_name, debug: int = 1):
-    super().__init__(device_name, debug=debug)
+  def __init__(self, device_name):
+    super().__init__(device_name)
     self.tile_size = TILE_SIZE
+    self.dev_name = device_name
 
     self.ctx = CUcontext()
     self.module = None
@@ -38,6 +40,7 @@ class CudaDeviceManager(DeviceManager):
     self.end_event = CUevent()
     self.check_cuda(cuda.cuEventCreate(ctypes.byref(self.start_event), 0), "cuEventCreate (start)")
     self.check_cuda(cuda.cuEventCreate(ctypes.byref(self.end_event), 0), "cuEventCreate (end)")
+    if DEBUG >= 1: print("** Opened device", device_name)
 
   def __del__(self):
     for kernel in self.kernels: del kernel
@@ -56,14 +59,6 @@ class CudaDeviceManager(DeviceManager):
       raise RuntimeError(f"[CUDA ERROR] {func_name} failed: {err_msg} (code {result})")
     if sync: cuda.cuCtxSynchronize()  # synchronous wait for CUDA ops to finish
 
-  @staticmethod
-  def load_kernel(file_path: str) -> str:
-    """Reads a kernel file and returns its contents as a string."""
-
-    with open(os.path.join(KERNELS_PATH, file_path), 'r') as f:
-      kernel_code = f.read()
-    return kernel_code
-
   def check_nvrtc(self, result: int, func_name: str):
     """Checks if NVRTC function call was successful. Raises RuntimeError if not."""
 
@@ -74,13 +69,19 @@ class CudaDeviceManager(DeviceManager):
       nvrtc.nvrtcGetProgramLog(self.program, log)
       raise RuntimeError(f"[NVRTC ERROR] {func_name} failed with code {result}:\n{log.value.decode()}")
 
+  @staticmethod
+  def load_kernel(file_path: str) -> str:
+    """Reads a kernel file and returns its contents as a string."""
+    with open(os.path.join(KERNELS_PATH, file_path), 'r') as f:
+      return f.read()
+
   def print_ptx_and_sass(self, kernel_name: str, ptx_str: str):
     if not PSEUDO_DEBUG:
       print(f"\n===== [NVRTC Generated PTX for kernel {kernel_name}] =====")
       print(ptx_str)
       print("=================================\n")
 
-    if self.debug >= 4:
+    if DEBUG >= 4:
       with tempfile.TemporaryDirectory() as tmpdir:
         ptx_path = os.path.join(tmpdir, "kernel.ptx")
         cubin_path = os.path.join(tmpdir, "kernel.cubin")
@@ -111,73 +112,11 @@ class CudaDeviceManager(DeviceManager):
 
   def  init_cuda(self):
     """Gets CUDA device and context, then initializes CUDA driver API."""
-
-    if self.debug >= 2 and not PSEUDO_DEBUG:
-      print(f"{color_green('[Cuda]')} Initializing...")
-
     self.check_cuda(cuda.cuInit(0), "cuInit")
     device = CUdevice() 
     self.check_cuda(cuda.cuDeviceGet(ctypes.byref(device), 0), "cuDeviceGet")
     self.check_cuda(cuda.cuCtxCreate(ctypes.byref(self.ctx), 0, device), "cuCtxCreate")
-
-  def compile_kernel(self, src: str, kernel_name: str):
-    if kernel_name in self.kernels:
-      if self.debug >= 2 and not PSEUDO_DEBUG:
-        print(f"{color_green('[Cuda]')} Fetching compiled kernel {color_green(kernel_name)}.")
-      return self.kernels[kernel_name]
-
-    if self.debug >= 2 and not PSEUDO_DEBUG:
-      print(f"{color_green('[Cuda]')} Compiling kernel {color_green(kernel_name)}")
-
-    self.program = nvrtcProgram()
-    nvrtc.nvrtcCreateProgram.restype = nvrtcResult
-    nvrtc.nvrtcCreateProgram(
-              ctypes.byref(self.program),
-              ctypes.c_char_p(src.encode()),
-              ctypes.c_char_p(f"{kernel_name.decode()}.cu".encode()),
-              0,
-              None,
-              None
-    )
-
-    # compile to PTX
-    opts = [
-      b"--fmad=false",
-      b"--gpu-architecture=compute_75",
-    ]
-    if self.debug >= 2:
-      opts += [
-        b"-G",
-        b"--device-debug",
-        b"--generate-line-info",
-        b"-lineinfo"
-      ]
-    self.check_nvrtc(
-      nvrtc.nvrtcCompileProgram(self.program, len(opts), (ctypes.c_char_p * len(opts))(*opts)),
-      "nvrtcCompileProgram"
-    )
-
-    # get PTX code
-    ptx_size = ctypes.c_size_t()
-    nvrtc.nvrtcGetPTXSize(self.program, ctypes.byref(ptx_size))
-    ptx = (ctypes.c_char * ptx_size.value)()
-    nvrtc.nvrtcGetPTX(self.program, ptx)
-    ptx_str = ctypes.string_at(ptx, ptx_size.value).decode()
-
-    # Print PTX and SASS (intermediate repr and assembly)
-    if self.debug >= 3:
-      self.print_ptx_and_sass(kernel_name, ptx_str)
-
-    # load PTX module
-    self.module = CUmodule()
-    self.check_cuda(cuda.cuModuleLoadData(ctypes.byref(self.module), ptx), "cuModuleLoadData")
-    nvrtc.nvrtcDestroyProgram(ctypes.byref(self.program))
-
-    # get kernel function
-    kfunc = CUfunction()
-    self.check_cuda(cuda.cuModuleGetFunction(ctypes.byref(kfunc), self.module, ctypes.c_char_p(kernel_name)), "cuModuleGetFunction")
-    self.kernels[kernel_name] = kfunc
-    return kfunc
+    if DEBUG >= 3 and not PSEUDO_DEBUG: print(f"{color_green('[Cuda]')} Device initialized")
 
   def cuda_malloc(self, size: int) -> CUdeviceptr:
     """Allocates device memory and returns a pointer to it."""
@@ -198,6 +137,100 @@ class CudaDeviceManager(DeviceManager):
     """Copies data from device to host memory."""
     self.check_cuda(cuda.cuMemcpyDtoH(ctypes.c_void_p(dst), src, size), "cuMemcpyDtoH", sync=True)
 
+  def cuda_memcpy_dtod(self, dst: CUdeviceptr, src: CUdeviceptr, size: int):
+    """Copies data inside the same device."""
+    return self.check_cuda(cuda.cuMemcpyDtoD(dst, src, size), "cuMemcpyDtoD", sync=True)
+
+  # -------
+  # GENERIC DEVICE INTERFACE METHODS
+  # -------
+
+  def allocate_device_memory(self, x) -> ctypes.c_void_p:
+    """Allocate device memory for tensor."""
+
+    if isinstance(x, np.ndarray):
+      nbytes = x.nbytes
+    elif isinstance(x, int):
+      nbytes = x
+    else:
+      raise ValueError("allocate_device_memory expects an integer (number of bytes) or a numpy ndarray.")
+    return self.cuda_malloc(nbytes)
+
+  def copy_data_to_device(self, d_T: ctypes.c_void_p, T_flat: np.ndarray):
+    """Copy data from host to device."""
+    self.cuda_memcpy_htod(d_T, T_flat.ctypes.data, T_flat.nbytes)
+
+  def copy_data_to_host(self, d_T: ctypes.c_void_p, T_flat: np.ndarray):
+    """Copy data from device to host."""
+    self.cuda_memcpy_dtoh(T_flat.ctypes.data, d_T, T_flat.nbytes)
+
+  def copy_device_to_device(self, d_src: ctypes.c_void_p, d_dst: ctypes.c_void_p, size: int):
+    """Copy data inside the same device"""
+    self.cuda_memcpy_dtod(d_dst, d_src, size)
+
+  def free_device_tensor(self, d_T: ctypes.c_void_p):
+    """Free tensor from device memory."""
+    self.cuda_free(d_T)
+
+  def compile_kernel(self, src: str, kernel_name: str) -> CUfunction:
+    if kernel_name in self.kernels:
+      if DEBUG >= 3 and not PSEUDO_DEBUG:
+        print(f"{color_green('[Cuda]')} Fetching compiled kernel {color_green(kernel_name)}.")
+      return self.kernels[kernel_name]
+
+    if DEBUG >= 3 and not PSEUDO_DEBUG:
+      print(f"{color_green('[Cuda]')} Compiling kernel {color_green(kernel_name)}")
+
+    self.program = nvrtcProgram()
+    nvrtc.nvrtcCreateProgram.restype = nvrtcResult
+    nvrtc.nvrtcCreateProgram(
+              ctypes.byref(self.program),
+              ctypes.c_char_p(src.encode()),
+              ctypes.c_char_p(f"{kernel_name.decode()}.cu".encode()),
+              0,
+              None,
+              None
+    )
+
+    # compile to PTX
+    opts = [
+      b"--fmad=false",
+      b"--gpu-architecture=compute_75",
+    ]
+    if DEBUG >= 4:
+      opts += [
+        b"-G",
+        b"--device-debug",
+        b"--generate-line-info",
+        b"-lineinfo"
+      ]
+    self.check_nvrtc(
+      nvrtc.nvrtcCompileProgram(self.program, len(opts), (ctypes.c_char_p * len(opts))(*opts)),
+      "nvrtcCompileProgram"
+    )
+
+    # get PTX code
+    ptx_size = ctypes.c_size_t()
+    nvrtc.nvrtcGetPTXSize(self.program, ctypes.byref(ptx_size))
+    ptx = (ctypes.c_char * ptx_size.value)()
+    nvrtc.nvrtcGetPTX(self.program, ptx)
+    ptx_str = ctypes.string_at(ptx, ptx_size.value).decode()
+
+    # Print PTX and SASS (intermediate repr and assembly)
+    if DEBUG >= 5:
+      self.print_ptx_and_sass(kernel_name, ptx_str)
+
+    # load PTX module
+    self.module = CUmodule()
+    self.check_cuda(cuda.cuModuleLoadData(ctypes.byref(self.module), ptx), "cuModuleLoadData")
+    nvrtc.nvrtcDestroyProgram(ctypes.byref(self.program))
+
+    # get kernel function
+    kfunc = CUfunction()
+    self.check_cuda(cuda.cuModuleGetFunction(ctypes.byref(kfunc), self.module, ctypes.c_char_p(kernel_name)), "cuModuleGetFunction")
+    self.kernels[kernel_name] = kfunc
+    return kfunc
+
   def launch_kernel(
       self,
       kfunc: CUfunction,
@@ -206,10 +239,10 @@ class CudaDeviceManager(DeviceManager):
       args: List[ctypes.c_void_p],
       shared_mem: int = 0,
       n_flops: Optional[int] = None
-    ):
+    ) -> Tuple[float, Optional[float]]:
     """Launches a CUDA kernel with the given grid and block dimensions and arguments."""
 
-    if self.debug >= 2 and not PSEUDO_DEBUG:
+    if DEBUG >= 3 and not PSEUDO_DEBUG:
       print(f"{color_green('[Cuda]')} Launching kernel {color_yellow(kfunc)} with grid {color_yellow(grid)} and block {color_yellow(block)}")
 
     # FIXME: start_event and end_event cause Segmentation fault (undeterministically) for consecutive kernel launches
@@ -254,29 +287,11 @@ class CudaDeviceManager(DeviceManager):
       # elapsed_s = elapsed_ms.value / 1000.0
       elapsed_s = elapsed_ms / 1000.0
       gflops = n_flops / (elapsed_s * 1e9)
-      if self.debug >= 1 and not PSEUDO_DEBUG:
+      if DEBUG >= 3 and not PSEUDO_DEBUG:
         print(f"{color_yellow('[Cuda-Perf]')} Kernel time: {color_red(f'{elapsed_ms:.4f} ms — GFLOPs: {gflops:.2f}')}")
     else:
-      if self.debug >= 1 and not PSEUDO_DEBUG:
+      if DEBUG >= 3 and not PSEUDO_DEBUG:
         # print(f"{color_yellow('[Cuda-Perf]')} Kernel time: {elapsed_ms.value:.3f} ms")
         print(f"{color_yellow('[Cuda-Perf]')} Kernel time: {elapsed_ms:.4f} ms")
-
-  # -------
-  # GENERIC DEVICE INTERFACE METHODS
-  # -------
-
-  def allocate_device_memory(self, T: np.ndarray) -> ctypes.c_void_p:
-    """Allocate device memory for tensor."""
-    return self.cuda_malloc(T.nbytes)
-
-  def copy_data_to_device(self, d_T: ctypes.c_void_p, T_flat: np.ndarray):
-    """Copy data from host to device."""
-    self.cuda_memcpy_htod(d_T, T_flat.ctypes.data, T_flat.nbytes)
-
-  def copy_data_to_host(self, d_T: ctypes.c_void_p, T_flat: np.ndarray):
-    """Copy data from device to host."""
-    self.cuda_memcpy_dtoh(T_flat.ctypes.data, d_T, T_flat.nbytes)
-
-  def free_device_tensor(self, d_T: ctypes.c_void_p):
-    """Free tensor from device memory."""
-    self.cuda_free(d_T)
+    
+    return elapsed_ms, gflops if n_flops is not None else None

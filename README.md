@@ -62,10 +62,11 @@ draw_dot(e, path="graphs/test")
 
 ## Debug Levels
 
-1. Print latency and GFLOPS
-2. Print device operations
-3. Print intermediate representation of kernel (if using device != cpu)
-4. Print streaming assembler code that runs on the device (if using device != cpu)
+1. Print kernel summary
+2. Render kernel code
+3. Log device internals
+4. Print intermediate representation of kernel (if using device != cpu)
+5. Print streaming assembler code that runs on the device (if using device != cpu)
 
 You can set debug levels by assigning the debug value to DEBUG env variable.
 

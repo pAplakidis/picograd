@@ -14,14 +14,14 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11' # or 3.10/3.12 if you want
+          python-version: '3.12'
 
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y graphviz
 
       - name: Install Python dependencies
         run: |
-          pip install numpy graphviz
+          pip install numpy graphviz torch
 
       - name: Run unittests
         run: |
