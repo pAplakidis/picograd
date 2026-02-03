@@ -17,7 +17,6 @@ def reduce_grad(grad: np.ndarray, shape: tuple) -> np.ndarray:
   return grad
 
 
-# TODO: create @jit decorator that uses jit.compile() to execute the op (LLVM)
 class BinaryOps:
   @staticmethod
   def add(a: "Tensor", b: "Tensor") -> np.ndarray: return a.data + b.data

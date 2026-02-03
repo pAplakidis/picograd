@@ -78,11 +78,14 @@ DEBUG=3 ./test/test_ops.py
 
 - CUDA activation functions (and other unary ops)
 - CUDA pooling
-- BatchNorm1D & 2D, LayerNorm (+CUDA)
-- Unit tests
-- RNN, LSTM, GRU
-- Attention, self-attention, transformer
-- Lazy buffers, scheduler, linearizer, kernel fusion
+- BatchNorm1D & 2D, LayerNorm (CUDA)
+- Attention, self-attention, transformer (CUDA)
+- GRU
+- Better AST => better Lazy Buffers => ScheduleItems
+- Generic Renderer using pattern matcher
+- allocate memory on realize + UOps.LOAD only (+ store on UOps.STORE only)
+- JIT
+- kernel fusion
 
 ## BUGS
 
@@ -90,6 +93,9 @@ DEBUG=3 ./test/test_ops.py
 
 ### DONE
 
+- Lazy buffers, scheduler, linearizer
+- RNN, LSTM,
+- Unit tests
 - Residual connections
 - CrossEntropyLoss CUDA
 - debug & optimize CUDA and memory leaks (device data should not be moved to host in ops)
@@ -122,3 +128,4 @@ DEBUG=3 ./test/test_ops.py
 - OpenCL ops
 - cudaMallocManaged
 - Test on actual neural networks, efficientnet, etc (full training and evaluation of simple models)
+- userspace driver (CLDevice, hook ioctl, etc)
