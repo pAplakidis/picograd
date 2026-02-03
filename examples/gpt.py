@@ -41,7 +41,7 @@ class GPT(nn.Module):
     self.ln_f = nn.LayerNorm(n_embed) # final layer norm
     self.lm_head = nn.Linear(n_embed, vocab_size)
 
-  def forward(self, idx, targets=None):
+  def forward(self, idx: picograd.Tensor, targets: picograd.Tensor=None):
     B, T = idx.shape
 
     token_emb = self.token_embedding_table(idx) # (B,T,C)
@@ -52,15 +52,15 @@ class GPT(nn.Module):
     x = self.ln_f(x)          # (B, T, C)
     logits = self.lm_head(x)  # (B,T,vocab_size)
 
-    if targets is None:
-      loss = None
-    else:
+    loss = None
+    if targets:
       B, T, C = logits.shape
       logits = logits.view(B*T, C) 
       targets = targets.view(B*T)
       loss = CrossEntropyLoss(logits, targets)
 
     return logits, loss
+
 
 def get_batch(data, batch_size, device):
   ix = torch.randint(len(data) - block_size, (batch_size,)).numpy()
@@ -69,7 +69,6 @@ def get_batch(data, batch_size, device):
   x, y = x.to(device), y.to(device)
   return x, y
 
-
 def tokenize_text(chars):
   stoi = { ch:i for i, ch in enumerate(chars) }
   itos = { i:ch for i, ch in enumerate(chars) }
@@ -77,6 +76,7 @@ def tokenize_text(chars):
   decode = lambda l: ''.join([itos[i] for i in l])  # decoder: list of integers => string
   return encode, decode
 
+# TODO: implement picograd.no_grad() decorator
 # @torch.no_grad()
 def estimate_loss(model):
   out = {}
@@ -112,8 +112,8 @@ def train_model(model):
     loss.backward()
     optimizer.step()
 
+    loss = loss.mean()
     t.set_description(f"Loss: {loss.item()}")
-  print(loss.item())
 
 
 if __name__ == "__main__":

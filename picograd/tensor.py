@@ -19,6 +19,7 @@ from picograd.backend.linearizer import linearize, build_ast
 
 DEBUG = int(os.getenv("DEBUG", 0))
 VERBOSE = int(os.getenv("VERBOSE", 0))
+LAZY = int(os.getenv("LAZY", 0))
 
 # init c++ library
 # if platform == "linux" or platform == "linux2": PICOGRAD_LIB = ctypes.CDLL('./lib/libpicograd.so')  # linux
@@ -38,7 +39,7 @@ class Tensor:
     device_data: Optional[ctypes.c_void_p] = None,
     shape: Optional[Tuple] = None,
     strides: Optional[Tuple[int]] = None,
-    lazy=False,
+    lazy=True if LAZY else False,
     dtype = np.float32,
   ):
     data = np.array(data) if data is not None else None
