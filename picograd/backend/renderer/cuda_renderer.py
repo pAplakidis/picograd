@@ -12,7 +12,8 @@ class CUDARenderer(CStyleRenderer):
   shared_max = 49152
 
   kernel_typedef = "extern \"C\" __global__ void"
-  elementwise_kernel_name = "E"
+  elementwise_kernel_prefix = "E"
+  reduce_kernel_prefix = "R"
 
   # TODO: support more dims
   gidx = "gidx0"
@@ -51,7 +52,7 @@ class CUDARenderer(CStyleRenderer):
     s2 = strides[2]
 
     size_t = '_'.join([str(s) for s in shape])
-    kernel_name = f"{self.elementwise_kernel_name}_{op.name}_{size_t}"
+    kernel_name = f"{self.elementwise_kernel_prefix}_{op.name}_{size_t}"
     args = [f"data{i}" for i in range(len(arg))]
     vals = [f"val{i}" for i in range(len(arg)-1)]
 
@@ -95,6 +96,8 @@ class CUDARenderer(CStyleRenderer):
     prg = ' '.join(kernel)
     return prg, kernel_name, contiguous
 
+  # TODO: this is naive
+  # TODO: keepdims
   # TODO: reduce (sum, max, min, std, argmax, argmin)
   # e.g. reduce(ADD, axis)
   def reduce(self, op, dtype, arg, shape: tuple[int, ...], dim: int):
@@ -111,7 +114,7 @@ class CUDARenderer(CStyleRenderer):
     reduce_size = in_shape[dim]
     out_shape = in_shape[:dim] + in_shape[dim+1:]
 
-    kernel_name = f"R_{op.name}_{'_'.join(map(str, in_shape))}_d{dim}"
+    kernel_name = f"{self.reduce_kernel_prefix}_{op.name}_{'_'.join(map(str, in_shape))}_d{dim}"
     args = ["data0", "data1"]  # out, in
 
     # identity values

@@ -35,6 +35,9 @@ class CStyleRenderer():
   def curly_braces(expr: str) -> str: return f"{{\n{expr}\n}}"
 
   @staticmethod
+  def square_brackets(expr: str) -> str: return f"[{expr}]"
+
+  @staticmethod
   def for_loop(var: str, start: str, end: str, body: str) -> str: return ' '.join([f"for (int {var} = {start}; {var} < {end}; {var}++)", CStyleRenderer.curly_braces(body)])
 
   def op_to_alu(self, op: OPS) -> str:
