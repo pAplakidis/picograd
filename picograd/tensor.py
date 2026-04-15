@@ -15,11 +15,12 @@ from picograd.backend.device import Devices, Device
 from picograd.backend.scheduler import Scheduler
 from picograd.backend.renderer.cstyle import CStyleRenderer
 from picograd.backend.renderer.cuda_renderer import CUDARenderer
+from picograd.backend.renderer.metal_renderer import MetalRenderer
 from picograd.backend.linearizer import linearize, build_ast
 
 DEBUG = int(os.getenv("DEBUG", 0))
 VERBOSE = int(os.getenv("VERBOSE", 0))
-LAZY = int(os.getenv("LAZY", 0))
+LAZY = int(os.getenv("LAZY", 1))
 
 # init c++ library
 # if platform == "linux" or platform == "linux2": PICOGRAD_LIB = ctypes.CDLL('./lib/libpicograd.so')  # linux
@@ -34,6 +35,8 @@ class Tensor:
     data: Optional[np.array] = None,  # TODO: make it regular list or tuple and convert to numpy array + .numpy() + numpy to Tensor
     name = "t",
     _prev = set(),
+    _prev_forward_args: tuple = (),
+    _prev_forward_kwargs: dict = {},
     requires_grad = True,
     device = Device(Devices.CPU),
     device_data: Optional[ctypes.c_void_p] = None,
@@ -44,7 +47,8 @@ class Tensor:
   ):
     data = np.array(data) if data is not None else None
     self.lazy = lazy
-    self.device= list(_prev)[0].device if len(list(_prev)) > 0 else device
+    # TODO: detect device availability and fall back to CPU if not available
+    self.device = list(_prev)[0].device if len(list(_prev)) > 0 else device
     self._ctx = None  # TODO: use context like pytorch
 
     self.name = name
@@ -69,6 +73,8 @@ class Tensor:
         self._strides = None
     
     self._prev = tuple(dict.fromkeys(_prev))  # used to be set, but doesn't preserve order
+    self._prev_forward_args = _prev_forward_args
+    self._prev_forward_kwargs = _prev_forward_kwargs
     self.prev_op = None
     self.layer = None
     self._backward = lambda: None
@@ -186,7 +192,7 @@ class Tensor:
   def nbytes(self): return int(np.prod(self.shape) * np.dtype(self.dtype).itemsize)
 
   def __repr__(self):
-    return f"{color_yellow('Tensor')} (name={self.name}, shape={self.shape}, strides={self.strides}, device={self.device.name}, data={self.data if self.device.name == Devices.CPU else hex(self.device_data.value)}{f', grad={self.grad if self.device.name == Devices.CPU else hex(self.device_grad.value)}' if self.requires_grad else ''}, requires_grad={self.requires_grad}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
+    return f"{color_yellow('Tensor')} (name={self.name}, shape={self.shape}, strides={self.strides}, device={self.device.name}, data={self.data if self.device.name == Devices.CPU else hex(id(self.device_data))}{f', grad={self.grad if self.device.name == Devices.CPU else hex(id(self.device_grad))}' if self.requires_grad else ''}, requires_grad={self.requires_grad}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
 
   def __len__(self):
     return self.shape[0]
@@ -293,7 +299,8 @@ class Tensor:
   def get_renderer(self) -> CStyleRenderer:
     if self.device.name == Devices.CPU: raise NotImplementedError("CPU renderer not implemented yet")
     if self.device.name == Devices.CUDA: return CUDARenderer(arch="sm_80")
-    raise NotImplementedError(f"Renderer not implemented for {t.device.name} yet")
+    if self.device.name == Devices.METAL: return MetalRenderer()
+    raise NotImplementedError(f"Renderer not implemented for {self.device.name} yet")
 
   def detach(self):
     return Tensor(
@@ -321,14 +328,14 @@ class Tensor:
     scheduler.run_schedule()
 
   def from_op(
-      self,
-      op_name: str,
-      shape: Optional[Tuple] = None,
-      strides: Optional[Tuple[int]] = None,
-      operands: Tuple["Tensor"] = (),
-      forward_args: Tuple = (),
-      forward_kwargs: dict = {},
-    ) -> Tensor:
+    self,
+    op_name: str,
+    shape: Optional[Tuple] = None,
+    strides: Optional[Tuple[int]] = None,
+    operands: Tuple["Tensor"] = (),
+    forward_args: Tuple = (),
+    forward_kwargs: dict = {},
+  ) -> Tensor:
     """
     Generalized op creation for tensor operations.
     
@@ -355,6 +362,8 @@ class Tensor:
         shape=shape if shape is not None else self.shape,
         strides=strides if strides is not None else default_strides(shape if shape is not None else self.shape),
         _prev=prev,
+        _prev_forward_args=forward_args,
+        _prev_forward_kwargs=forward_kwargs,
         device=self.device,
         lazy=self.lazy,
       )
@@ -364,6 +373,8 @@ class Tensor:
         shape=shape if shape is not None else self.shape,
         strides=strides if strides is not None else default_strides(shape if shape is not None else self.shape),
         _prev=prev,
+        _prev_forward_args=forward_args,
+        _prev_forward_kwargs=forward_kwargs,
         device=self.device,
         lazy=self.lazy,
       )
@@ -499,7 +510,7 @@ class Tensor:
   def __add__(self, other):           return self.from_op(OPS.ADD, operands=(other,))
   def __mul__(self, other):           return self.from_op(OPS.MUL, operands=(other,))
   def __matmul__(self, other):        return self.dot(other)
-  # NOTE: if lazy, this uses the matmul trick [ https://mesozoic-egg.github.io/tinygrad-notes/20241203_matmul.html ]
+  # NOTE: if lazy, this uses the matmul trick [ https://mesozoic-egg.github.io/tinygrad-notes/20241203_matmul.html ], results in non-contiguous elementwise
   def dot(self, other):               return (self.unsqueeze(1).expand(self.shape[0], other.shape[-1], self.shape[-1]) * other.unsqueeze(0).permute(0, 2, 1).expand(self.shape[0], other.shape[1], self.shape[-1])).sum(axis=-1) if self.lazy else self.from_op(OPS.DOT, operands=(other,), shape=(self.shape[0], other.shape[1]))
     
   def __pow__(self, other):           return self.from_op(OPS.POW, operands=(other,))
@@ -531,7 +542,7 @@ class Tensor:
   # TODO: support add, mul with scalars + fix and test these ops
   def __neg__(self):            return self * Tensor([-1], name="-1", requires_grad=False, device=self.device)
   def sqrt(self):               return self ** 0.5
-  def relu(self):               return self.from_op(OPS.ReLU, )
+  def relu(self):               return self.from_op(OPS.ReLU,)
   def softmax(self, axis=None): return self.from_op(OPS.Softmax, forward_args=(axis,))
   def tanh(self):               return self.from_op(OPS.Tanh)
   def sigmoid(self):            return self.from_op(OPS.Sigmoid)
@@ -539,7 +550,7 @@ class Tensor:
   # Reduce Ops
   # TODO: fix other reduce ops as well
   def sum(self, axis=None, keepdims=False):     return self.from_op(OPS.SUM, forward_args=(axis, keepdims), shape=(out_shape := self.shape_for_reduce(axis, keepdims)), strides=self.strides_for_reduce(axis, keepdims, out_shape))
-  def mean(self, axis=None, keepdims=False):    return self.from_op(OPS.MEAN, forward_args=(axis, keepdims))
+  def mean(self,axis=None, keepdims=False):     return self.from_op(OPS.MEAN, forward_args=(axis, keepdims))
   def max(self, axis=None, keepdims=False):     return self.from_op(OPS.MAX, forward_args=(axis, keepdims))
   def min(self, axis=None, keepdims=False):     return self.from_op(OPS.MIN, forward_args=(axis, keepdims))
   def std(self, axis=None, keepdims=False):     return self.from_op(OPS.STD, forward_args=(axis, keepdims))
