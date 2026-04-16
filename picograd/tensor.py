@@ -20,7 +20,7 @@ from picograd.backend.linearizer import linearize, build_ast
 
 DEBUG = int(os.getenv("DEBUG", 0))
 VERBOSE = int(os.getenv("VERBOSE", 0))
-LAZY = int(os.getenv("LAZY", 1))
+LAZY = int(os.getenv("LAZY", 0))
 
 # init c++ library
 # if platform == "linux" or platform == "linux2": PICOGRAD_LIB = ctypes.CDLL('./lib/libpicograd.so')  # linux
@@ -57,6 +57,7 @@ class Tensor:
 
     self._shape = shape if data is None else data.shape
     self._data = np.zeros(self._shape, dtype=dtype) if data is None else data
+    # TODO: grad should be a Tensor as well
     self._grad = np.zeros(self._shape, dtype=dtype) if requires_grad else None
 
     # shapetracker
@@ -241,6 +242,7 @@ class Tensor:
     return self
 
   def backward(self):
+    # TODO: set grad of output tensor to ones
     topo = []
     visited = set()
     stack = [self]
