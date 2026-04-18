@@ -41,6 +41,8 @@ class CudaDeviceManager(DeviceManager):
     self.check_cuda(cuda.cuEventCreate(ctypes.byref(self.start_event), 0), "cuEventCreate (start)")
     self.check_cuda(cuda.cuEventCreate(ctypes.byref(self.end_event), 0), "cuEventCreate (end)")
     if DEBUG >= 1: print("** Opened device", device_name)
+    self.max_grid_size = (2147483647, 65535, 65535)
+    self.max_block_size = (1024, 1024, 64)
 
   def __del__(self):
     for kernel in self.kernels: del kernel

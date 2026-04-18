@@ -23,7 +23,9 @@ class MetalDeviceManager(DeviceManager):
     super().__init__(device_name)
     self.dev_name = device_name
     self.device = Metal.MTLCreateSystemDefaultDevice()
-    if DEBUG >= 3: print(f"{color_green('[Metal]')} Device initialized")
+    if DEBUG >= 1: print("** Opened device", device_name)
+    self.max_grid_size = (2147483647, 65535, 65535)
+    self.max_block_size = (1024, 1024, 64)
 
   # -------
   # GENERIC DEVICE INTERFACE METHODS
