@@ -38,13 +38,17 @@ class Tensor:
     _prev_forward_args: tuple = (),
     _prev_forward_kwargs: dict = {},
     requires_grad = True,
-    device = Device(Devices.CPU),
+    device = None,
     device_data: Optional[ctypes.c_void_p] = None,
     shape: Optional[Tuple] = None,
     strides: Optional[Tuple[int]] = None,
     lazy=True if LAZY else False,
     dtype = np.float32,
   ):
+    # TODO: auto-detect device based on availability and data type
+    if device is None:
+      device = Device(Devices.CPU)
+
     data = np.array(data) if data is not None else None
     self.lazy = lazy
     # TODO: detect device availability and fall back to CPU if not available
