@@ -150,6 +150,7 @@ class DeviceManager:
     self.dev_grad_to_host(tensor)
 
   # GENERIC DEVICE INTERFACE METHODS
+  def sync(self): raise NotImplementedError("sync is not implemented for this device manager")
   def allocate_device_memory(self, x) -> ctypes.c_void_p: raise NotImplementedError("allocate_device_memory is not implemented for this device manager")
   def copy_data_to_device(self, d_T: ctypes.c_void_p, T_flat: np.ndarray): raise NotImplementedError("copy_data_to_device is not implemented for this device manager")
   def copy_data_to_host(self, d_T: ctypes.c_void_p, T_flat: np.ndarray): raise NotImplementedError("copy_data_to_host is not implemented for this device manager")

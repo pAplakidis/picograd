@@ -76,16 +76,27 @@ DEBUG=3 ./test/test_ops.py
 
 ## TODO
 
+- make gradients a Tensor so that backwards can be used with lazy
+- save/load models - state dict
+- rewrite device to use Buffer class
+- shapetracker + conv2d padding
+- full metal support (20 ops)
+
+- replace ctypes with pycuda
 - CUDA activation functions (and other unary ops)
 - CUDA pooling
 - BatchNorm1D & 2D, LayerNorm (CUDA)
 - Attention, self-attention, transformer (CUDA)
+
 - GRU
+- EfficientNet classifier
+- Stable Diffusion
 - Better AST => better Lazy Buffers => ScheduleItems
 - Generic Renderer using pattern matcher
 - allocate memory on realize + UOps.LOAD only (+ store on UOps.STORE only)
 - JIT
 - kernel fusion
+- LLAMA (?)
 
 ## BUGS
 
@@ -93,6 +104,7 @@ DEBUG=3 ./test/test_ops.py
 
 ### DONE
 
+- Conv2D trick
 - Lazy buffers, scheduler, linearizer
 - RNN, LSTM,
 - Unit tests
@@ -103,7 +115,6 @@ DEBUG=3 ./test/test_ops.py
 - cuda conv-net
 - ops.py + function.py
 - conv2d, maxpool, etc
-- save/load models - state dict
 - good unit tests
 - Support CUDA/GPU
 - Low Level Debugging: calculate and print FLOPS

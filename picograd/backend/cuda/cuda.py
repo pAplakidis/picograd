@@ -1,6 +1,6 @@
 import os
 import time
-import ctypes
+import ctypes # TODO: replace ctypes with pycuda
 import tempfile
 import subprocess
 import numpy as np
@@ -146,6 +146,10 @@ class CudaDeviceManager(DeviceManager):
   # -------
   # GENERIC DEVICE INTERFACE METHODS
   # -------
+
+  def sync(self):
+    """Synchronizes the device."""
+    self.check_cuda(cuda.cuCtxSynchronize(), "cuCtxSynchronize")
 
   def allocate_device_memory(self, x) -> ctypes.c_void_p:
     """Allocate device memory for tensor."""

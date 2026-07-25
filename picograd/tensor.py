@@ -91,12 +91,9 @@ class Tensor:
   @property
   def data(self) -> np.ndarray:
     assert self._data is not None or self.device_data is not None, "Tensor data is not initialized."
-
-    if self.device.name != Devices.CPU and self.device_data is not None:
-      self.device.manager.dev_data_to_host(self, free=False)
-
-    if not isinstance(self._data, np.ndarray):
-      self._data = np.array(self._data)
+    if self.lazy and self.prev_op is not None: self.realize() # FIXME: this can cause accidental repeated realization, add a flag: self.realized = False
+    if self.device.name != Devices.CPU and self.device_data is not None: self.device.manager.dev_data_to_host(self, free=False)
+    if not isinstance(self._data, np.ndarray): self._data = np.array(self._data)
     return self._data
   
   @data.setter
@@ -531,7 +528,93 @@ class Tensor:
     x = self * weight if len(weight.shape) == 1 else self.dot(weight)
     return x + bias if bias is not None else x
 
-  def conv2d(self, weight: "Tensor", bias: "Tensor", in_channels: int, out_channels: int, stride: int = 1, padding: int = 0, debug=False):
+  # TODO: double check this
+  # TODO: backward ?
+  # TODO: Instead of _pool manually constructing a Tensor, make it behave like your other movement ops.
+  def _pool(self, k: Tuple[int, int], stride: int, dilation: int):
+    """
+    Input: (B, C, H, W)
+    Output: (B, C, out_h, out_w, k_h, k_w)
+    """
+
+    assert len(k) == 2, "_pool currently expects a 2D kernel"
+    k_h, k_w = k
+    h, w = self.shape[-2:]
+
+    # Effective kernel size when dilation > 1
+    eff_k_h = dilation * (k_h - 1) + 1
+    eff_k_w = dilation * (k_w - 1) + 1
+
+    out_h = (h - eff_k_h) // stride + 1
+    out_w = (w - eff_k_w) // stride + 1
+
+    assert out_h > 0 and out_w > 0, (
+      f"Kernel {k} with dilation={dilation} is too large "
+      f"for input spatial shape {(h, w)}"
+    )
+
+    shape = self.shape[:-2] + (out_h, out_w, k_h, k_w)
+    *leading_strides, h_stride, w_stride = self.strides # B, C, H, W
+    strides = tuple(leading_strides) + (
+      h_stride * stride,    # move output window vertically
+      w_stride * stride,    # move output window horizontally
+      h_stride * dilation,  # move inside kernel vertically
+      w_stride * dilation,  # move inside kernel horizontally
+    )
+
+    if self.device.name == Devices.CPU:
+      view = as_strided(
+        self.data,
+        shape=shape,
+        strides=tuple(s * self.data.itemsize for s in strides),
+      )
+      return Tensor(
+        view,
+        _prev=(self,),
+        device=self.device,
+        requires_grad=self.requires_grad,
+        lazy=self.lazy
+      )
+
+    return Tensor(
+      device_data=self.device_data,
+      shape=shape,
+      strides=strides,
+      _prev=(self,),
+      device=self.device,
+      requires_grad=self.requires_grad,
+      lazy=self.lazy
+    )
+
+  # TODO: to support padding > 0, we need a more advanced ShapeTracker that supports an index-validity mask, closer to tinygrad
+  def conv2d(self, weight: "Tensor", in_channels: int, out_channels: int, stride: int = 1, padding: int = 0, bias: "Tensor" = None):
+    if self.lazy:
+      assert padding == 0, "lazy conv2d padding not implemented yet"
+
+      x = self._pool(k=(weight.shape[-2:]), stride=stride, dilation=1)  # TODO: dilation could be an arg (?)
+      B, IC, OH, OW, KH, KW = x.shape
+      OC = weight.shape[0]
+
+      assert IC == in_channels, f"Input channels {IC} does not match weight in_channels {in_channels}"
+      assert KH == weight.shape[-2] and KW == weight.shape[-1], f"Weight kernel size {weight.shape[-2:]} does not match input kernel size {(KH, KW)}"
+      assert OC == out_channels, f"Weight out_channels {OC} does not match specified out_channels {out_channels}"
+
+      x = x.unsqueeze(1)  # (B, IC, OH, OW, KH, KW) -> (B, 1, IC, OH, OW, KH, KW)
+      x = x.expand(B, OC, IC, OH, OW, KH, KW)     # (B, 1, IC, OH, OW, KH, KW) -> (B, OC, IC, OH, OW, KH, KW)
+      w = weight.reshape(1, OC, IC, 1, 1, KH, KW) # (OC, IC, KH, KW) -> (1, OC, IC, 1, 1, KH, KW)
+      w = w.expand(B, OC, IC, OH, OW, KH, KW)     # (1, OC, IC, 1, 1, KH, KW) -> (B, OC, IC, OH, OW, KH, KW)
+
+      out = x * w
+      out = out.sum(axis=-1)  # (B, OC, IC, OH, OW, KH, KW) -> (B, OC, IC, OH, OW, KH)
+      out = out.sum(axis=-1)  # -> (B, OC, IC, OH, OW)
+      out = out.sum(axis=2)   # -> (B, OC, OH, OW)
+
+      if bias is not None: out = out + bias.reshape(1, OC, 1, 1).expand(B, OC, OH, OW)
+
+      return out
+
+    if bias is None:
+      bias = Tensor(np.zeros((out_channels,), dtype=np.float32), name="bias", requires_grad=False, device=self.device)
     return self.from_op(
       OPS.Conv2D,
       shape=(

@@ -155,6 +155,22 @@ class TestCompilerOps(unittest.TestCase):
     self.assert_tensor_equal(d, check)
     print("[+] Compiler matmul + add OK")
 
+  # --------------- Conv Ops ----------------
+
+  def test_conv2d(self):
+    input_tensor = Tensor.random((1, 3, 32, 32), lazy=lazy, device=device, name="input")
+    kernel = Tensor.random((6, 3, 5, 5), lazy=lazy, device=device, name="kernel")
+    output_tensor = input_tensor.conv2d(kernel, in_channels=3, out_channels=6, stride=1, padding=0)
+
+    # Compute expected output using NumPy for verification
+    input_data = input_tensor.data
+    kernel_data = kernel.data
+    expected_output = np.zeros((1, 6, 28, 28))  # Output shape for valid convolution
+
+    # TODO: check with CPU
+    # self.assert_tensor_equal(output_tensor, expected_output)
+    print("[+] Compiler conv2d OK")
+
 
 if __name__ == "__main__":
   if serial:

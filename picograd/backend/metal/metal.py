@@ -30,6 +30,10 @@ class MetalDeviceManager(DeviceManager):
   # -------
   # GENERIC DEVICE INTERFACE METHODS
   # -------
+  
+  def sync(self):
+    """Synchronize the device. Does nothing since Metal is synchronous by default."""
+    pass
 
   def allocate_device_memory(self, x):
     """Allocate device memory and return a Metal buffer."""
