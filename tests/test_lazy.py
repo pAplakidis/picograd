@@ -13,16 +13,16 @@ from picograd.backend.device import Devices, Device
 from picograd.backend.linearizer import *
 
 
-if os.getenv("GITHUB_ACTIONS") == "true":
-  pytest.skip("GPU compiler tests require Metal/CUDA and are skipped on GitHub Actions", allow_module_level=True)
+IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
 
-device = Device(Devices.METAL)
+device = None if IN_GITHUB_ACTIONS else Device(Devices.METAL)
 lazy = True
 serial = True
+if device is not None:
+  print("[*] Using device", device.name, "\n")
 
-print("[*] Using device", device.name, "\n")
 
-
+@unittest.skipIf(IN_GITHUB_ACTIONS, "GPU compiler tests require Metal/CUDA")
 class TestCompilerOps(unittest.TestCase):
   def setUp(self):
     np.random.seed(42)
