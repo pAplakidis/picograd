@@ -64,6 +64,8 @@ class Tensor:
     # TODO: grad should be a Tensor as well
     self._grad = np.zeros(self._shape, dtype=dtype) if requires_grad else None
 
+    self.realized = False
+
     # shapetracker
     # NOTE: tensor[i, j] -> index(i, j) = i * stride[0] + j * stride[1] -> tensor.device_data + index(i, j) * itemsize
     if strides is not None:
@@ -91,7 +93,7 @@ class Tensor:
   @property
   def data(self) -> np.ndarray:
     assert self._data is not None or self.device_data is not None, "Tensor data is not initialized."
-    if self.lazy and self.prev_op is not None: self.realize() # FIXME: this can cause accidental repeated realization, add a flag: self.realized = False
+    if self.lazy and self.prev_op is not None and not self.realized: self.realize()
     if self.device.name != Devices.CPU and self.device_data is not None: self.device.manager.dev_data_to_host(self, free=False)
     if not isinstance(self._data, np.ndarray): self._data = np.array(self._data)
     return self._data
@@ -329,6 +331,7 @@ class Tensor:
     scheduler = Scheduler(linearize(build_ast(self)), renderer)
     scheduler.create_schedule()
     scheduler.run_schedule()
+    self.realized = True
 
   def from_op(
     self,
@@ -493,7 +496,14 @@ class Tensor:
   def reshape(self, *args, **kwargs): shape = args if len(args) > 1 else args[0]; return self.from_op(OPS.Reshape, forward_args=(shape,), forward_kwargs=kwargs, shape=shape)
   def view(self, *shape):             return self.from_op(OPS.Reshape, forward_args=(shape,), shape=((shape[0],) if len(shape) == 1 else shape))
   def flatten(self):                  return self.reshape(-1) # TODO: axis
-  def unsqueeze(self, axis):          return self.from_op(OPS.Unsqueeze, forward_args=(axis,), shape=tuple(self.shape[:axis]) + (1,) + tuple(self.shape[axis:]), strides=tuple(self.strides[:axis]) + (0,) + tuple(self.strides[axis:]))
+  def unsqueeze(self, axis):
+    ndim = self.ndim
+    if axis < 0: axis += ndim + 1
+    assert 0 <= axis <= ndim, f"unsqueeze axis {axis} out of range for ndim={ndim}"
+    shape = tuple(self.shape[:axis]) + (1,) + tuple(self.shape[axis:])
+    strides = tuple(self.strides[:axis]) + (0,) + tuple(self.strides[axis:])
+    return self.from_op(OPS.Unsqueeze, forward_args=(axis,), shape=shape,strides=strides)
+
   def squeeze(self, axis=0):          return self.from_op(OPS.Squeeze, forward_args=(axis,))
   def expand(self, *sizes):           return self.from_op(OPS.Expand, forward_args=(sizes,), shape=sizes if len(sizes) > 1 else sizes[0], strides=tuple(s if o == n else 0 for o, n, s in zip(self.shape, sizes, self.strides)))
   def permute(self, *axes):           return self.from_op(OPS.Permute, forward_args=(axes,), shape=tuple(self.shape[i] for i in axes), strides=tuple(self.strides[i] for i in axes))
@@ -514,8 +524,24 @@ class Tensor:
   def __mul__(self, other):           return self.from_op(OPS.MUL, operands=(other,))
   def __matmul__(self, other):        return self.dot(other)
   # NOTE: if lazy, this uses the matmul trick [ https://mesozoic-egg.github.io/tinygrad-notes/20241203_matmul.html ], results in non-contiguous elementwise
-  def dot(self, other):               return (self.unsqueeze(1).expand(self.shape[0], other.shape[-1], self.shape[-1]) * other.unsqueeze(0).permute(0, 2, 1).expand(self.shape[0], other.shape[1], self.shape[-1])).sum(axis=-1) if self.lazy else self.from_op(OPS.DOT, operands=(other,), shape=(self.shape[0], other.shape[1]))
-    
+  def dot(self, other):
+    if not self.lazy: return self.from_op(OPS.DOT, operands=(other,),shape=self.shape[:-1] + (other.shape[-1],))
+
+    assert self.ndim >= 2 and other.ndim >= 2, "dot expects ndim >= 2"
+    assert self.shape[-1] == other.shape[-2], f"Cannot matmul {self.shape} and {other.shape}"
+
+    M, K = self.shape[-2:]
+    N = other.shape[-1]
+    batch = broadcast_shape(self.shape[:-2], other.shape[:-2])
+
+    a = self
+    b = other
+    while a.ndim - 2 < len(batch): a = a.unsqueeze(0)
+    while b.ndim - 2 < len(batch): b = b.unsqueeze(0)
+    a = a.expand(*batch, M, K).unsqueeze(-1).expand(*batch, M, K, N)
+    b = b.expand(*batch, K, N).unsqueeze(-3).expand(*batch, M, K, N)
+    return (a * b).sum(axis=-2)
+      
   def __pow__(self, other):           return self.from_op(OPS.POW, operands=(other,))
   def __radd__(self, other):          return self + other
   def __sub__(self, other):           return self + (-other)

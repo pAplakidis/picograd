@@ -20,6 +20,7 @@ or Debug:
 
 - NVIDIA drivers and CUDA toolkit (if using NVIDIA GPU, tested on Linux 6.14.0-27-generic #27~24.04.1-Ubuntu with cuda 12.9)
 - Python dependencies
+- Optimally Python3.12
 
 ```
 python3 -m pip install -r requirements.txt
