@@ -21,7 +21,7 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          pip install numpy graphviz torch
+          pip install numpy graphviz torch pytest
 
       - name: Run unittests
         run: |
