@@ -61,8 +61,7 @@ class Tensor:
 
     self._shape = shape if data is None else data.shape
     self._data = np.zeros(self._shape, dtype=dtype) if data is None else data
-    # TODO: grad should be a Tensor as well
-    self._grad = np.zeros(self._shape, dtype=dtype) if requires_grad else None
+    self._grad = Tensor.zeros(self._shape, dtype=dtype, requires_grad=False, device=device, lazy=lazy) if requires_grad else None
 
     self.realized = False
 
@@ -115,19 +114,18 @@ class Tensor:
 
   @property
   def grad(self):
-    assert self._grad is not None or self.device_grad is not None, "Tensor grad is not initialized."
-    if self.device.name != Devices.CPU and self.device_grad is not None: self.device.manager.dev_grad_to_host(self, free=False)
     return self._grad
 
   @grad.setter
   def grad(self, value):
-    initial_shape = self.shape
+    if value is None:
+      self._grad = None
+      return
+    if not isinstance(value, Tensor):
+      value = Tensor(value, requires_grad=False, device=self.device, lazy=self.lazy)
+    if value.device.name != self.device.name: value.to(self.device)
+    value.requires_grad = False
     self._grad = value
-    if isinstance(value, np.ndarray): self._shape = value.shape
-    # assert initial_shape == value.shape, "Tensor data shape does not match the initialized shape."  # TODO: check if we need grad.shape == data.shape
-    if self.device.name != Devices.CPU and self.device_grad is not None:
-      self.device.manager.free_device_tensor(self.device_grad)
-      _, self._device_grad = self.device.manager.np_to_device(value)
 
   @property
   def device_data(self): return self._device_data
@@ -138,12 +136,17 @@ class Tensor:
     self._device_data = value
 
   @property
-  def device_grad(self): return self._device_grad
+  def device_grad(self): return self._grad.device_data if isinstance(self._grad, Tensor) and self._grad.device.name != Devices.CPU else self._device_grad
 
   @device_grad.setter
   def device_grad(self, value):
-    if self.device.manager: self.device.manager.free_device_tensor(self._device_grad)
-    self._device_grad  = value
+    if value is None:
+      self._device_grad = None
+      return
+    if self.device.name != Devices.CPU:
+      self._grad = Tensor(device_data=value, shape=self.shape, device=self.device, requires_grad=False, lazy=self.lazy)
+    else:
+      self._device_grad = value
 
   @property
   def dtype(self):
@@ -196,20 +199,19 @@ class Tensor:
   def nbytes(self): return int(np.prod(self.shape) * np.dtype(self.dtype).itemsize)
 
   def __repr__(self):
-    return f"{color_yellow('Tensor')} (name={self.name}, shape={self.shape}, strides={self.strides}, device={self.device.name}, data={self.data if self.device.name == Devices.CPU else hex(id(self.device_data))}{f', grad={self.grad if self.device.name == Devices.CPU else hex(id(self.device_grad))}' if self.requires_grad else ''}, requires_grad={self.requires_grad}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
+    grad_repr = None if self.grad is None else (self.grad.data if self.device.name == Devices.CPU else hex(id(self.grad.device_data)))
+    return f"{color_yellow('Tensor')} (name={self.name}, shape={self.shape}, strides={self.strides}, device={self.device.name}, data={self.data if self.device.name == Devices.CPU else hex(id(self.device_data))}{f', grad={grad_repr}' if self.requires_grad else ''}, requires_grad={self.requires_grad}, prev_op={self.prev_op}, prev_tensors={len(self._prev)})"
 
   def __len__(self):
     return self.shape[0]
     
   def __del__(self):
-    # if self.device_data is not None:
-    #   free_device_tensor(self.device.manager, self.device_data)
-    #   self.device_data = None
-
-    # if self.device_grad is not None:
-    #   free_device_tensor(self.device.manager, self.device_grad)
-    #   self.device_grad = None
-    pass
+    if self._device_data is not None and self.device is not None and self.device.manager is not None and self.device.name != Devices.CPU:
+      self.device.manager.free_device_tensor(self._device_data)
+      self._device_data = None
+    if self._device_grad is not None and self.device is not None and self.device.manager is not None and self.device.name != Devices.CPU:
+      self.device.manager.free_device_tensor(self._device_grad)
+      self._device_grad = None
 
   # TODO: implement all tensor generators + cuda
   @staticmethod
@@ -239,13 +241,14 @@ class Tensor:
     self.device = device
     if device.name != Devices.CPU :
       self._data = self._data.astype(np.float32)
-      if self._grad is not None: self._grad = self._grad.astype(np.float32)
+      if self._grad is not None:
+        self._grad.dtype = np.float32
+        if self._grad.device.name != device.name: self._grad.to(device)
       self.device.manager.tensor_to_device(self)
 
     return self
 
   def backward(self):
-    # TODO: set grad of output tensor to ones
     topo = []
     visited = set()
     stack = [self]
@@ -258,9 +261,19 @@ class Tensor:
         for child in v._prev:
           if child not in visited: stack.append(child)
       elif v not in topo: topo.append(v)
+
+    for node in topo:
+      if isinstance(node, Tensor) and node.lazy and node.prev_op is not None and not node.realized:
+        node.realize()
+
+    self.grad = Tensor.ones(self.shape, requires_grad=False, device=self.device, lazy=self.lazy)
     for node in reversed(topo):
       if isinstance(node, Tensor):
         node._backward()
+
+    for node in topo:
+      if isinstance(node, Tensor) and node.requires_grad and isinstance(node.grad, Tensor) and node.grad.lazy and node.grad.prev_op is not None and not node.grad.realized:
+        node.grad.realize()
 
   # pretty print the graph for this tensor backwards
   def print_graph(self, verbose=False):
@@ -298,8 +311,8 @@ class Tensor:
     return self
 
   def scalar_to_tensor(self, value: Union[int, float]):
-    assert isinstance(value, Tensor) or isinstance(value, (int, float)), f"Operand {value} must be a Tensor or a scalar (int/float). Got {type(value)}."
-    return Tensor([value], name=str(value), requires_grad=False, device=self.device) if isinstance(value, (int, float)) else value
+    assert isinstance(value, Tensor) or isinstance(value, (int, float, np.ndarray)), f"Operand {value} must be a Tensor, ndarray, or scalar (int/float). Got {type(value)}."
+    return Tensor(value if isinstance(value, np.ndarray) else [value], name=str(value), requires_grad=False, device=self.device, lazy=self.lazy) if isinstance(value, (int, float, np.ndarray)) else value
 
   def get_renderer(self) -> CStyleRenderer:
     if self.device.name == Devices.CPU: raise NotImplementedError("CPU renderer not implemented yet")
@@ -318,6 +331,130 @@ class Tensor:
       lazy=self.lazy,
     )
 
+  def _accumulate_grad(self, grad: "Tensor"):
+    if not self.requires_grad: return
+    grad.requires_grad = False
+    self._grad = grad if self._grad is None else self._grad + grad
+
+  def _sum_to_shape(self, grad: "Tensor", shape: Tuple[int, ...]):
+    while len(grad.shape) > len(shape): grad = grad.sum(axis=0)
+    for axis, dim in enumerate(shape):
+      if dim == 1 and grad.shape[axis] != 1: grad = grad.sum(axis=axis, keepdims=True)
+    return grad.reshape(shape) if grad.shape != shape else grad
+
+  def _backward_from_op(self, out: "Tensor", op_name: OPS, inputs: Tuple["Tensor", ...], forward_args: Tuple, forward_kwargs: dict):
+    grad_out = out.grad
+    if grad_out is None: return
+    a = inputs[0]
+    operands = inputs[1:]
+
+    if op_name == OPS.ADD:
+      b = operands[0]
+      a._accumulate_grad(self._sum_to_shape(grad_out, a.shape))
+      b._accumulate_grad(self._sum_to_shape(grad_out, b.shape))
+      return
+
+    if op_name == OPS.MUL:
+      b = operands[0]
+      a._accumulate_grad(self._sum_to_shape(b.detach() * grad_out, a.shape))
+      b._accumulate_grad(self._sum_to_shape(a.detach() * grad_out, b.shape))
+      return
+
+    if op_name == OPS.DOT:
+      b = operands[0]
+      if a.requires_grad: a._accumulate_grad(grad_out.dot(b.detach().T))
+      if b.requires_grad: b._accumulate_grad(a.detach().T.dot(grad_out))
+      return
+
+    if op_name in (OPS.Reshape, OPS.View, OPS.Flatten):
+      a._accumulate_grad(grad_out.reshape(a.shape))
+      return
+
+    if op_name == OPS.Unsqueeze:
+      axis = forward_args[0]
+      if axis < 0: axis += len(a.shape) + 1
+      a._accumulate_grad(grad_out.squeeze(axis))
+      return
+
+    if op_name == OPS.Squeeze:
+      axis = forward_args[0]
+      a._accumulate_grad(grad_out.unsqueeze(axis).reshape(a.shape))
+      return
+
+    if op_name == OPS.Transpose:
+      axes = forward_args[0] if len(forward_args) > 0 else tuple(reversed(range(len(a.shape))))
+      a._accumulate_grad(grad_out.permute(*tuple(np.argsort(axes))))
+      return
+
+    if op_name == OPS.Permute:
+      axes = forward_args[0]
+      a._accumulate_grad(grad_out.permute(*tuple(np.argsort(axes))))
+      return
+
+    if op_name == OPS.Expand:
+      a._accumulate_grad(self._sum_to_shape(grad_out, a.shape))
+      return
+
+    if op_name == OPS.SUM:
+      axis, keepdims = forward_args
+      g = grad_out
+      if axis is not None and not keepdims: g = g.unsqueeze(axis)
+      a._accumulate_grad(g.expand(*a.shape))
+      return
+
+    if op_name == OPS.ReLU:
+      mask = Tensor((a.detach().data > 0).astype(np.float32), requires_grad=False, device=a.device, lazy=a.lazy)
+      a._accumulate_grad(grad_out * mask)
+      return
+
+    if op_name == OPS.Tanh and a.device.name == Devices.CPU:
+      a._accumulate_grad(Tensor((1 - np.tanh(a.detach().data)**2) * grad_out.data, requires_grad=False, device=a.device, lazy=a.lazy))
+      return
+
+    if op_name == OPS.Sigmoid and a.device.name == Devices.CPU:
+      sig = 1 / (1 + np.exp(-a.detach().data))
+      a._accumulate_grad(Tensor(sig * (1 - sig) * grad_out.data, requires_grad=False, device=a.device, lazy=a.lazy))
+      return
+
+    if op_name == OPS.Softmax:
+      axis = forward_args[0] if len(forward_args) > 0 and forward_args[0] is not None else -1
+      data = out.detach()
+      dot = (grad_out * data).sum(axis=axis, keepdims=True)
+      a._accumulate_grad((grad_out + (dot * Tensor(np.full(dot.shape, -1, dtype=np.float32), requires_grad=False, device=a.device, lazy=a.lazy))) * data)
+      return
+
+    if op_name == OPS.MEAN and a.device.name == Devices.CPU:
+      axis, keepdims = forward_args
+      g = grad_out.data
+      if not keepdims and axis is not None: g = np.expand_dims(g, axis=axis)
+      a._accumulate_grad(Tensor(np.ones_like(a.data) * g / a.data.size, requires_grad=False, device=a.device, lazy=a.lazy))
+      return
+
+    if op_name == OPS.MAX and a.device.name == Devices.CPU:
+      axis, keepdims = forward_args
+      g = grad_out.data
+      if not keepdims and axis is not None: g = np.expand_dims(g, axis=axis)
+      a._accumulate_grad(Tensor((a.data == np.max(a.data, axis=axis, keepdims=True)) * g, requires_grad=False, device=a.device, lazy=a.lazy))
+      return
+
+    if op_name == OPS.MIN and a.device.name == Devices.CPU:
+      axis, keepdims = forward_args
+      g = grad_out.data
+      if not keepdims and axis is not None: g = np.expand_dims(g, axis=axis)
+      a._accumulate_grad(Tensor((a.data == np.min(a.data, axis=axis, keepdims=True)) * g, requires_grad=False, device=a.device, lazy=a.lazy))
+      return
+
+    if op_name == OPS.STD and a.device.name == Devices.CPU:
+      axis, keepdims = forward_args
+      g = grad_out.data
+      mean = np.mean(a.data, axis=axis, keepdims=True)
+      std = np.std(a.data, axis=axis, keepdims=True)
+      if not keepdims and axis is not None: g = np.expand_dims(g, axis=axis)
+      a._accumulate_grad(Tensor((a.data - mean) * g / (std * a.data.size), requires_grad=False, device=a.device, lazy=a.lazy))
+      return
+
+    return
+
   def numpy(self):
     if self.lazy: self.realize()
     return self.data
@@ -328,10 +465,12 @@ class Tensor:
 
   def realize(self):
     renderer = self.get_renderer()
-    scheduler = Scheduler(linearize(build_ast(self)), renderer)
+    ast = linearize(build_ast(self))
+    scheduler = Scheduler(ast, renderer)
     scheduler.create_schedule()
     scheduler.run_schedule()
-    self.realized = True
+    for node in ast:
+      if node.tensor.prev_op is not None: node.tensor.realized = True
 
   def from_op(
     self,
@@ -354,12 +493,13 @@ class Tensor:
     """
 
     operands = tuple([self.scalar_to_tensor(t) for t in operands])
-    if not self.lazy: func = get_op(op_name, self.device.name)
     tensor_inputs = (self,) + operands
     prev = tensor_inputs
+    requires_grad = any(t.requires_grad for t in tensor_inputs)
     
     out_data = (self.data if self.device.name == Devices.CPU else self.device_data) if op_name in MOVEMENT_OPS else None
     if not self.lazy:
+      func = get_op(op_name, self.device.name)
       out_data = func.forward(*tensor_inputs, *forward_args, **forward_kwargs)
 
     if self.device.name == Devices.CPU:
@@ -371,6 +511,7 @@ class Tensor:
         _prev_forward_args=forward_args,
         _prev_forward_kwargs=forward_kwargs,
         device=self.device,
+        requires_grad=requires_grad,
         lazy=self.lazy,
       )
     else:
@@ -382,11 +523,12 @@ class Tensor:
         _prev_forward_args=forward_args,
         _prev_forward_kwargs=forward_kwargs,
         device=self.device,
+        requires_grad=requires_grad,
         lazy=self.lazy,
       )
 
     out.prev_op = op_name
-    out._backward = lambda: func.backward(out.grad if self.device.name == Devices.CPU else out.device_grad)
+    out._backward = lambda: self._backward_from_op(out, op_name, tensor_inputs, forward_args, forward_kwargs)
     return out
 
   def shape_for_reduce(self, axis, keepdims):
@@ -504,7 +646,12 @@ class Tensor:
     strides = tuple(self.strides[:axis]) + (0,) + tuple(self.strides[axis:])
     return self.from_op(OPS.Unsqueeze, forward_args=(axis,), shape=shape,strides=strides)
 
-  def squeeze(self, axis=0):          return self.from_op(OPS.Squeeze, forward_args=(axis,))
+  def squeeze(self, axis=0):
+    axes = (axis,) if isinstance(axis, int) else tuple(axis)
+    axes = tuple(a + self.ndim if a < 0 else a for a in axes)
+    shape = tuple(s for i, s in enumerate(self.shape) if i not in axes)
+    strides = tuple(s for i, s in enumerate(self.strides) if i not in axes)
+    return self.from_op(OPS.Squeeze, forward_args=(axis,), shape=shape, strides=strides)
   def expand(self, *sizes):           return self.from_op(OPS.Expand, forward_args=(sizes,), shape=sizes if len(sizes) > 1 else sizes[0], strides=tuple(s if o == n else 0 for o, n, s in zip(self.shape, sizes, self.strides)))
   def permute(self, *axes):           return self.from_op(OPS.Permute, forward_args=(axes,), shape=tuple(self.shape[i] for i in axes), strides=tuple(self.strides[i] for i in axes))
   @property
@@ -552,10 +699,11 @@ class Tensor:
 
   def linear(self, weight: "Tensor", bias: Optional["Tensor"] = None):
     x = self * weight if len(weight.shape) == 1 else self.dot(weight)
+    if bias is not None and self.lazy and bias.shape != x.shape:
+      bias = bias.reshape(*((1,) * (len(x.shape) - len(bias.shape))), *bias.shape).expand(*x.shape)
     return x + bias if bias is not None else x
 
   # TODO: double check this
-  # TODO: backward ?
   # TODO: Instead of _pool manually constructing a Tensor, make it behave like your other movement ops.
   def _pool(self, k: Tuple[int, int], stride: int, dilation: int):
     """

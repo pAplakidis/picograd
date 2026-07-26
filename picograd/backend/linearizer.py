@@ -23,7 +23,7 @@ def build_ast(tensor: Tensor, memo=None):
     return memo[tensor]
   
   # Leaf tensor
-  if tensor.prev_op is None or len(tensor._prev) == 0:
+  if tensor.prev_op is None or tensor.realized or len(tensor._prev) == 0:
     node = ASTNode(op=None, inputs=tuple(), tensor=tensor)
   else:
     # recursively build children

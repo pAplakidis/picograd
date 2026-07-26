@@ -98,16 +98,17 @@ class DeviceManager:
       print(f"{color_green(f'[{self.device_name}]')} Tensor data copied to device - {color_red(f'{tensor._data.nbytes} bytes')} - {color_red(f'{(time.time() - start_time) * 1000:.4f} ms')}")
 
   def host_grad_to_dev(self, tensor: "Tensor"):
+    if tensor.grad is None: return
     if DEBUG >= 3 and not PSEUDO_DEBUG:
       start_time = time.time()
 
-    grad_flat = self.flatten_tensor(tensor.grad)
+    grad_flat = self.flatten_tensor(tensor.grad.data)
     d_grad = self.allocate_device_memory(grad_flat)
     self.copy_data_to_device(d_grad, grad_flat)
     tensor.device_grad = d_grad
 
     if DEBUG >= 3 and not PSEUDO_DEBUG:
-      print(f"{color_green(f'[{self.device_name}]')} Tensor gradient copied to device - {color_red(f'{tensor._grad.nbytes} bytes')} - {color_red(f'{(time.time() - start_time) * 1000:.4f} ms')}")
+      print(f"{color_green(f'[{self.device_name}]')} Tensor gradient copied to device - {color_red(f'{tensor.grad.nbytes} bytes')} - {color_red(f'{(time.time() - start_time) * 1000:.4f} ms')}")
 
   def dev_data_to_host(self, tensor: "Tensor", free=True):
     assert tensor.device_data is not None, "Tensor device data is None, cannot copy to host"
@@ -135,14 +136,14 @@ class DeviceManager:
 
     grad_flat = np.empty(tensor._shape, dtype=tensor.dtype).ravel()
     self.copy_data_to_host(tensor.device_grad, grad_flat)
-    tensor._grad = grad_flat.reshape(tensor._shape)  # FIXME: will not work with CrossEntropyLoss (data.shape != grad.shape)
+    tensor.grad = grad_flat.reshape(tensor._shape)  # FIXME: will not work with CrossEntropyLoss (data.shape != grad.shape)
 
     if free:
       self.free_device_tensor(tensor.device_grad)
       tensor.device_grad = None
 
     if DEBUG >= 3 and not PSEUDO_DEBUG:
-      print(f"{color_green(f'[{self.device_name}]')} Tensor gradient copied to host - {color_red(f'{tensor._grad.nbytes} bytes')} - {color_red(f'{(time.time() - start_time) * 1000:.4f} ms')}")
+      print(f"{color_green(f'[{self.device_name}]')} Tensor gradient copied to host - {color_red(f'{tensor.grad.nbytes} bytes')} - {color_red(f'{(time.time() - start_time) * 1000:.4f} ms')}")
 
   def tensor_to_host(self, tensor: "Tensor"):
     """Copy tensor data and gradient from device to host."""

@@ -8,6 +8,7 @@ import numpy as np
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from picograd.tensor import Tensor
+from picograd.loss import CrossEntropyLoss
 from picograd.backend.device import Devices, Device
 from picograd.backend.linearizer import *
 
@@ -21,6 +22,7 @@ if device is not None:
   print("[*] Using device", device.name, "\n")
 
 
+# TODO: skip for now, we need CPU renderer and/or mock GPU
 @unittest.skipIf(IN_GITHUB_ACTIONS, "GPU compiler tests require Metal/CUDA")
 class TestCompilerOps(unittest.TestCase):
   def setUp(self):
@@ -42,6 +44,10 @@ class TestCompilerOps(unittest.TestCase):
     )
     self.assertTrue(np.all(np.isfinite(actual)), "Tensor contains NaN or Inf values")
     np.testing.assert_allclose(actual, expected, atol=atol, rtol=rtol)
+
+  def assert_grad_equal(self, tensor, expected, atol=1e-5, rtol=1e-5):
+    self.assertIsNotNone(tensor.grad, f"{tensor.name} grad is None")
+    self.assert_tensor_equal(tensor.grad, expected, atol=atol, rtol=rtol)
 
   # ---------------------------------------------------------
   # NumPy reference implementations
@@ -195,6 +201,9 @@ class TestCompilerOps(unittest.TestCase):
     check = a.data + b.data
 
     self.assert_tensor_equal(d, check)
+    d.backward()
+    self.assert_grad_equal(a, np.ones_like(a.data))
+    self.assert_grad_equal(b, np.ones_like(b.data))
     print("[+] Compiler add OK")
 
   def test_mul_add(self):
@@ -203,6 +212,10 @@ class TestCompilerOps(unittest.TestCase):
     check = a.data * b.data + c.data
 
     self.assert_tensor_equal(d, check)
+    d.backward()
+    self.assert_grad_equal(a, b.data)
+    self.assert_grad_equal(b, a.data)
+    self.assert_grad_equal(c, np.ones_like(c.data))
     print("[+] Compiler mul + add OK")
 
   def test_mul_add_shared_input(self):
@@ -211,6 +224,10 @@ class TestCompilerOps(unittest.TestCase):
     check = a.data * b.data + a.data * c.data
 
     self.assert_tensor_equal(d, check)
+    d.backward()
+    self.assert_grad_equal(a, b.data + c.data)
+    self.assert_grad_equal(b, a.data)
+    self.assert_grad_equal(c, a.data)
     print("[+] Compiler shared input graph OK")
 
   def test_repeated_expression(self):
@@ -219,6 +236,10 @@ class TestCompilerOps(unittest.TestCase):
     check = a.data * b.data + a.data * b.data + c.data
 
     self.assert_tensor_equal(d, check)
+    d.backward()
+    self.assert_grad_equal(a, b.data + b.data)
+    self.assert_grad_equal(b, a.data + a.data)
+    self.assert_grad_equal(c, np.ones_like(c.data))
     print("[+] Compiler repeated expression OK")
 
   def test_residual(self):
@@ -227,6 +248,9 @@ class TestCompilerOps(unittest.TestCase):
     check = a.data * b.data + a.data
 
     self.assert_tensor_equal(d, check)
+    d.backward()
+    self.assert_grad_equal(a, b.data + np.ones_like(a.data))
+    self.assert_grad_equal(b, a.data)
     print("[+] Compiler residual OK")
 
   # --------------- Unary Ops ----------------
@@ -259,6 +283,40 @@ class TestCompilerOps(unittest.TestCase):
     self.assertEqual(out.strides, (12, 0, 4, 1))
     print("[+] Compiler unsqueeze strides OK")
 
+  def test_softmax_cross_entropy_backward(self):
+    logits_data = np.array([[1.0, 2.0, 3.0], [1.0, 0.0, -1.0]], dtype=np.float32)
+    labels_data = np.array([2, 0])
+    logits = Tensor(logits_data, lazy=lazy, device=device, name="logits")
+    labels = Tensor(labels_data, lazy=lazy, device=device, requires_grad=False, name="labels")
+
+    probs = logits.softmax()
+    exp = np.exp(logits_data - np.max(logits_data, axis=1, keepdims=True))
+    expected_probs = exp / np.sum(exp, axis=1, keepdims=True)
+    self.assert_tensor_equal(probs, expected_probs)
+
+    loss = CrossEntropyLoss(probs, labels)
+    np.testing.assert_allclose(loss.data, -np.log(expected_probs[np.arange(2), labels_data]), atol=1e-5, rtol=1e-5)
+    loss.backward()
+
+    one_hot = np.zeros_like(expected_probs)
+    one_hot[np.arange(2), labels_data] = 1
+    self.assert_grad_equal(logits, (expected_probs - one_hot) / 2, atol=1e-5, rtol=1e-5)
+    print("[+] Compiler softmax + cross entropy backward OK")
+
+  def test_backward_realizes_forward(self):
+    data = np.array([[-1.0, 2.0], [3.0, -4.0]], dtype=np.float32)
+    a = Tensor(data.copy(), lazy=lazy, device=device, name="a")
+    d = a.relu()
+
+    self.assertFalse(d.realized)
+    d.backward()
+
+    self.assertTrue(d.realized)
+    self.assertIsNotNone(a.grad)
+    self.assertTrue(a.grad.realized)
+    self.assert_grad_equal(a, (data > 0).astype(np.float32))
+    print("[+] Compiler backward forward-realize OK")
+
   # --------------- Reduce Ops ----------------
 
   def test_sum_axis_0(self):
@@ -267,6 +325,8 @@ class TestCompilerOps(unittest.TestCase):
     check = a.data.sum(axis=0)
 
     self.assert_tensor_equal(d, check)
+    d.backward()
+    self.assert_grad_equal(a, np.ones_like(a.data))
     print("[+] Compiler reduce axis=0 OK")
 
   def test_sum_axis_1(self):
@@ -275,6 +335,8 @@ class TestCompilerOps(unittest.TestCase):
     check = a.data.sum(axis=1)
 
     self.assert_tensor_equal(d, check)
+    d.backward()
+    self.assert_grad_equal(a, np.ones_like(a.data))
     print("[+] Compiler reduce axis=1 OK")
 
   # --------------- Matmul Ops ----------------
@@ -285,6 +347,9 @@ class TestCompilerOps(unittest.TestCase):
     check = a.data @ b.data
 
     self.assert_tensor_equal(d, check)
+    d.backward()
+    self.assert_grad_equal(a, np.ones_like(d.data) @ b.data.T, atol=1e-4, rtol=1e-4)
+    self.assert_grad_equal(b, a.data.T @ np.ones_like(d.data), atol=1e-4, rtol=1e-4)
     print("[+] Compiler square matmul OK")
 
   def test_dot_square(self):
@@ -293,6 +358,9 @@ class TestCompilerOps(unittest.TestCase):
     check = a.data @ b.data
 
     self.assert_tensor_equal(d, check)
+    d.backward()
+    self.assert_grad_equal(a, np.ones_like(d.data) @ b.data.T, atol=1e-4, rtol=1e-4)
+    self.assert_grad_equal(b, a.data.T @ np.ones_like(d.data), atol=1e-4, rtol=1e-4)
     print("[+] Compiler square dot OK")
 
   def test_matmul_non_square_cases(self):
@@ -313,6 +381,9 @@ class TestCompilerOps(unittest.TestCase):
         check = a.data @ b.data
 
         self.assert_tensor_equal(d, check)
+        d.backward()
+        self.assert_grad_equal(a, np.ones_like(d.data) @ b.data.T, atol=1e-4, rtol=1e-4)
+        self.assert_grad_equal(b, a.data.T @ np.ones_like(d.data), atol=1e-4, rtol=1e-4)
 
     print("[+] Compiler non-square matmul OK")
 
@@ -334,6 +405,9 @@ class TestCompilerOps(unittest.TestCase):
         check = a.data @ b.data
 
         self.assert_tensor_equal(d, check)
+        d.backward()
+        self.assert_grad_equal(a, np.ones_like(d.data) @ b.data.T, atol=1e-4, rtol=1e-4)
+        self.assert_grad_equal(b, a.data.T @ np.ones_like(d.data), atol=1e-4, rtol=1e-4)
 
     print("[+] Compiler non-square dot OK")
 
@@ -343,6 +417,10 @@ class TestCompilerOps(unittest.TestCase):
     check = a.data @ b.data + c.data
 
     self.assert_tensor_equal(d, check)
+    d.backward()
+    self.assert_grad_equal(a, np.ones_like(d.data) @ b.data.T, atol=1e-4, rtol=1e-4)
+    self.assert_grad_equal(b, a.data.T @ np.ones_like(d.data), atol=1e-4, rtol=1e-4)
+    self.assert_grad_equal(c, np.ones_like(c.data))
     print("[+] Compiler matmul + add OK")
 
   # =========================================================

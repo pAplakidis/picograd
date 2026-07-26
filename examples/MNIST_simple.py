@@ -18,9 +18,9 @@ from picograd.draw_utils import draw_dot
 
 BS = 16
 
-# FIXME: on CPU loss goes down, on GPU it goes up
-# device = Device(Devices.CPU)
-device = Device(Devices.CUDA) if is_cuda_available() else Device(Devices.CPU)
+device = Device(Devices.CPU)
+# device = Device(Devices.CUDA) if is_cuda_available() else Device(Devices.CPU)
+# device = Device(Devices.METAL)
 print("[*] Using device", device.name, "\n")
 
 def get_data():
@@ -47,8 +47,7 @@ if __name__ == '__main__':
   X_train, Y_train, X_test, Y_test = get_data()
 
   model = Testnet(784, 10).to(device)
-  # optim = Adam(model.get_params(), lr=1e-4)
-  optim = SGD(model.get_params(), lr=1e-4)
+  optim = Adam(model.get_params(), lr=1e-3)
 
   # Training Loop
   epochs = 4
@@ -70,15 +69,16 @@ if __name__ == '__main__':
 
       out = model(X)
       loss = CrossEntropyLoss(out, Y)
-      losses.append(loss.data[0])
-      epoch_losses.append(loss.mean().item())
+      loss_mean = loss.mean().item()
+      losses.append(loss_mean)
+      epoch_losses.append(loss_mean)
 
       optim.zero_grad()
       loss.backward()
       optim.step()
 
       if batch_idx == 0 and i == 0: draw_dot(loss, path="graphs/mnist_simple.png")
-      t.set_description(f"Loss: {loss.mean().item():.2f}")
+      t.set_description(f"Loss: {loss_mean:.2f}")
 
     print(f"Avg loss: {np.array(epoch_losses).mean()}")
 
@@ -88,12 +88,12 @@ if __name__ == '__main__':
   # Eval
   print("Evaluating ...")
   eval_losses = []
-  num_batches = len(X_train) // BS + (len(X_train) % BS != 0)
+  num_batches = len(X_test) // BS + (len(X_test) % BS != 0)
   for batch_idx in (t := tqdm(range(num_batches), total=num_batches)):
     batch_start = batch_idx * BS
-    batch_end = min(batch_start + BS, len(X_train))
-    X_batch = X_train[batch_start:batch_end].reshape(-1, 784)
-    Y_batch = Y_train[batch_start:batch_end]
+    batch_end = min(batch_start + BS, len(X_test))
+    X_batch = X_test[batch_start:batch_end].reshape(-1, 784)
+    Y_batch = Y_test[batch_start:batch_end]
 
     X = Tensor(np.array(X_batch, dtype=np.float32), device=device)
     Y = Tensor(np.array(Y_batch), device=device)
@@ -101,8 +101,8 @@ if __name__ == '__main__':
     out = model(X)
 
     loss = CrossEntropyLoss(out, Y)
-    eval_losses.append(loss.data[0])
-    t.set_description(f"Loss: {loss.data[0]:.2f}")
+    eval_losses.append(loss.mean().item())
+    t.set_description(f"Eval loss: {eval_losses[-1]:.2f}")
   print(f"Avg loss: {np.array(eval_losses).mean()}")
 
   plt.plot(eval_losses)

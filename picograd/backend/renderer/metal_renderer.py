@@ -105,6 +105,64 @@ class MetalRenderer(CStyleRenderer):
     prg = ' '.join(kernel)
     return prg, kernel_name, contiguous
 
+  def relu(self, dtype, arg):
+    assert len(arg) == 2, f"Expected 2 arguments for relu (output, input), got {len(arg)} instead"
+    out, inp = arg
+    assert out.shape == inp.shape, "ReLU output and input shapes must match"
+    numel = int(np.prod(out.shape))
+    kernel_name = f"U_ReLU_{'_'.join(map(str, out.shape))}"
+    func_expr = [
+      ["if", f"(id >= {numel})", "return"],
+      [dtype.name, "v", self.assign, "data1[id]"],
+      ["data0[id]", self.assign, "v > 0.0f ? v : 0.0f"],
+    ]
+    arg_list = [
+      f"{self.device} {dtype.name} *data0 [[ {self.buffer}(0) ]]",
+      f"{self.const} {dtype.name} *data1 [[ {self.buffer}(1) ]]",
+      self.tid,
+    ]
+    kernel = [
+      self.kernel_typedef,
+      kernel_name,
+      self.parenthesis(", ".join(arg_list)),
+      self.curly_braces('\t' + (self.end_expr + '\t').join([' '.join(expr) for expr in func_expr]) + self.semicolon)
+    ]
+    return ' '.join(kernel), kernel_name
+
+  def softmax(self, dtype, arg, axis=-1):
+    assert len(arg) == 2, f"Expected 2 arguments for softmax (output, input), got {len(arg)} instead"
+    out, inp = arg
+    assert out.shape == inp.shape, "Softmax output and input shapes must match"
+    assert len(inp.shape) == 2, "Softmax renderer currently supports 2D tensors"
+    if axis is None: axis = -1
+    if axis < 0: axis += len(inp.shape)
+    assert axis == 1, "Softmax renderer currently supports last-axis softmax only"
+    rows, cols = inp.shape
+    kernel_name = f"U_Softmax_{rows}_{cols}_d{axis}"
+    body = f"""
+\tif (id >= {rows}) return;
+\tuint base = id * {cols};
+\t{dtype.name} maxv = data1[base];
+\tfor (uint i = 1; i < {cols}; i++) {{
+\t\t{dtype.name} v = data1[base + i];
+\t\tmaxv = v > maxv ? v : maxv;
+\t}}
+\t{dtype.name} sum = 0.0f;
+\tfor (uint i = 0; i < {cols}; i++) {{
+\t\t{dtype.name} e = metal::exp(data1[base + i] - maxv);
+\t\tdata0[base + i] = e;
+\t\tsum += e;
+\t}}
+\tfor (uint i = 0; i < {cols}; i++) data0[base + i] = data0[base + i] / sum;
+"""
+    arg_list = [
+      f"{self.device} {dtype.name} *data0 [[ {self.buffer}(0) ]]",
+      f"{self.const} {dtype.name} *data1 [[ {self.buffer}(1) ]]",
+      self.tid,
+    ]
+    kernel = [self.kernel_typedef, kernel_name, self.parenthesis(", ".join(arg_list)), self.curly_braces(body)]
+    return ' '.join(kernel), kernel_name, rows
+
   # TODO: cleanup using tokens only, not string manipulation
   # TODO: this might be naive reduction (not using shared memory, etc)
   # TODO: keepdims

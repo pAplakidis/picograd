@@ -23,6 +23,9 @@ class Scheduler:
     self.renderer = renderer
     self.mngr = ast[0].tensor.device.manager
 
+  def debug_prefix(self, id):
+    return color_green(f'*** {self.mngr.dev_name} {id}')
+
   @staticmethod
   def ast_to_uops(ast_nodes):
     uop_map = {}
@@ -61,17 +64,17 @@ class Scheduler:
     if item.op == OPS.LOAD:
       tensor = item.arg[0]
       # tensor.device_data = tensor.device.manager.to_device(tensor.data)
-      if DEBUG >= 1: print(f"{color_green(f'*** {self.mngr.dev_name} {id}')} {color_yellow('copy')}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {tensor._data.nbytes / (1024**3):.6f} GB")
+      if DEBUG >= 1: print(f"{self.debug_prefix(id)} {color_yellow('copy')}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {tensor._data.nbytes / (1024**3):.6f} GB")
       return
 
     if item.op == OPS.STORE:
       tensor = item.arg[0]
       # tensor.data = tensor.device.manager.to_host(tensor.device_data)
-      if DEBUG >= 1: print(f"{color_green(f'*** {self.mngr.dev_name} {id}')} {color_yellow('copy')}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {tensor._data.nbytes / (1024**3):.6f} GB")
+      if DEBUG >= 1: print(f"{self.debug_prefix(id)} {color_yellow('copy')}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {tensor._data.nbytes / (1024**3):.6f} GB")
       return
 
     if item.op in MOVEMENT_OPS and DEBUG >= 1:
-      print(f"{color_green(f'*** {self.mngr.dev_name} {id}')} {color_yellow('copy')}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {sum(uop.arg[0]._data.nbytes for uop in item.src) / (1024**3):.6f} GB {item.op.name.lower()}")
+      print(f"{self.debug_prefix(id)} {color_yellow('copy')}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {sum(uop.arg[0]._data.nbytes for uop in item.src) / (1024**3):.6f} GB {item.op.name.lower()}")
 
     if item.op in (OPS.ADD, OPS.MUL):
       args = [item.arg[0], *(src.arg[0] for src in item.src)]
@@ -83,9 +86,39 @@ class Scheduler:
       elapsed_ms, gflops = self.run_elementwise_kernel(kfunc, args, shape=args[0].shape, contiguous=contiguous)
       if DEBUG >= 1:
         # TODO: don't use tensor._data (tensor might be 100% on the device)
-        debug_str = f"{color_green(f'*** {self.mngr.dev_name} {id}')} {color_red(kernel_name)}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {sum(uop.arg[0]._data.nbytes for uop in item.src) / (1024**3):.6f} GB"
+        debug_str = f"{self.debug_prefix(id)} {color_red(kernel_name)}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {sum(uop.arg[0]._data.nbytes for uop in item.src) / (1024**3):.6f} GB"
         if item.op in (OPS.ADD, OPS.MUL):
           debug_str += f"   ({elapsed_ms:.4f} ms - {gflops:.4f} GFLOPs)   {item.op.name.lower()}"
+        print(debug_str)
+      return
+
+    if item.op == OPS.ReLU:
+      args = [item.arg[0], item.src[0].arg[0]]
+      kernel_code, kernel_name = self.renderer.relu(dtypes.float32, args)
+      if DEBUG >= 2: print('\n', kernel_code, '\n')
+
+      if self.mngr.dev_name == "CUDA": kernel_name = kernel_name.encode("utf-8")
+      kfunc = self.mngr.compile_kernel(kernel_code, kernel_name)
+      elapsed_ms, gflops = self.run_unary_kernel(kfunc, args, shape=args[0].shape)
+      if DEBUG >= 1:
+        debug_str = f"{self.debug_prefix(id)} {color_red(kernel_name)}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {sum(uop.arg[0]._data.nbytes for uop in item.src) / (1024**3):.6f} GB"
+        debug_str += f"   ({elapsed_ms:.4f} ms - {gflops:.4f} GFLOPs)   relu"
+        print(debug_str)
+      return
+
+    if item.op == OPS.Softmax:
+      args = [item.arg[0], item.src[0].arg[0]]
+      forward_args = item.arg[1] if len(item.arg) > 1 else ()
+      axis = forward_args[0] if len(forward_args) > 0 else -1
+      kernel_code, kernel_name, rows = self.renderer.softmax(dtypes.float32, args, axis=axis)
+      if DEBUG >= 2: print('\n', kernel_code, '\n')
+
+      if self.mngr.dev_name == "CUDA": kernel_name = kernel_name.encode("utf-8")
+      kfunc = self.mngr.compile_kernel(kernel_code, kernel_name)
+      elapsed_ms, gflops = self.run_rows_kernel(kfunc, args, rows=rows, n_flops=int(np.prod(args[0].shape)) * 3)
+      if DEBUG >= 1:
+        debug_str = f"{self.debug_prefix(id)} {color_red(kernel_name)}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {sum(uop.arg[0]._data.nbytes for uop in item.src) / (1024**3):.6f} GB"
+        debug_str += f"   ({elapsed_ms:.4f} ms - {gflops:.4f} GFLOPs)   softmax"
         print(debug_str)
       return
 
@@ -114,7 +147,7 @@ class Scheduler:
       if self.mngr.dev_name == "CUDA": kernel_name = kernel_name.encode("utf-8")
       kfunc = self.mngr.compile_kernel(kernel_code, kernel_name)
       elapsed_ms, gflops = self.run_reduce_kernel(kfunc, [out_tensor, in_tensor], out_shape)
-      if DEBUG >= 1: print(f"{color_green(f'*** {self.mngr.dev_name} {id}')} {color_red(kernel_name)} reduce ({elapsed_ms:.4f} ms - {gflops:.4f} GFLOPs)")
+      if DEBUG >= 1: print(f"{self.debug_prefix(id)} {color_red(kernel_name)} reduce ({elapsed_ms:.4f} ms - {gflops:.4f} GFLOPs)")
       return
 
   def run_elementwise_kernel(self, kfunc, args: list, shape: tuple, contiguous: bool):
@@ -127,6 +160,22 @@ class Scheduler:
     # grid = ((numel + 255) // 256, 1, 1)
     grid = (numel, 1, 1)
     n_flops = int(np.prod(shape))
+    return self.mngr.launch_kernel(kfunc, grid, block, kargs, n_flops=n_flops)
+
+  def run_unary_kernel(self, kfunc, args: list, shape: tuple):
+    kargs = self.mngr.prep_kargs(*[arg.device_data if hasattr(arg, "device_data") else arg for arg in args])
+    numel = np.prod(shape)
+    if numel > self.mngr.max_grid_size[0] * self.mngr.max_block_size[0]:
+      raise ValueError(f"Kernel launch failed: numel {numel} exceeds device's max grid size {self.mngr.max_grid_size[0]}. Consider implementing tiling for large tensors.")
+    block = (self.mngr.max_block_size[0], 1, 1)
+    grid = (numel, 1, 1)
+    n_flops = int(np.prod(shape))
+    return self.mngr.launch_kernel(kfunc, grid, block, kargs, n_flops=n_flops)
+
+  def run_rows_kernel(self, kfunc, args: list, rows: int, n_flops: int):
+    kargs = self.mngr.prep_kargs(*[arg.device_data if hasattr(arg, "device_data") else arg for arg in args])
+    block = (self.mngr.max_block_size[0], 1, 1)
+    grid = (rows, 1, 1)
     return self.mngr.launch_kernel(kfunc, grid, block, kargs, n_flops=n_flops)
 
   def run_reduce_kernel(self, kfunc, args: list, out_shape: tuple):

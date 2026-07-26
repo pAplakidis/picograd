@@ -10,7 +10,7 @@ class Optim:
   def zero_grad(self):
     for p in self.params:
       if hasattr(p, "grad") and p.grad is not None:
-        p.grad = np.zeros_like(p.grad)
+        p.grad = Tensor.zeros(p.shape, requires_grad=False, device=p.device, lazy=p.lazy)
     return self
 
   def clip_grad_norm_(self, max_norm):
@@ -18,13 +18,13 @@ class Optim:
     total_norm_sq = 0.0
     for p in self.params:
       if getattr(p, "grad", None) is not None:
-        total_norm_sq += float((p.grad**2).sum())
+        total_norm_sq += float((p.grad.data**2).sum())
     total_norm = np.sqrt(total_norm_sq)
     if total_norm > max_norm:
       scale = max_norm / (total_norm + 1e-6)
       for p in self.params:
         if getattr(p, "grad", None) is not None:
-          p.grad *= scale
+          p.grad = Tensor(p.grad.data * scale, requires_grad=False, device=p.device, lazy=p.lazy)
 
 
 class SGD(Optim):
@@ -32,7 +32,7 @@ class SGD(Optim):
     for p in self.params:
       if getattr(p, "grad", None) is None:
         continue
-      p.data -= self.lr * p.grad
+      p.data -= self.lr * p.grad.data
 
 class Adam(Optim):
   def __init__(self, params, lr=0.001, b1=0.9, b2=0.999, eps=1e-8, weight_decay=0.0):
@@ -60,6 +60,7 @@ class Adam(Optim):
       g = getattr(p, "grad", None)
       if g is None:
         continue
+      g = g.data
       st = self.state[id(p)]
       m = st['m']
       v = st['v']
@@ -67,7 +68,7 @@ class Adam(Optim):
       # FIXME: g is gradient not tensor
       # L2 regularization style
       if self.weight_decay:
-        g.data = g.data + self.weight_decay * p.data
+        g = g + self.weight_decay * p.data
 
       # update biased first and second moment estimates
       m[:] = self.b1 * m + (1.0 - self.b1) * g        # Momentum
@@ -107,6 +108,7 @@ class AdamW(Optim):
       g = getattr(p, "grad", None)
       if g is None:
         continue
+      g = g.data
       st = self.state[id(p)]
       m = st['m']
       v = st['v']
