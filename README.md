@@ -20,6 +20,7 @@ or Debug:
 
 - NVIDIA drivers and CUDA toolkit (if using NVIDIA GPU, tested on Linux 6.14.0-27-generic #27~24.04.1-Ubuntu with cuda 12.9)
 - Python dependencies
+- Optimally Python3.12
 
 ```
 python3 -m pip install -r requirements.txt
@@ -60,6 +61,23 @@ e.backward()
 draw_dot(e, path="graphs/test")
 ```
 
+## Lazy
+
+Picograd is not lazy by default (still working on that), but optionally you can add:
+
+```bash
+LAZY=1
+```
+
+as env variable before running any script and it will run ops lazily using a pseudo-compiler for now.
+e.g.:
+
+```bash
+LAZY=1 python examples/MNIST_simple.py
+```
+
+The goal is for the library to be 100% lazy, with a proper AST builder, scheduler, kernel fusion, etc.
+
 ## Debug Levels
 
 1. Print kernel summary
@@ -76,16 +94,23 @@ DEBUG=3 ./test/test_ops.py
 
 ## TODO
 
-- CUDA activation functions (and other unary ops)
-- CUDA pooling
-- BatchNorm1D & 2D, LayerNorm (CUDA)
-- Attention, self-attention, transformer (CUDA)
-- GRU
+- save/load models - state dict
+- rewrite device to use Buffer class
+- shapetracker + conv2d padding
+- full metal support (20 ops)
+- cleanup renderer and tensor: generic unary ops for activation functions, etc
+- allocate memory on realize + UOps.LOAD only (+ store on UOps.STORE only)
+
 - Better AST => better Lazy Buffers => ScheduleItems
 - Generic Renderer using pattern matcher
-- allocate memory on realize + UOps.LOAD only (+ store on UOps.STORE only)
 - JIT
 - kernel fusion
+
+- replace ctypes with pycuda (?)
+- GRU
+- EfficientNet classifier
+- Stable Diffusion
+- LLAMA (?)
 
 ## BUGS
 
@@ -93,6 +118,8 @@ DEBUG=3 ./test/test_ops.py
 
 ### DONE
 
+- make gradients a Tensor so that backwards can be used with lazy
+- Conv2D trick
 - Lazy buffers, scheduler, linearizer
 - RNN, LSTM,
 - Unit tests
@@ -103,7 +130,6 @@ DEBUG=3 ./test/test_ops.py
 - cuda conv-net
 - ops.py + function.py
 - conv2d, maxpool, etc
-- save/load models - state dict
 - good unit tests
 - Support CUDA/GPU
 - Low Level Debugging: calculate and print FLOPS
