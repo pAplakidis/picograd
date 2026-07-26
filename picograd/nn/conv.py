@@ -3,6 +3,7 @@ from .module import Layer, LayerType
 from picograd.tensor import Tensor
 
 
+  # TODO: write this
 class Conv1D(Layer):
   def __init__(self, in_channels: int, out_channels: int, kernel_size: int, stride=1, padding=0):
     super.__init__()
@@ -12,8 +13,6 @@ class Conv1D(Layer):
     self.kernel_size = kernel_size
     self.stride = stride
     self.padding = padding
-
-    # TODO:
 
   def __call__(self, x: Tensor) -> Tensor:
     return None
@@ -40,7 +39,7 @@ class Conv2D(Layer):
 
   def __call__(self, x: Tensor) -> Tensor:
     self.t_in = x
-    self.t_out = x.conv2d(self.weight, self.bias, self.in_channels, self.out_channels, self.stride, self.padding, debug=False)
+    self.t_out = x.conv2d(self.weight, self.in_channels, self.out_channels, self.stride, self.padding, bias=self.bias)
     return self.t_out
 
 

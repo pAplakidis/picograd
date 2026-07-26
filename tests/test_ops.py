@@ -103,7 +103,7 @@ class TestBinaryOps(unittest.TestCase):
     w = Tensor(np.random.randn(16, 3, 3, 3), device=device)
     b = Tensor(np.zeros((16,)), device=device)
 
-    c = a.conv2d(w, b, 3, 16)
+    c = a.conv2d(w, 3, 16, bias=b)
     c.backward()
     # TODO: assert results
     print("[+] Conv2D OK")

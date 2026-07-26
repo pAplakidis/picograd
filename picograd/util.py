@@ -33,3 +33,13 @@ def required_numel(shape: Tuple, strides: Tuple):
           return 0
       max_offset += (dim - 1) * stride
   return max_offset + 1
+
+def broadcast_shape(a: Tuple[int, ...], b: Tuple[int, ...]):
+  ndim = max(len(a), len(b))
+  a = (1,) * (ndim - len(a)) + a
+  b = (1,) * (ndim - len(b)) + b
+  out = []
+  for x, y in zip(a, b):
+    assert x == y or x == 1 or y == 1, f"Cannot broadcast {a} and {b}"
+    out.append(max(x, y))
+  return tuple(out)

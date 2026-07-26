@@ -53,6 +53,34 @@ def CrossEntropyLoss(z: Tensor, y: Tensor) -> Tensor:
   assert len(y.shape) == 1, "Ground-truth Y must be 1D (batch_size,)"
   assert z.shape[0] == y.shape[0], "Z Tensor and ground-truth Y must have the same batch size"
 
+  if z.lazy:
+    probs = np.clip(z.data, 1e-7, 1 - 1e-7)
+    labels = y.data.astype(np.int32)
+    batch_size, n_classes = z.shape
+    loss_val = -np.log(probs[np.arange(batch_size), labels]).astype(np.float32)
+    one_hot = np.zeros((batch_size, n_classes), dtype=np.float32)
+    one_hot[np.arange(batch_size), labels] = 1
+
+    if z.prev_op == OPS.Softmax and len(z._prev) > 0:
+      target = z._prev[0]
+      prev = (target,)
+      def backward():
+        neg_one_hot = Tensor(-one_hot, requires_grad=False, device=z.device, lazy=True)
+        scale = Tensor(np.full(z.shape, 1.0 / batch_size, dtype=np.float32), requires_grad=False, device=z.device, lazy=True)
+        target._accumulate_grad((z.detach() + neg_one_hot) * scale)
+    else:
+      target = z
+      prev = (target,)
+      grad = (-one_hot / probs / batch_size).astype(np.float32)
+      def backward():
+        target._accumulate_grad(Tensor(grad, requires_grad=False, device=z.device, lazy=True))
+
+    out = Tensor(loss_val, name="crossentropyloss_out", requires_grad=False, lazy=False)
+    out._prev = prev
+    out.prev_op = OPS.CrossEntropyLoss
+    out._backward = backward
+    return out
+
   func = CrossEntropy(z.device.name)
   if z.device.name == Devices.CPU:
     out = Tensor(

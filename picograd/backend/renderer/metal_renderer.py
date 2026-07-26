@@ -5,39 +5,46 @@ from picograd.backend.uop import UOp
 from picograd.backend.function import OPS
 from picograd.backend.dtypes import dtypes
 
-class CUDARenderer(CStyleRenderer):
-  device = "CUDA"
+class MetalRenderer(CStyleRenderer):
+  device = "METAL"
   global_max = (2147483647, 65535, 65535)
   local_max = (1024, 1024, 64)
-  shared_max = 49152
+  shared_max = 32768
 
-  kernel_typedef = "extern \"C\" __global__ void"
+  kernel_typedef = "kernel void"
   elementwise_kernel_prefix = "E"
   reduce_kernel_prefix = "R"
 
-  # TODO: support more dims
-  gidx = "gidx0"
-  gidx0 = "gidx0"  
-  gidx1 = "gidx1"
+  const = "constant"
+  device = "device"
+  buffer = "buffer"
 
-  block_x = "blockIdx.x"
-  block_y = "blockIdx.y"
+  # TODO: uint id [[ thread_position_in_grid ]], uint num_threads [[ threads_per_grid ]]
+  tid = "uint id [[ thread_position_in_grid ]]"
 
-  block_dim_x = "blockDim.x"
-  block_dim_y = "blockDim.y"
-
-  tid_x = "threadIdx.x"
-  tid_y = "threadIdx.y"
-  # TODO: "blockIdx.x * blockDim.x + threadIdx.x"
-
-  def __init__(self, arch:str):
-    self.arch = arch
-    # self.tensor_cores = tc.cuda_sm89 if int(arch[3:]) >= 89 else tc.cuda_sm80 if int(arch[3:]) >= 80 else tc.cuda_sm75 if int(arch[3:]) >= 75 else []
+  def __init__(self):
+    pass
 
   def __reduce__(self):
     return self.__class__, (self.arch,)
-
+  
   def get_args(args): return [f"data{i}" for i in range(len(args))]
+
+  def render_code(self, uop: UOp):
+    patterns = [
+      (OPS.STORE, lambda uop: "="),
+      (OPS.CONST, lambda uop: f" {uop.arg}"),
+      (OPS.ADD, lambda uop: " + "),
+    ]
+    code = []
+    for _uop in uop:
+      for pattern, render in patterns:
+        if _uop.op == pattern:
+          code.append(render(_uop))
+          break # TODO: is this correct?
+      else:
+        raise NotImplementedError(f"Unsupported operation: {_uop.op}")
+    return code
 
   def elementwise(self, op, dtype, arg):
     assert len(arg) == 3, f"Expected 3 arguments for c = a alu b, got {len(arg)} instead"
@@ -56,42 +63,44 @@ class CUDARenderer(CStyleRenderer):
     args = [f"data{i}" for i in range(len(arg))]
     vals = [f"val{i}" for i in range(len(arg)-1)]
 
-    # build kernel
     func_expr = []
 
-    # logical indices
-    func_expr.append([dtypes.int32.name, self.gidx, self.assign, f"{self.block_x} * {self.block_dim_x} + {self.tid_x}"])
-
-    # bounds checking
+    # bounds check
     numel = int(np.prod(shape))
-    func_expr.append(["if", f"({self.gidx} >= {numel})", "return"])
+    func_expr.append(["if", f"(id >= {numel})", "return"])
 
-    # func_expr.append([dtypes.int32.name, self.gidx, self.assign, self.block_x]) # int gidx0 = blockIdx.x
     if contiguous:
-      func_expr.append([dtypes.int32.name, self.gidx, self.assign,f"{self.block_x}"]) # flat index
-      for k, val in enumerate(vals):
-        func_expr.append([dtype.name, val, self.assign, f"*({args[k+1]} + {self.gidx})"])
-      func_expr.append([f"*({args[0]} + {self.gidx})", self.assign, f"({vals[0]}{alu}{vals[1]})"])
+      func_expr.append([f"{args[0]}[id]", self.assign, f"{args[1]}[id]", alu, f"{args[2]}[id]"])
     else:
-      # per-tensor offsets (reconstruct multi-index from gidx)
       tmp = "tmp"
-      func_expr.append([dtypes.int32.name, tmp, self.assign, self.gidx])
+      func_expr.append([dtypes.int32.name, tmp, self.assign, "id"])
+
+      # reconstruct multi-dim indices
       for d in reversed(range(len(shape))):
         size = shape[d]
         func_expr.append([dtypes.int32.name, f"i{d}", self.assign, f"{tmp} % {size}"])
         func_expr.append([tmp, self.assign, f"{tmp} / {size}"])
 
-      # compute per-tensor offsets using strides
+      # compute offsets using strides
       off0 = " + ".join([f"i{d}*{s0[d]}" for d in range(len(shape))])
       off1 = " + ".join([f"i{d}*{s1[d]}" for d in range(len(shape))])
       off2 = " + ".join([f"i{d}*{s2[d]}" for d in range(len(shape))])
-      func_expr.append([f"{args[0]}[{off0}]", self.assign, f"{args[1]}[{off1}]{alu}{args[2]}[{off2}]"])
+
+      func_expr.append([f"{args[0]}[{off0}]", self.assign, f"{args[1]}[{off1}]", alu, f"{args[2]}[{off2}]"])
+
+    arg_list = []
+    arg_list += [f"{self.device} {dtype.name} *{args[0]} [[ {self.buffer}(0) ]]"]
+    arg_list += [f"{self.const} {dtype.name} *{args[i]} [[ {self.buffer}({i}) ]]" for i in range(1, len(args))]
+    arg_list += [self.tid]
 
     kernel = [
       self.kernel_typedef,
       kernel_name,
-      self.parenthesis(", ".join([f"{dtype.name} *{arg}" for arg in args])),
-      self.curly_braces('\t' + (self.end_expr+'\t').join([' '.join(expr) for expr in func_expr]) + self.semicolon)
+      self.parenthesis(", ".join(arg_list)),
+      self.curly_braces(
+        '\t' + (self.end_expr + '\t').join([' '.join(expr) for expr in func_expr]) + self.semicolon
+        if func_expr else ''
+      )
     ]
     prg = ' '.join(kernel)
     return prg, kernel_name, contiguous
@@ -102,17 +111,20 @@ class CUDARenderer(CStyleRenderer):
     assert out.shape == inp.shape, "ReLU output and input shapes must match"
     numel = int(np.prod(out.shape))
     kernel_name = f"U_ReLU_{'_'.join(map(str, out.shape))}"
-    args = ["data0", "data1"]
     func_expr = [
-      [dtypes.int32.name, self.gidx, self.assign, f"{self.block_x} * {self.block_dim_x} + {self.tid_x}"],
-      ["if", f"({self.gidx} >= {numel})", "return"],
-      [dtype.name, "v", self.assign, f"{args[1]}[{self.gidx}]"],
-      [f"{args[0]}[{self.gidx}]", self.assign, "v > 0.0f ? v : 0.0f"],
+      ["if", f"(id >= {numel})", "return"],
+      [dtype.name, "v", self.assign, "data1[id]"],
+      ["data0[id]", self.assign, "v > 0.0f ? v : 0.0f"],
+    ]
+    arg_list = [
+      f"{self.device} {dtype.name} *data0 [[ {self.buffer}(0) ]]",
+      f"{self.const} {dtype.name} *data1 [[ {self.buffer}(1) ]]",
+      self.tid,
     ]
     kernel = [
       self.kernel_typedef,
       kernel_name,
-      self.parenthesis(", ".join([f"{dtype.name} *{arg}" for arg in args])),
+      self.parenthesis(", ".join(arg_list)),
       self.curly_braces('\t' + (self.end_expr + '\t').join([' '.join(expr) for expr in func_expr]) + self.semicolon)
     ]
     return ' '.join(kernel), kernel_name
@@ -128,47 +140,44 @@ class CUDARenderer(CStyleRenderer):
     rows, cols = inp.shape
     kernel_name = f"U_Softmax_{rows}_{cols}_d{axis}"
     body = f"""
-\tint row = {self.block_x} * {self.block_dim_x} + {self.tid_x};
-\tif (row >= {rows}) return;
-\tint base = row * {cols};
+\tif (id >= {rows}) return;
+\tuint base = id * {cols};
 \t{dtype.name} maxv = data1[base];
-\tfor (int i = 1; i < {cols}; i++) {{
+\tfor (uint i = 1; i < {cols}; i++) {{
 \t\t{dtype.name} v = data1[base + i];
 \t\tmaxv = v > maxv ? v : maxv;
 \t}}
 \t{dtype.name} sum = 0.0f;
-\tfor (int i = 0; i < {cols}; i++) {{
-\t\t{dtype.name} e = expf(data1[base + i] - maxv);
+\tfor (uint i = 0; i < {cols}; i++) {{
+\t\t{dtype.name} e = metal::exp(data1[base + i] - maxv);
 \t\tdata0[base + i] = e;
 \t\tsum += e;
 \t}}
-\tfor (int i = 0; i < {cols}; i++) data0[base + i] = data0[base + i] / sum;
+\tfor (uint i = 0; i < {cols}; i++) data0[base + i] = data0[base + i] / sum;
 """
-    kernel = [self.kernel_typedef, kernel_name, self.parenthesis(f"{dtype.name} *data0, {dtype.name} *data1"), self.curly_braces(body)]
+    arg_list = [
+      f"{self.device} {dtype.name} *data0 [[ {self.buffer}(0) ]]",
+      f"{self.const} {dtype.name} *data1 [[ {self.buffer}(1) ]]",
+      self.tid,
+    ]
+    kernel = [self.kernel_typedef, kernel_name, self.parenthesis(", ".join(arg_list)), self.curly_braces(body)]
     return ' '.join(kernel), kernel_name, rows
 
-  # TODO: this is naive
+  # TODO: cleanup using tokens only, not string manipulation
+  # TODO: this might be naive reduction (not using shared memory, etc)
   # TODO: keepdims
-  # TODO: reduce (sum, max, min, std, argmax, argmin)
-  # e.g. reduce(ADD, axis)
   def reduce(self, op, dtype, arg, shape: tuple[int, ...], dim: int):
-    """
-    arg: [out_tensor, in_tensor]
-    """
-    assert len(arg) == 2, "reduce expects (output, input)"
+    assert len(arg) == 2, f"Expected 2 arguments for reduction (output, input), got {len(arg)} instead"
     out, inp = arg
     alu = self.op_to_alu(op)
     in_shape = shape
     in_strides = inp.strides
-    out_strides = out.strides
 
     reduce_size = in_shape[dim]
     out_shape = in_shape[:dim] + in_shape[dim+1:]
 
     kernel_name = f"{self.reduce_kernel_prefix}_{op.name}_{'_'.join(map(str, in_shape))}_d{dim}"
-    args = ["data0", "data1"]  # out, in
 
-    # identity values
     identity = {
       OPS.ADD: "0.0f",
       OPS.MUL: "1.0f",
@@ -176,56 +185,60 @@ class CUDARenderer(CStyleRenderer):
       OPS.MIN: "INFINITY",
     }[op]
 
-    # compute output linear index
-    # gidx0 in [0, prod(out_shape))
     func = []
-    func.append([dtypes.int32.name, "oidx", self.assign, self.block_x])
+
+    # oidx = global thread id
+    func.append([dtypes.int32.name, "oidx", self.assign, "id"])
+
+    # bounds check
+    numel = int(np.prod(out_shape)) if len(out_shape) > 0 else 1
+    func.append(["if", f"(oidx >= {numel})", "return"])
+
+    # accumulator
     func.append([dtype.name, "acc", self.assign, identity])
 
-    # reconstruct multi-dim output index
+    # reconstruct base offset (excluding reduced dim)
     func.append([dtypes.int32.name, "tmp", self.assign, "oidx"])
     func.append([dtypes.int32.name, "in_base", self.assign, "0"])
 
+    # iterate over input dims (skip reduction dim)
     for d in reversed(range(len(in_shape))):
-      if d == dim: continue
-      out_d = d if d < dim else d - 1
-      size = out_shape[out_d]
+      if d == dim:
+        continue
+
+      size = in_shape[d]
       stride = in_strides[d]
+
       func.append([dtypes.int32.name, f"i{d}", self.assign, f"tmp % {size}"])
       func.append(["tmp", self.assign, f"tmp / {size}"])
       func.append(["in_base", self.assign, f"in_base + i{d} * {stride}"])
 
-    # reduction loop
-    func.append([self.for_loop(var="r", start="0", end=str(reduce_size), body=f"\t\tacc = acc {alu} data1[in_base + r * {in_strides[dim]}];")])
+    # reduction loop (walk along reduced dimension)
+    func.append(
+      self.for_loop(
+        "r",
+        "0",
+        str(reduce_size),
+        f"acc = acc {alu} data1[in_base + r * {in_strides[dim]}]{self.semicolon}"
+      )
+    )
 
-    # store result
+    # write output
     func.append(["data0[oidx]", self.assign, "acc"])
 
     kernel = [
       self.kernel_typedef,
       kernel_name,
-      self.parenthesis(f"{dtype.name} *data0, {dtype.name} *data1"),
+      self.parenthesis(
+        f"{self.device} {dtype.name} *data0 [[ buffer(0) ]], "
+        f"{self.const} {dtype.name} *data1 [[ buffer(1) ]], "
+        f"{self.tid}"
+      ),
       self.curly_braces(
         "\t" + (self.end_expr + "\t").join(
-          [" ".join(x) for x in func if isinstance(x, list)]
+          [" ".join(x) if isinstance(x, list) else x for x in func]
         ) + self.semicolon
       )
     ]
     prg = " ".join(kernel)
     return prg, kernel_name, out_shape
-
-  # TODO: check out [ https://mesozoic-egg.github.io/tinygrad-notes/20241112_pm.html ]
-  # TODO: use class UPat like tinygrad (cleaner than if statements)
-  def render_code(self, uop: UOp):
-    patterns = [
-      (OPS.STORE, lambda uop: "="),
-      (OPS.CONST, lambda uop: f" {uop.arg} "),
-      (OPS.ADD, lambda uop: f" + "),
-    ]
-    code = []
-    for _uop in uop: # Suppose you already did a DFS/BFS so the tree is flattened
-      for pattern in patterns:
-        if _uop.op == pattern[0]:
-          _code = pattern[1](_uop)
-          code.append(_code) 
-    return code

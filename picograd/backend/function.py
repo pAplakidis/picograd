@@ -72,7 +72,7 @@ BINARY_OPS = (
 )
 
 MOVEMENT_OPS = (
-  # OPS.Reshape,
+  OPS.Reshape,
   OPS.View,
   OPS.Flatten,
   OPS.Unsqueeze,
