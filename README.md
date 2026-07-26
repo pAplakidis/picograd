@@ -61,6 +61,23 @@ e.backward()
 draw_dot(e, path="graphs/test")
 ```
 
+## Lazy
+
+Picograd is not lazy by default (still working on that), but optionally you can add:
+
+```bash
+LAZY=1
+```
+
+as env variable before running any script and it will run ops lazily using a pseudo-compiler for now.
+e.g.:
+
+```bash
+LAZY=1 python examples/MNIST_simple.py
+```
+
+The goal is for the library to be 100% lazy, with a proper AST builder, scheduler, kernel fusion, etc.
+
 ## Debug Levels
 
 1. Print kernel summary
