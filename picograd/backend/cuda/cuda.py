@@ -1,6 +1,7 @@
 import os
 import time
 import ctypes # TODO: replace ctypes with pycuda
+import hashlib
 import tempfile
 import subprocess
 import numpy as np
@@ -21,6 +22,7 @@ except OSError as e:
 DEBUG = int(os.getenv("DEBUG", 0))
 KERNELS_PATH = "picograd/backend/cuda/kernels"
 PSEUDO_DEBUG = int(os.getenv("PSEUDO_DEBUG", 0))  # if 1, generate assembly code as string but don't print (helps with segfaults)
+CUDA_MEM_TRACE = int(os.getenv("CUDA_MEM_TRACE", 0))
 
 TILE_SIZE = 16
 
@@ -34,6 +36,9 @@ class CudaDeviceManager(DeviceManager):
     self.ctx = CUcontext()
     self.module = None
     self.kernels = {}
+    self._alloc_sizes = {}
+    self.active_alloc_bytes = 0
+    self.peak_alloc_bytes = 0
     self.init_cuda()
 
     self.start_event = CUevent()
@@ -45,12 +50,16 @@ class CudaDeviceManager(DeviceManager):
     self.max_block_size = (1024, 1024, 64)
 
   def __del__(self):
-    for kernel in self.kernels: del kernel
+    unloaded_modules = set()
+    for module, _ in self.kernels.values():
+      module_id = module.value
+      if module_id in unloaded_modules: continue
+      self.check_cuda(cuda.cuModuleUnload(module), "cuModuleUnload")
+      unloaded_modules.add(module_id)
 
     self.check_cuda(cuda.cuEventDestroy(self.start_event), "cuEventDestroy (start)")
     self.check_cuda(cuda.cuEventDestroy(self.end_event), "cuEventDestroy (end)")
 
-    if self.module: self.check_cuda(cuda.cuModuleUnload(self.module), "cuModuleUnload")
     self.check_cuda(cuda.cuCtxDestroy(self.ctx), "cuCtxDestroy")
 
   @staticmethod
@@ -125,11 +134,28 @@ class CudaDeviceManager(DeviceManager):
 
     ptr = CUdeviceptr()
     self.check_cuda(cuda.cuMemAlloc(ctypes.byref(ptr), size), "cuMemAlloc")
+    self._alloc_sizes[ptr.value] = size
+    self.active_alloc_bytes += size
+    self.peak_alloc_bytes = max(self.peak_alloc_bytes, self.active_alloc_bytes)
+    if CUDA_MEM_TRACE:
+      print(f"[Cuda-Mem] alloc {size} active={self.active_alloc_bytes} peak={self.peak_alloc_bytes}")
     return ptr
 
   def cuda_free(self, ptr: CUdeviceptr):
     """Frees device memory pointed to by ptr."""
-    self.check_cuda(cuda.cuMemFree(ptr), "cuMemFree")
+    ptr_value = getattr(ptr, "value", None)
+    if ptr_value is None or ptr_value not in self._alloc_sizes: return
+    size = self._alloc_sizes.pop(ptr_value)
+    result = cuda.cuMemFree(ptr)
+    if result == 1: # CUDA_ERROR_INVALID_VALUE: stale/double free, already gone from accounting.
+      self.active_alloc_bytes -= size
+      if CUDA_MEM_TRACE:
+        print(f"[Cuda-Mem] stale-free {size} active={self.active_alloc_bytes} peak={self.peak_alloc_bytes}")
+      return
+    self.check_cuda(result, "cuMemFree")
+    self.active_alloc_bytes -= size
+    if CUDA_MEM_TRACE:
+      print(f"[Cuda-Mem] free {size} active={self.active_alloc_bytes} peak={self.peak_alloc_bytes}")
 
   def cuda_memcpy_htod(self, dst: CUdeviceptr, src: ctypes.c_void_p, size: int):
     """Copies data from host to device memory."""
@@ -176,23 +202,27 @@ class CudaDeviceManager(DeviceManager):
 
   def free_device_tensor(self, d_T: ctypes.c_void_p):
     """Free tensor from device memory."""
+    if d_T is None: return
     self.cuda_free(d_T)
 
   def compile_kernel(self, src: str, kernel_name: str) -> CUfunction:
-    if kernel_name in self.kernels:
+    kernel_name_bytes = kernel_name if isinstance(kernel_name, bytes) else kernel_name.encode("utf-8")
+    kernel_name_str = kernel_name_bytes.decode()
+    cache_key = (kernel_name_bytes, hashlib.sha256(src.encode()).digest())
+    if cache_key in self.kernels:
       if DEBUG >= 3 and not PSEUDO_DEBUG:
-        print(f"{color_green('[Cuda]')} Fetching compiled kernel {color_green(kernel_name)}.")
-      return self.kernels[kernel_name]
+        print(f"{color_green('[Cuda]')} Fetching compiled kernel {color_green(kernel_name_str)}.")
+      return self.kernels[cache_key][1]
 
     if DEBUG >= 3 and not PSEUDO_DEBUG:
-      print(f"{color_green('[Cuda]')} Compiling kernel {color_green(kernel_name)}")
+      print(f"{color_green('[Cuda]')} Compiling kernel {color_green(kernel_name_str)}")
 
     self.program = nvrtcProgram()
     nvrtc.nvrtcCreateProgram.restype = nvrtcResult
     nvrtc.nvrtcCreateProgram(
               ctypes.byref(self.program),
               ctypes.c_char_p(src.encode()),
-              ctypes.c_char_p(f"{kernel_name.decode()}.cu".encode()),
+              ctypes.c_char_p(f"{kernel_name_str}.cu".encode()),
               0,
               None,
               None
@@ -233,8 +263,8 @@ class CudaDeviceManager(DeviceManager):
 
     # get kernel function
     kfunc = CUfunction()
-    self.check_cuda(cuda.cuModuleGetFunction(ctypes.byref(kfunc), self.module, ctypes.c_char_p(kernel_name)), "cuModuleGetFunction")
-    self.kernels[kernel_name] = kfunc
+    self.check_cuda(cuda.cuModuleGetFunction(ctypes.byref(kfunc), self.module, ctypes.c_char_p(kernel_name_bytes)), "cuModuleGetFunction")
+    self.kernels[cache_key] = (self.module, kfunc)
     return kfunc
 
   def launch_kernel(

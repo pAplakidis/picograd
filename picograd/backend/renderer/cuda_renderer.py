@@ -66,9 +66,7 @@ class CUDARenderer(CStyleRenderer):
     numel = int(np.prod(shape))
     func_expr.append(["if", f"({self.gidx} >= {numel})", "return"])
 
-    # func_expr.append([dtypes.int32.name, self.gidx, self.assign, self.block_x]) # int gidx0 = blockIdx.x
     if contiguous:
-      func_expr.append([dtypes.int32.name, self.gidx, self.assign,f"{self.block_x}"]) # flat index
       for k, val in enumerate(vals):
         func_expr.append([dtype.name, val, self.assign, f"*({args[k+1]} + {self.gidx})"])
       func_expr.append([f"*({args[0]} + {self.gidx})", self.assign, f"({vals[0]}{alu}{vals[1]})"])
@@ -164,6 +162,7 @@ class CUDARenderer(CStyleRenderer):
 
     reduce_size = in_shape[dim]
     out_shape = in_shape[:dim] + in_shape[dim+1:]
+    out_numel = int(np.prod(out_shape))
 
     kernel_name = f"{self.reduce_kernel_prefix}_{op.name}_{'_'.join(map(str, in_shape))}_d{dim}"
     args = ["data0", "data1"]  # out, in
@@ -179,7 +178,8 @@ class CUDARenderer(CStyleRenderer):
     # compute output linear index
     # gidx0 in [0, prod(out_shape))
     func = []
-    func.append([dtypes.int32.name, "oidx", self.assign, self.block_x])
+    func.append([dtypes.int32.name, "oidx", self.assign, f"{self.block_x} * {self.block_dim_x} + {self.tid_x}"])
+    func.append(["if", f"(oidx >= {out_numel})", "return"])
     func.append([dtype.name, "acc", self.assign, identity])
 
     # reconstruct multi-dim output index

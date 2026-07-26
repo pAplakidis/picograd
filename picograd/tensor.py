@@ -21,6 +21,19 @@ from picograd.backend.linearizer import linearize, build_ast
 DEBUG = int(os.getenv("DEBUG", 0))
 VERBOSE = int(os.getenv("VERBOSE", 0))
 LAZY = int(os.getenv("LAZY", 0))
+_DEFAULT_DEVICE = None
+_DEFAULT_DEVICE_NAME = None
+
+def default_device():
+  global _DEFAULT_DEVICE, _DEFAULT_DEVICE_NAME
+  cuda = os.getenv("CUDA", "0") == "1"
+  metal = os.getenv("METAL", "0") == "1"
+  if cuda and metal: raise ValueError("Only one of CUDA=1 or METAL=1 can be set")
+  name = Devices.CUDA if cuda else Devices.METAL if metal else Devices.CPU
+  if _DEFAULT_DEVICE is None or _DEFAULT_DEVICE_NAME != name:
+    _DEFAULT_DEVICE = Device(name)
+    _DEFAULT_DEVICE_NAME = name
+  return _DEFAULT_DEVICE
 
 # init c++ library
 # if platform == "linux" or platform == "linux2": PICOGRAD_LIB = ctypes.CDLL('./lib/libpicograd.so')  # linux
@@ -44,10 +57,11 @@ class Tensor:
     strides: Optional[Tuple[int]] = None,
     lazy=True if LAZY else False,
     dtype = np.float32,
+    _owns_device_data = True,
   ):
     # TODO: auto-detect device based on availability and data type
     if device is None:
-      device = Device(Devices.CPU)
+      device = default_device()
 
     data = np.array(data) if data is not None else None
     self.lazy = lazy
@@ -86,6 +100,7 @@ class Tensor:
     self._backward = lambda: None
 
     self._device_data = device_data # TODO: if device_data is none, shape is not none and device != CPU, allocate memory of shape on the device
+    self._owns_device_data = _owns_device_data
     self._device_grad = None
     if device.name != Devices.CPU: self.to(device)
 
@@ -109,8 +124,8 @@ class Tensor:
 
     if self.device.name != Devices.CPU and self.device_data is not None:
       if initial_shape != value.shape: self._shape = value.shape
-      self.device.manager.free_device_tensor(self.device_data)
-      _, self._device_data = self.device.manager.np_to_device(value)
+      _, d_value = self.device.manager.np_to_device(value)
+      self.device_data = d_value
 
   @property
   def grad(self):
@@ -132,8 +147,9 @@ class Tensor:
 
   @device_data.setter
   def device_data(self, value):
-    if self.device.manager: self.device.manager.free_device_tensor(self._device_data)
+    if self.device.manager and self._owns_device_data and self._device_data is not None: self.device.manager.free_device_tensor(self._device_data)
     self._device_data = value
+    self._owns_device_data = value is not None
 
   @property
   def device_grad(self): return self._grad.device_data if isinstance(self._grad, Tensor) and self._grad.device.name != Devices.CPU else self._device_grad
@@ -206,11 +222,18 @@ class Tensor:
     return self.shape[0]
     
   def __del__(self):
-    if self._device_data is not None and self.device is not None and self.device.manager is not None and self.device.name != Devices.CPU:
-      self.device.manager.free_device_tensor(self._device_data)
+    if getattr(self, "_device_data", None) is not None and getattr(self, "_owns_device_data", False) and getattr(self, "device", None) is not None and self.device.manager is not None and self.device.name != Devices.CPU:
+      try:
+        self.device.manager.free_device_tensor(self._device_data)
+      except Exception:
+        pass
       self._device_data = None
-    if self._device_grad is not None and self.device is not None and self.device.manager is not None and self.device.name != Devices.CPU:
-      self.device.manager.free_device_tensor(self._device_grad)
+      self._owns_device_data = False
+    if getattr(self, "_device_grad", None) is not None and getattr(self, "device", None) is not None and self.device.manager is not None and self.device.name != Devices.CPU:
+      try:
+        self.device.manager.free_device_tensor(self._device_grad)
+      except Exception:
+        pass
       self._device_grad = None
 
   # TODO: implement all tensor generators + cuda
@@ -275,6 +298,19 @@ class Tensor:
       if isinstance(node, Tensor) and node.requires_grad and isinstance(node.grad, Tensor) and node.grad.lazy and node.grad.prev_op is not None and not node.grad.realized:
         node.grad.realize()
 
+    for node in topo:
+      if isinstance(node, Tensor) and node is not self and node.prev_op is not None:
+        node.clear_graph()
+      if isinstance(node, Tensor) and isinstance(node.grad, Tensor):
+        node.grad.clear_graph()
+
+  def clear_graph(self):
+    self._prev = ()
+    self._prev_forward_args = ()
+    self._prev_forward_kwargs = {}
+    self._backward = lambda: None
+    return self
+
   # pretty print the graph for this tensor backwards
   def print_graph(self, verbose=False):
     tmp = list(reversed(list(self._prev.copy())))
@@ -329,6 +365,7 @@ class Tensor:
       requires_grad=False,
       device=self.device,
       lazy=self.lazy,
+      _owns_device_data=False,
     )
 
   def _accumulate_grad(self, grad: "Tensor"):
@@ -497,10 +534,13 @@ class Tensor:
     prev = tensor_inputs
     requires_grad = any(t.requires_grad for t in tensor_inputs)
     
-    out_data = (self.data if self.device.name == Devices.CPU else self.device_data) if op_name in MOVEMENT_OPS else None
+    shared_device_data = op_name in MOVEMENT_OPS or op_name == OPS.Transpose
+    out_data = (self.data if self.device.name == Devices.CPU else self.device_data) if shared_device_data else None
+    owns_device_data = self.device.name != Devices.CPU and not shared_device_data
     if not self.lazy:
       func = get_op(op_name, self.device.name)
       out_data = func.forward(*tensor_inputs, *forward_args, **forward_kwargs)
+      owns_device_data = self.device.name != Devices.CPU and not shared_device_data
 
     if self.device.name == Devices.CPU:
       out = Tensor(
@@ -513,6 +553,7 @@ class Tensor:
         device=self.device,
         requires_grad=requires_grad,
         lazy=self.lazy,
+        _owns_device_data=owns_device_data,
       )
     else:
       out = Tensor(
@@ -525,6 +566,7 @@ class Tensor:
         device=self.device,
         requires_grad=requires_grad,
         lazy=self.lazy,
+        _owns_device_data=owns_device_data,
       )
 
     out.prev_op = op_name
@@ -569,6 +611,7 @@ class Tensor:
     dst_ptr = self.device.manager.allocate_device_memory(contig_host)
     self.device.manager.copy_data_to_device(dst_ptr, contig_host)
     self.device_data = dst_ptr
+    self._owns_device_data = True
     self._strides = default_strides(self.shape)
     return self
 
@@ -757,7 +800,8 @@ class Tensor:
       _prev=(self,),
       device=self.device,
       requires_grad=self.requires_grad,
-      lazy=self.lazy
+      lazy=self.lazy,
+      _owns_device_data=False,
     )
 
   # TODO: to support padding > 0, we need a more advanced ShapeTracker that supports an index-validity mask, closer to tinygrad
@@ -813,7 +857,17 @@ class Tensor:
   # Reduce Ops
   # TODO: fix other reduce ops as well
   def sum(self, axis=None, keepdims=False):     return self.from_op(OPS.SUM, forward_args=(axis, keepdims), shape=(out_shape := self.shape_for_reduce(axis, keepdims)), strides=self.strides_for_reduce(axis, keepdims, out_shape))
-  def mean(self,axis=None, keepdims=False):     return self.from_op(OPS.MEAN, forward_args=(axis, keepdims))
+  def mean(self,axis=None, keepdims=False):
+    if self.lazy:
+      axes = tuple(range(self.ndim)) if axis is None else (axis,) if isinstance(axis, int) else tuple(axis)
+      axes = tuple(a + self.ndim if a < 0 else a for a in axes)
+      denom = 1
+      for a in axes: denom *= self.shape[a]
+      out = self
+      for a in sorted(axes, reverse=True): out = out.sum(axis=a, keepdims=keepdims)
+      scale = Tensor(np.full(out.shape, 1.0 / denom, dtype=np.float32), requires_grad=False, device=self.device, lazy=self.lazy)
+      return out * scale
+    return self.from_op(OPS.MEAN, forward_args=(axis, keepdims))
   def max(self, axis=None, keepdims=False):     return self.from_op(OPS.MAX, forward_args=(axis, keepdims))
   def min(self, axis=None, keepdims=False):     return self.from_op(OPS.MIN, forward_args=(axis, keepdims))
   def std(self, axis=None, keepdims=False):     return self.from_op(OPS.STD, forward_args=(axis, keepdims))

@@ -100,6 +100,7 @@ DEBUG=3 ./test/test_ops.py
 - full metal support (20 ops)
 - cleanup renderer and tensor: generic unary ops for activation functions, etc
 - allocate memory on realize + UOps.LOAD only (+ store on UOps.STORE only)
+- MNIST: lazy CUDA much slower than CPU?
 
 - Better AST => better Lazy Buffers => ScheduleItems
 - Generic Renderer using pattern matcher

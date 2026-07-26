@@ -152,38 +152,38 @@ class Scheduler:
 
   def run_elementwise_kernel(self, kfunc, args: list, shape: tuple, contiguous: bool):
     kargs = self.mngr.prep_kargs(*[arg.device_data if hasattr(arg, "device_data") else arg for arg in args])
-    numel = np.prod(shape)
+    numel = int(np.prod(shape))
     if numel > self.mngr.max_grid_size[0] * self.mngr.max_block_size[0]:
       raise ValueError(f"Kernel launch failed: numel {numel} exceeds device's max grid size {self.mngr.max_grid_size[0]}. Consider implementing tiling for large tensors.")
-    # FIXME: maybe use (1, 1, 1) threads per block
-    block = (self.mngr.max_block_size[0], 1, 1) # TODO: METAL supports up to 1024 threads per block, but 256 is a common choice for CUDA and works well across devices
-    # grid = ((numel + 255) // 256, 1, 1)
-    grid = (numel, 1, 1)
+    grid, block = self.launch_dims(numel)
     n_flops = int(np.prod(shape))
     return self.mngr.launch_kernel(kfunc, grid, block, kargs, n_flops=n_flops)
 
   def run_unary_kernel(self, kfunc, args: list, shape: tuple):
     kargs = self.mngr.prep_kargs(*[arg.device_data if hasattr(arg, "device_data") else arg for arg in args])
-    numel = np.prod(shape)
+    numel = int(np.prod(shape))
     if numel > self.mngr.max_grid_size[0] * self.mngr.max_block_size[0]:
       raise ValueError(f"Kernel launch failed: numel {numel} exceeds device's max grid size {self.mngr.max_grid_size[0]}. Consider implementing tiling for large tensors.")
-    block = (self.mngr.max_block_size[0], 1, 1)
-    grid = (numel, 1, 1)
+    grid, block = self.launch_dims(numel)
     n_flops = int(np.prod(shape))
     return self.mngr.launch_kernel(kfunc, grid, block, kargs, n_flops=n_flops)
 
   def run_rows_kernel(self, kfunc, args: list, rows: int, n_flops: int):
     kargs = self.mngr.prep_kargs(*[arg.device_data if hasattr(arg, "device_data") else arg for arg in args])
-    block = (self.mngr.max_block_size[0], 1, 1)
-    grid = (rows, 1, 1)
+    grid, block = self.launch_dims(rows)
     return self.mngr.launch_kernel(kfunc, grid, block, kargs, n_flops=n_flops)
 
   def run_reduce_kernel(self, kfunc, args: list, out_shape: tuple):
     kargs = self.mngr.prep_kargs(*[arg.device_data if hasattr(arg, "device_data") else arg for arg in args])
-    numel = np.prod(out_shape)
+    numel = int(np.prod(out_shape))
     if numel > self.mngr.max_grid_size[0] * self.mngr.max_block_size[0]:
       raise ValueError(f"Kernel launch failed: numel {numel} exceeds device's max grid size {self.mngr.max_grid_size[0]}. Consider implementing tiling for large tensors.")
-    grid = (numel, 1, 1)
-    block = (self.mngr.max_block_size[0], 1, 1)
+    grid, block = self.launch_dims(numel)
     n_flops = int(np.prod(out_shape)) # FLOPs ≈ output_elems × reduce_dim
     return self.mngr.launch_kernel(kfunc, grid, block, kargs, n_flops=n_flops)
+
+  def launch_dims(self, numel: int):
+    if self.mngr.dev_name == "CUDA":
+      block_x = min(256, self.mngr.max_block_size[0], max(1, int(numel)))
+      return ((int(numel) + block_x - 1) // block_x, 1, 1), (block_x, 1, 1)
+    return (int(numel), 1, 1), (self.mngr.max_block_size[0], 1, 1)

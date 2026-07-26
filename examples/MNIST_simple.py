@@ -11,16 +11,15 @@ import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import picograd.nn as nn
-from picograd.tensor import Tensor
+from picograd.tensor import Tensor, default_device
+from picograd.backend.device import Devices
 from picograd.loss import *
 from picograd.optim import *
 from picograd.draw_utils import draw_dot
 
 BS = 16
 
-device = Device(Devices.CPU)
-# device = Device(Devices.CUDA) if is_cuda_available() else Device(Devices.CPU)
-# device = Device(Devices.METAL)
+device = default_device()
 print("[*] Using device", device.name, "\n")
 
 def get_data():
@@ -78,6 +77,10 @@ if __name__ == '__main__':
       optim.step()
 
       if batch_idx == 0 and i == 0: draw_dot(loss, path="graphs/mnist_simple.png")
+      if os.getenv("CUDA_MEM_DEBUG", "0") == "1" and device.name == Devices.CUDA and batch_idx % 100 == 0:
+        active = device.manager.active_alloc_bytes / (1024 ** 2)
+        peak = device.manager.peak_alloc_bytes / (1024 ** 2)
+        print(f"[Cuda-Mem] batch={batch_idx} active={active:.2f} MiB peak={peak:.2f} MiB")
       t.set_description(f"Loss: {loss_mean:.2f}")
 
     print(f"Avg loss: {np.array(epoch_losses).mean()}")

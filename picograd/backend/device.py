@@ -121,9 +121,7 @@ class DeviceManager:
     self.copy_data_to_host(tensor.device_data, data_flat)
     tensor._data = data_flat.reshape(tensor._shape)
 
-    if free:
-      self.free_device_tensor(tensor.device_data)
-      tensor.device_data = None
+    if free: tensor.device_data = None
 
     if DEBUG >= 3 and not PSEUDO_DEBUG:
       print(f"{color_green(f'[{self.device_name}]')} Tensor data copied to host - {color_red(f'{tensor._data.nbytes} bytes')} - {color_red(f'{(time.time() - start_time) * 1000:.4f} ms')}")

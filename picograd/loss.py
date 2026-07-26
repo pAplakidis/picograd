@@ -75,7 +75,8 @@ def CrossEntropyLoss(z: Tensor, y: Tensor) -> Tensor:
       def backward():
         target._accumulate_grad(Tensor(grad, requires_grad=False, device=z.device, lazy=True))
 
-    out = Tensor(loss_val, name="crossentropyloss_out", requires_grad=False, lazy=False)
+    out = Tensor(loss_val, name="crossentropyloss_out", requires_grad=False, device=z.device, lazy=z.lazy)
+    out.realized = True
     out._prev = prev
     out.prev_op = OPS.CrossEntropyLoss
     out._backward = backward
