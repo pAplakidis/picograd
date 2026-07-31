@@ -92,6 +92,8 @@ You can set debug levels by assigning the debug value to DEBUG env variable.
 DEBUG=3 ./test/test_ops.py
 ```
 
+![Debug output](images/debug.png)
+
 ## Visualization
 
 Picograd can record a lightweight JSON trace of tensor ops, eager function timings, lazy schedules, generated kernels, kernel timings, copy events, UOps, and backend code artifacts.
@@ -109,6 +111,8 @@ python3 -m picograd.viz.serve
 ```
 
 Open `http://127.0.0.1:8000/index.html`. The default trace is written to `picograd/viz/traces/latest.json`.
+
+![Visualization viewer](images/viz.png)
 
 Viewer shows performance event spans with ms labels, clickable kernel source/UOps/assembly tabs, plus search, sort, and zoom controls.
 
