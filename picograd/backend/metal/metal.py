@@ -13,6 +13,7 @@ import numpy as np
 
 from picograd.backend.device import DeviceManager
 from picograd.print_utils import *
+from picograd.viz import recorder as viz
 
 try:
   device = Metal.MTLCreateSystemDefaultDevice()
@@ -25,6 +26,9 @@ except Exception as e:
 DEBUG = int(os.getenv("DEBUG", 0))
 PSEUDO_DEBUG = int(os.getenv("PSEUDO_DEBUG", 0))
 
+def _dev_name(device):
+  return getattr(device, "name", str(device))
+
 class MetalDeviceManager(DeviceManager):
   def __init__(self, device_name):
     super().__init__(device_name)
@@ -35,6 +39,7 @@ class MetalDeviceManager(DeviceManager):
     self.max_grid_size = (2147483647, 65535, 65535)
     self.max_block_size = (1024, 1024, 64)
     self._kernel_cache = {}
+    self._kernel_artifacts = {}
 
   # -------
   # GENERIC DEVICE INTERFACE METHODS
@@ -83,19 +88,22 @@ class MetalDeviceManager(DeviceManager):
       d_buf.setPurgeableState_(Metal.MTLPurgeableStateEmpty)
 
   def compile_kernel(self, src: str, kernel_name: str):
+    compile_start = time.time()
     key = hashlib.md5(src.encode()).digest()
     if key in self._kernel_cache:
       if DEBUG >= 3 and not PSEUDO_DEBUG: print(f"{color_green('[Metal]')} Cache hit {color_green(kernel_name)}")
+      viz.record("compile", device=_dev_name(self.dev_name), name=kernel_name, source=src, artifacts=self._kernel_artifacts.get(key), cache_hit=True, duration_ms=(time.time() - compile_start) * 1000.0)
       return self._kernel_cache[key]
     if DEBUG >= 3 and not PSEUDO_DEBUG: print(f"{color_green('[Metal]')} Compiling kernel {color_green(kernel_name)}")
-    if DEBUG >= 4: self.print_metal_ir(kernel_name, src)
-    if DEBUG >= 5: self.print_metal_objdump(kernel_name, src)
 
     library, error = self.device.newLibraryWithSource_options_error_(src, None, None)
     if error:
       raise RuntimeError(f"Failed to compile Metal kernel '{kernel_name}': " f"{error.localizedDescription()}")
     func = library.newFunctionWithName_(kernel_name)
+    artifacts = self.collect_kernel_artifacts(kernel_name, src)
     self._kernel_cache[key] = func
+    self._kernel_artifacts[key] = artifacts
+    viz.record("compile", device=_dev_name(self.dev_name), name=kernel_name, source=src, artifacts=artifacts, cache_hit=False, duration_ms=(time.time() - compile_start) * 1000.0)
     return func
 
   # FIXME: this must match cuda args and scheduler standard
@@ -139,6 +147,7 @@ class MetalDeviceManager(DeviceManager):
         print(f"{color_green('[Metal]')} Kernel '{kernel.name()}' executed {n_flops} FLOPs in {elapsed_ms:.4f} ms ({gflops:.4f} GFLOPs)")
       else:
         print(f"{color_green('[Metal]')} Kernel '{kernel.name()}' execution completed in {color_red(f'{elapsed_ms:.4f} ms')}")
+    viz.record("launch", device=_dev_name(self.dev_name), kernel=str(kernel.name()), grid=grid_size, block=block_size, shared_mem=shared_mem, arg_count=len(buffers), elapsed_ms=elapsed_ms, gflops=gflops)
 
     return elapsed_ms, gflops if n_flops is not None else None
 
@@ -169,15 +178,21 @@ class MetalDeviceManager(DeviceManager):
     compiler and print human-readable AIR/LLVM IR.
     """
 
+    artifacts = {"warnings": []}
+
     if not shutil.which("xcrun"):
-      print("[WARN] xcrun not found — cannot inspect Metal IR")
-      return
+      warning = "xcrun not found"
+      artifacts["warnings"].append(warning)
+      if DEBUG >= 4:
+        print("[WARN] xcrun not found — cannot inspect Metal IR")
+      return artifacts
 
     try:
       metal = self._metal_tool("metal")
     except (subprocess.CalledProcessError, FileNotFoundError):
-      print("[WARN] Metal compiler toolchain not found")
-      return
+      if DEBUG >= 4:
+        print("[WARN] Metal compiler toolchain not found")
+      return artifacts
 
     with tempfile.TemporaryDirectory() as tmpdir:
       src_path = os.path.join(tmpdir, f"{kernel_name}.metal")
@@ -205,16 +220,23 @@ class MetalDeviceManager(DeviceManager):
         with open(ir_path, "r") as f:
           ir = f.read()
 
-        if not PSEUDO_DEBUG:
+        artifacts["ir"] = ir
+
+        if DEBUG >= 4 and not PSEUDO_DEBUG:
           print(f"\n===== [Metal AIR/LLVM IR for kernel {kernel_name}] =====")
           print(ir)
           print("========================================================\n")
 
       except subprocess.CalledProcessError as e:
-        print(f"[WARN] Failed to generate Metal AIR/LLVM IR for {kernel_name}")
+        warning = f"Failed to generate Metal AIR/LLVM IR for {kernel_name}"
+        artifacts["warnings"].append(warning)
+        if DEBUG >= 4:
+          print(f"[WARN] {warning}")
 
-        if e.stderr:
+        if DEBUG >= 4 and e.stderr:
           print(e.stderr)
+
+    return artifacts
 
 
   def print_metal_objdump(self, kernel_name: str, src: str):
@@ -226,14 +248,19 @@ class MetalDeviceManager(DeviceManager):
     equivalent of NVIDIA SASS.
     """
 
+    artifacts = {"warnings": []}
+
     try:
       metal = self._metal_tool("metal")
       metallib = self._metal_tool("metallib")
       metal_objdump = self._metal_tool("metal-objdump")
       metal_lipo = self._metal_tool("metal-lipo")
     except (subprocess.CalledProcessError, FileNotFoundError):
-      print("[WARN] Metal command-line inspection tools not available")
-      return
+      warning = "Metal command-line inspection tools not available"
+      artifacts["warnings"].append(warning)
+      if DEBUG >= 4:
+        print(f"[WARN] {warning}")
+      return artifacts
 
     with tempfile.TemporaryDirectory() as tmpdir:
       src_path = os.path.join(tmpdir, f"{kernel_name}.metal")
@@ -284,10 +311,11 @@ class MetalDeviceManager(DeviceManager):
           text=True,
         )
 
-        if not PSEUDO_DEBUG:
+        if DEBUG >= 5 and not PSEUDO_DEBUG:
           print(f"\n===== [Metal object dump for kernel {kernel_name}] =====")
           print(objdump.stdout)
           print("=======================================================\n")
+        artifacts["objdump"] = objdump.stdout
 
         # Show architecture slices if available.
         try:
@@ -302,18 +330,37 @@ class MetalDeviceManager(DeviceManager):
             text=True,
           )
 
-          if not PSEUDO_DEBUG:
+          if DEBUG >= 5 and not PSEUDO_DEBUG:
             print(f"===== [Metal architectures for {kernel_name}] =====")
             print(archs.stdout.strip())
             print("=================================================\n")
+          artifacts["archs"] = archs.stdout.strip()
 
         except subprocess.CalledProcessError:
-          pass
+          artifacts["warnings"].append("Failed to query Metal architectures")
 
       except subprocess.CalledProcessError as e:
-        print(f"[WARN] Failed to inspect Metal kernel {kernel_name}")
+        warning = f"Failed to inspect Metal kernel {kernel_name}"
+        artifacts["warnings"].append(warning)
+        if DEBUG >= 4:
+          print(f"[WARN] {warning}")
 
-        if e.stderr:
+        if DEBUG >= 4 and e.stderr:
           print(e.stderr)
+
+    return artifacts
+
+
+  def collect_kernel_artifacts(self, kernel_name: str, src: str):
+    artifacts = {}
+    ir_artifacts = self.print_metal_ir(kernel_name, src)
+    objdump_artifacts = self.print_metal_objdump(kernel_name, src)
+    artifacts.update(ir_artifacts or {})
+    for key, value in (objdump_artifacts or {}).items():
+      if key == "warnings":
+        artifacts.setdefault("warnings", []).extend(value)
+      else:
+        artifacts[key] = value
+    return artifacts
 
     

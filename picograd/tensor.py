@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import os
+import time
 import ctypes
 import numpy as np
 from numpy.lib.stride_tricks import as_strided
@@ -17,6 +18,7 @@ from picograd.backend.renderer.cstyle import CStyleRenderer
 from picograd.backend.renderer.cuda_renderer import CUDARenderer
 from picograd.backend.renderer.metal_renderer import MetalRenderer
 from picograd.backend.linearizer import linearize, build_ast
+from picograd.viz import recorder as viz
 
 DEBUG = int(os.getenv("DEBUG", 0))
 VERBOSE = int(os.getenv("VERBOSE", 0))
@@ -501,13 +503,22 @@ class Tensor:
     return self.data.tolist()
 
   def realize(self):
+    if viz.enabled():
+      realize_start = time.perf_counter()
+      viz.record("realize_start", tensor=self)
     renderer = self.get_renderer()
     ast = linearize(build_ast(self))
     scheduler = Scheduler(ast, renderer)
-    scheduler.create_schedule()
-    scheduler.run_schedule()
-    for node in ast:
-      if node.tensor.prev_op is not None: node.tensor.realized = True
+    schedule = scheduler.create_schedule()
+    if viz.enabled():
+      viz.record("schedule", tensor=self, ast_nodes=len(ast), schedule_items=len(schedule), ops=[node.op for node in ast])
+    try:
+      scheduler.run_schedule()
+      for node in ast:
+        if node.tensor.prev_op is not None: node.tensor.realized = True
+    finally:
+      if viz.enabled():
+        viz.record("realize_end", tensor=self, ast_nodes=len(ast), schedule_items=len(schedule), duration_ms=(time.perf_counter() - realize_start) * 1000.0)
 
   def from_op(
     self,
@@ -571,6 +582,7 @@ class Tensor:
 
     out.prev_op = op_name
     out._backward = lambda: self._backward_from_op(out, op_name, tensor_inputs, forward_args, forward_kwargs)
+    viz.record("op_created", op=op_name, tensor=out, inputs=tensor_inputs, shape=out.shape, strides=out.strides, forward_args=forward_args, forward_kwargs=forward_kwargs)
     return out
 
   def shape_for_reduce(self, axis, keepdims):

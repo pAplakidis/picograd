@@ -6,9 +6,27 @@ from picograd.backend.uop import UOp
 from picograd.backend.dtypes import dtypes
 from picograd.backend.function import OPS, BINARY_OPS,  MOVEMENT_OPS, REDUCE_OPS
 from picograd.backend.linearizer import *
+from picograd.viz import recorder as viz
 
 
 DEBUG = int(os.getenv("DEBUG", 0))
+
+
+def _uop_summary(item: UOp):
+  arg = item.arg
+  arg_len = len(arg) if isinstance(arg, (tuple, list)) else (0 if arg is None else 1)
+  return {
+    "op": item.op.name if hasattr(item.op, "name") else str(item.op),
+    "dtype": item.dtype.name if hasattr(item.dtype, "name") else str(item.dtype),
+    "src_count": len(item.src) if item.src else 0,
+    "arg_count": arg_len,
+    "tag": item.tag,
+  }
+
+
+def _uop_repr(item: UOp, limit: int = 2000):
+  text = repr(item)
+  return text if len(text) <= limit else text[:limit] + "..."
 
 
 # TODO: check out [ https://mesozoic-egg.github.io/tinygrad-notes/scheduleitem.html ]
@@ -25,6 +43,9 @@ class Scheduler:
 
   def debug_prefix(self, id):
     return color_green(f'*** {self.mngr.dev_name} {id}')
+
+  def device_name(self):
+    return getattr(self.mngr.dev_name, "name", str(self.mngr.dev_name))
 
   @staticmethod
   def ast_to_uops(ast_nodes):
@@ -58,18 +79,21 @@ class Scheduler:
   # TODO: proper UOps to CStyle [ https://mesozoic-egg.github.io/tinygrad-notes/backends.html ]
   def lower_item(self, item: UOp, id: int = 0):
     if DEBUG >= 1 and id == 0: print(f"<DEVICE> <ID> <KERNEL_NAME> <NUM_ELEMS> <DTYPE>    <NUM_ARGS>   <MEMORY_IN_GB> <kernel_time> - <GFLOPs> <op_type>")
+    viz.record("uop", schedule_id=id, op=item.op, dtype=item.dtype, src=item.src, arg=item.arg, summary=_uop_summary(item), repr=_uop_repr(item))
     # TODO: use pattern_matcher => self.renderer.render_code(item)
 
     # TODO: if LOAD, move data to device (if not already) - will be different later when tensors aren't allcoated in __init__()
     if item.op == OPS.LOAD:
       tensor = item.arg[0]
       # tensor.device_data = tensor.device.manager.to_device(tensor.data)
+      if viz.enabled(): viz.record("schedule_copy", schedule_id=id, direction="load", tensor=tensor, bytes=tensor.nbytes, device=self.device_name())
       if DEBUG >= 1: print(f"{self.debug_prefix(id)} {color_yellow('copy')}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {tensor._data.nbytes / (1024**3):.6f} GB")
       return
 
     if item.op == OPS.STORE:
       tensor = item.arg[0]
       # tensor.data = tensor.device.manager.to_host(tensor.device_data)
+      if viz.enabled(): viz.record("schedule_copy", schedule_id=id, direction="store", tensor=tensor, bytes=tensor.nbytes, device=self.device_name())
       if DEBUG >= 1: print(f"{self.debug_prefix(id)} {color_yellow('copy')}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {tensor._data.nbytes / (1024**3):.6f} GB")
       return
 
@@ -84,6 +108,9 @@ class Scheduler:
       if self.mngr.dev_name == "CUDA": kernel_name = kernel_name.encode("utf-8")
       kfunc = self.mngr.compile_kernel(kernel_code, kernel_name)
       elapsed_ms, gflops = self.run_elementwise_kernel(kfunc, args, shape=args[0].shape, contiguous=contiguous)
+      if viz.enabled():
+        grid, block = self.launch_dims(int(np.prod(args[0].shape)))
+        viz.record_kernel(name=kernel_name, source=kernel_code, device=self.device_name(), schedule_id=id, uop_summary=_uop_summary(item), uop_repr=_uop_repr(item), op=item.op, args=args, shape=args[0].shape, grid=grid, block=block, contiguous=contiguous, memory_bytes=sum(uop.arg[0].nbytes for uop in item.src), elapsed_ms=elapsed_ms, gflops=gflops)
       if DEBUG >= 1:
         # TODO: don't use tensor._data (tensor might be 100% on the device)
         debug_str = f"{self.debug_prefix(id)} {color_red(kernel_name)}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {sum(uop.arg[0]._data.nbytes for uop in item.src) / (1024**3):.6f} GB"
@@ -100,6 +127,9 @@ class Scheduler:
       if self.mngr.dev_name == "CUDA": kernel_name = kernel_name.encode("utf-8")
       kfunc = self.mngr.compile_kernel(kernel_code, kernel_name)
       elapsed_ms, gflops = self.run_unary_kernel(kfunc, args, shape=args[0].shape)
+      if viz.enabled():
+        grid, block = self.launch_dims(int(np.prod(args[0].shape)))
+        viz.record_kernel(name=kernel_name, source=kernel_code, device=self.device_name(), schedule_id=id, uop_summary=_uop_summary(item), uop_repr=_uop_repr(item), op=item.op, args=args, shape=args[0].shape, grid=grid, block=block, memory_bytes=sum(uop.arg[0].nbytes for uop in item.src), elapsed_ms=elapsed_ms, gflops=gflops)
       if DEBUG >= 1:
         debug_str = f"{self.debug_prefix(id)} {color_red(kernel_name)}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {sum(uop.arg[0]._data.nbytes for uop in item.src) / (1024**3):.6f} GB"
         debug_str += f"   ({elapsed_ms:.4f} ms - {gflops:.4f} GFLOPs)   relu"
@@ -116,6 +146,9 @@ class Scheduler:
       if self.mngr.dev_name == "CUDA": kernel_name = kernel_name.encode("utf-8")
       kfunc = self.mngr.compile_kernel(kernel_code, kernel_name)
       elapsed_ms, gflops = self.run_rows_kernel(kfunc, args, rows=rows, n_flops=int(np.prod(args[0].shape)) * 3)
+      if viz.enabled():
+        grid, block = self.launch_dims(rows)
+        viz.record_kernel(name=kernel_name, source=kernel_code, device=self.device_name(), schedule_id=id, uop_summary=_uop_summary(item), uop_repr=_uop_repr(item), op=item.op, args=args, shape=args[0].shape, axis=axis, rows=rows, grid=grid, block=block, memory_bytes=sum(uop.arg[0].nbytes for uop in item.src), elapsed_ms=elapsed_ms, gflops=gflops)
       if DEBUG >= 1:
         debug_str = f"{self.debug_prefix(id)} {color_red(kernel_name)}  {len(item.src) } {item.dtype.name}   arg {len(item.arg) if item.arg else 0}   mem {sum(uop.arg[0]._data.nbytes for uop in item.src) / (1024**3):.6f} GB"
         debug_str += f"   ({elapsed_ms:.4f} ms - {gflops:.4f} GFLOPs)   softmax"
@@ -147,6 +180,9 @@ class Scheduler:
       if self.mngr.dev_name == "CUDA": kernel_name = kernel_name.encode("utf-8")
       kfunc = self.mngr.compile_kernel(kernel_code, kernel_name)
       elapsed_ms, gflops = self.run_reduce_kernel(kfunc, [out_tensor, in_tensor], out_shape)
+      if viz.enabled():
+        grid, block = self.launch_dims(int(np.prod(out_shape)))
+        viz.record_kernel(name=kernel_name, source=kernel_code, device=self.device_name(), schedule_id=id, uop_summary=_uop_summary(item), uop_repr=_uop_repr(item), op=item.op, args=[out_tensor, in_tensor], input_shape=in_shape, output_shape=out_shape, axis=axis, grid=grid, block=block, memory_bytes=in_tensor.nbytes, elapsed_ms=elapsed_ms, gflops=gflops)
       if DEBUG >= 1: print(f"{self.debug_prefix(id)} {color_red(kernel_name)} reduce ({elapsed_ms:.4f} ms - {gflops:.4f} GFLOPs)")
       return
 

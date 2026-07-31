@@ -7,6 +7,7 @@ from enum import Enum, auto
 
 from .device import Devices
 from picograd.print_utils import *
+from picograd.viz import recorder as viz
 
 DEBUG = int(os.getenv("DEBUG", 0))
 PSEUDO_DEBUG = int(os.getenv("PSEUDO_DEBUG", 0))  # if 1, generate assembly code as string but don't print (helps with segfaults)
@@ -171,6 +172,7 @@ class Function:
       start_time = time.time()
       result = method(self, *args, **kwargs)
       end_time = time.time()
+      viz.record("function", function=self.__class__.__name__, method=method.__name__, args=args, kwargs=kwargs, result=result, duration_ms=(end_time - start_time) * 1000.0)
       if DEBUG >= 1 and not PSEUDO_DEBUG:
         print(f"{color_yellow('[Function-Perf]')} {self.__class__.__name__}.{method.__name__} - {color_yellow(f'{(end_time - start_time) * 1000.0:.4f}')} ms")
       return result

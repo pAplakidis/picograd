@@ -11,6 +11,7 @@ from .error import CUDA_ERRORS
 from .types import *
 from picograd.backend.device import DeviceManager
 from picograd.print_utils import *
+from picograd.viz import recorder as viz
 
 try:
   cuda = ctypes.CDLL('libcuda.so')
@@ -26,6 +27,9 @@ CUDA_MEM_TRACE = int(os.getenv("CUDA_MEM_TRACE", 0))
 
 TILE_SIZE = 16
 
+def _dev_name(device):
+  return getattr(device, "name", str(device))
+
 
 class CudaDeviceManager(DeviceManager):
   def __init__(self, device_name):
@@ -36,6 +40,8 @@ class CudaDeviceManager(DeviceManager):
     self.ctx = CUcontext()
     self.module = None
     self.kernels = {}
+    self._kernel_artifacts = {}
+    self._kernel_names = {}
     self._alloc_sizes = {}
     self.active_alloc_bytes = 0
     self.peak_alloc_bytes = 0
@@ -86,40 +92,42 @@ class CudaDeviceManager(DeviceManager):
     with open(os.path.join(KERNELS_PATH, file_path), 'r') as f:
       return f.read()
 
-  def print_ptx_and_sass(self, kernel_name: str, ptx_str: str):
-    if not PSEUDO_DEBUG:
+  def inspect_ptx_and_sass(self, kernel_name: str, ptx_str: str):
+    artifacts = {"ptx": ptx_str, "warnings": []}
+
+    if DEBUG >= 4 and not PSEUDO_DEBUG:
       print(f"\n===== [NVRTC Generated PTX for kernel {kernel_name}] =====")
       print(ptx_str)
       print("=================================\n")
 
-    if DEBUG >= 4:
-      with tempfile.TemporaryDirectory() as tmpdir:
-        ptx_path = os.path.join(tmpdir, "kernel.ptx")
-        cubin_path = os.path.join(tmpdir, "kernel.cubin")
+    with tempfile.TemporaryDirectory() as tmpdir:
+      ptx_path = os.path.join(tmpdir, "kernel.ptx")
+      cubin_path = os.path.join(tmpdir, "kernel.cubin")
 
-        with open(ptx_path, "w") as f:
-          f.write(ptx_str)
+      with open(ptx_path, "w", encoding="utf-8") as f:
+        f.write(ptx_str)
 
-        arch = "sm_89"  # match your GPU
-        try:
-          subprocess.run(
-              ["ptxas", ptx_path, "-o", cubin_path, f"-arch={arch}"],
-              check=True
-          )
-          sass_output = subprocess.run(
-              ["nvdisasm", cubin_path],
-              check=True,
-              capture_output=True,
-              text=True
-          )
-          if not PSEUDO_DEBUG:
-            print(f"\n===== [SASS Assembly for kernel {kernel_name}] =====")
-            print(sass_output.stdout)
-            print("===========================\n")
-        except FileNotFoundError:
-          print("[WARN] ptxas or nvdisasm not found in PATH — cannot print SASS")
-        except subprocess.CalledProcessError as e:
-          print(f"[ERROR] Failed to generate SASS: {e}")
+      arch = "sm_89"
+      try:
+        subprocess.run(["ptxas", ptx_path, "-o", cubin_path, f"-arch={arch}"], check=True, capture_output=True, text=True)
+        sass_output = subprocess.run(["nvdisasm", cubin_path], check=True, capture_output=True, text=True)
+        artifacts["sass"] = sass_output.stdout
+        if DEBUG >= 5 and not PSEUDO_DEBUG:
+          print(f"\n===== [SASS Assembly for kernel {kernel_name}] =====")
+          print(sass_output.stdout)
+          print("===========================\n")
+      except FileNotFoundError:
+        warning = "ptxas or nvdisasm not found in PATH"
+        artifacts["warnings"].append(warning)
+        if DEBUG >= 4:
+          print(f"[WARN] {warning} — cannot print SASS")
+      except subprocess.CalledProcessError as e:
+        warning = f"Failed to generate SASS: {e}"
+        artifacts["warnings"].append(warning)
+        if DEBUG >= 4:
+          print(f"[ERROR] {warning}")
+
+    return artifacts
 
   def  init_cuda(self):
     """Gets CUDA device and context, then initializes CUDA driver API."""
@@ -206,12 +214,15 @@ class CudaDeviceManager(DeviceManager):
     self.cuda_free(d_T)
 
   def compile_kernel(self, src: str, kernel_name: str) -> CUfunction:
+    compile_start = time.time()
     kernel_name_bytes = kernel_name if isinstance(kernel_name, bytes) else kernel_name.encode("utf-8")
     kernel_name_str = kernel_name_bytes.decode()
     cache_key = (kernel_name_bytes, hashlib.sha256(src.encode()).digest())
     if cache_key in self.kernels:
       if DEBUG >= 3 and not PSEUDO_DEBUG:
         print(f"{color_green('[Cuda]')} Fetching compiled kernel {color_green(kernel_name_str)}.")
+      viz.record("compile", device=_dev_name(self.dev_name), name=kernel_name_str, source=src, artifacts=self._kernel_artifacts.get(cache_key), cache_hit=True, duration_ms=(time.time() - compile_start) * 1000.0)
+      self._kernel_names[str(self.kernels[cache_key][1])] = kernel_name_str
       return self.kernels[cache_key][1]
 
     if DEBUG >= 3 and not PSEUDO_DEBUG:
@@ -252,9 +263,7 @@ class CudaDeviceManager(DeviceManager):
     nvrtc.nvrtcGetPTX(self.program, ptx)
     ptx_str = ctypes.string_at(ptx, ptx_size.value).decode()
 
-    # Print PTX and SASS (intermediate repr and assembly)
-    if DEBUG >= 5:
-      self.print_ptx_and_sass(kernel_name, ptx_str)
+    artifacts = self.inspect_ptx_and_sass(kernel_name_str, ptx_str)
 
     # load PTX module
     self.module = CUmodule()
@@ -265,6 +274,9 @@ class CudaDeviceManager(DeviceManager):
     kfunc = CUfunction()
     self.check_cuda(cuda.cuModuleGetFunction(ctypes.byref(kfunc), self.module, ctypes.c_char_p(kernel_name_bytes)), "cuModuleGetFunction")
     self.kernels[cache_key] = (self.module, kfunc)
+    self._kernel_artifacts[cache_key] = artifacts
+    self._kernel_names[str(kfunc)] = kernel_name_str
+    viz.record("compile", device=_dev_name(self.dev_name), name=kernel_name_str, source=src, artifacts=artifacts, cache_hit=False, duration_ms=(time.time() - compile_start) * 1000.0)
     return kfunc
 
   def launch_kernel(
@@ -319,6 +331,7 @@ class CudaDeviceManager(DeviceManager):
     elapsed_ms = (end - start) * 1000.0
 
     # compute GFLOPs
+    gflops = None
     if n_flops is not None:
       # elapsed_s = elapsed_ms.value / 1000.0
       elapsed_s = elapsed_ms / 1000.0
@@ -329,5 +342,6 @@ class CudaDeviceManager(DeviceManager):
       if DEBUG >= 3 and not PSEUDO_DEBUG:
         # print(f"{color_yellow('[Cuda-Perf]')} Kernel time: {elapsed_ms.value:.3f} ms")
         print(f"{color_yellow('[Cuda-Perf]')} Kernel time: {elapsed_ms:.4f} ms")
+    viz.record("launch", device=_dev_name(self.dev_name), kernel=self._kernel_names.get(str(kfunc), str(kfunc)), grid=grid, block=block, shared_mem=shared_mem, arg_count=len(args), elapsed_ms=elapsed_ms, gflops=gflops)
     
-    return elapsed_ms, gflops if n_flops is not None else None
+    return elapsed_ms, gflops

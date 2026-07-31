@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Picograd Viz</title>
+  <style>
+    :root { color-scheme: dark; font-family: ui-sans-serif, system-ui, sans-serif; background: #101114; color: #eceff4; }
+    body { margin: 0; padding: 24px; }
+    h1, h2 { margin: 0 0 12px; }
+    main { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); }
+    section { background: #171a20; border: 1px solid #2a2f3a; border-radius: 12px; padding: 16px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { border-bottom: 1px solid #2a2f3a; padding: 8px; text-align: left; vertical-align: top; }
+    th button { all: unset; cursor: pointer; color: inherit; display: inline-flex; gap: 6px; align-items: center; }
+    tr.kernel { cursor: pointer; }
+    tr.kernel:hover, tr.kernel.selected { background: #242a35; }
+    pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; background: #0b0d10; border-radius: 8px; padding: 12px; }
+    .summary { display: flex; flex-wrap: wrap; gap: 10px; }
+    .card { background: #202530; border-radius: 10px; padding: 10px 12px; min-width: 140px; }
+    .card b { display: block; color: #8fbcbb; font-size: 12px; text-transform: uppercase; }
+    .controls { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .control { display: grid; gap: 6px; }
+    .control label { color: #a7adba; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+    .control input, .control select { width: 100%; box-sizing: border-box; background: #0b0d10; color: #eceff4; border: 1px solid #2a2f3a; border-radius: 8px; padding: 10px; }
+    .control input[type="range"] { padding: 0; }
+    .timeline-wrap { overflow-x: auto; background: #0b0d10; border-radius: 8px; padding: 10px; }
+    .timeline { position: relative; height: 108px; min-width: 100%; }
+    .span { position: absolute; top: 12px; min-height: 26px; border-radius: 8px; border: 1px solid transparent; color: #eceff4; display: flex; align-items: center; padding: 0 8px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: inset 0 0 0 1px rgba(255,255,255,.04); }
+    .span.instant { min-width: 3px; padding: 0; }
+    .span.kernel { background: linear-gradient(90deg, rgba(163,190,140,.78), rgba(163,190,140,.52)); border-color: rgba(163,190,140,.5); }
+    .span.compile { background: linear-gradient(90deg, rgba(136,192,208,.78), rgba(136,192,208,.5)); border-color: rgba(136,192,208,.5); }
+    .span.launch { background: linear-gradient(90deg, rgba(94,129,172,.78), rgba(94,129,172,.5)); border-color: rgba(94,129,172,.5); }
+    .span.copy { background: linear-gradient(90deg, rgba(235,203,139,.78), rgba(235,203,139,.5)); border-color: rgba(235,203,139,.5); }
+    .span.function, .span.realize_start, .span.realize_end, .span.schedule { background: linear-gradient(90deg, rgba(180,142,173,.78), rgba(180,142,173,.5)); border-color: rgba(180,142,173,.5); }
+    .span:hover, .span.selected { outline: 2px solid #eceff4; z-index: 2; }
+    .span .label { overflow: hidden; text-overflow: ellipsis; }
+    .span .ms { margin-left: 8px; color: #e5e9f0; opacity: .95; }
+    .timeline-ruler { position: relative; height: 18px; margin-bottom: 8px; color: #8fbcbb; font-size: 11px; }
+    .timeline-ruler span { position: absolute; transform: translateX(-50%); }
+    .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+    .tab { border: 1px solid #2a2f3a; background: #202530; color: #eceff4; border-radius: 999px; padding: 8px 12px; cursor: pointer; }
+    .tab.active { background: #2f3746; border-color: #88c0d0; }
+    .detail-grid { display: grid; gap: 12px; }
+    .detail-head { display: flex; flex-wrap: wrap; gap: 10px; }
+    .detail-head .card { min-width: 120px; }
+    .graph { min-height: 260px; overflow: auto; background: #0b0d10; border-radius: 8px; }
+    svg { min-width: 720px; }
+    .node rect { fill: #202530; stroke: #88c0d0; stroke-width: 1.5; rx: 8; }
+    .node.leaf rect { stroke: #a3be8c; }
+    .node text { fill: #eceff4; font-size: 12px; }
+    .edge { stroke: #4c566a; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+    .muted { color: #a7adba; }
+    @media (min-width: 980px) { main { grid-template-columns: minmax(0, 1.2fr) minmax(360px, .8fr); } .wide { grid-column: 1 / -1; } .controls { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="wide">
+      <h1>Picograd Viz</h1>
+      <div id="status" class="muted">Loading traces/latest.json</div>
+      <div id="summary" class="summary"></div>
+    </section>
+    <section class="wide">
+      <h2>Controls</h2>
+      <div class="controls">
+        <div class="control"><label for="search">Search</label><input id="search" placeholder="kernel, device, op, hash"></div>
+        <div class="control"><label for="kindFilter">Event kind</label><select id="kindFilter"></select></div>
+        <div class="control"><label for="deviceFilter">Device</label><select id="deviceFilter"></select></div>
+        <div class="control"><label for="sortSelect">Kernel sort</label><select id="sortSelect"></select></div>
+        <div class="control"><label for="zoomRange">Timeline zoom</label><input id="zoomRange" type="range" min="1" max="6" step="0.25" value="1"></div>
+        <div class="control"><label>Timeline range</label><div id="rangeLabel" class="muted">Full trace</div></div>
+      </div>
+    </section>
+    <section class="wide">
+      <h2>Performance Bar</h2>
+      <div class="timeline-wrap">
+        <div id="timelineRuler" class="timeline-ruler"></div>
+        <div id="timeline" class="timeline"></div>
+      </div>
+    </section>
+    <section class="wide">
+      <h2>Op Graph</h2>
+      <div id="graph" class="graph"></div>
+    </section>
+    <section>
+      <h2>Kernels</h2>
+      <table>
+        <thead>
+          <tr>
+            <th><button data-sort="index">#</button></th>
+            <th><button data-sort="elapsed_ms">ms</button></th>
+            <th><button data-sort="name">Span</button></th>
+            <th><button data-sort="op">Op</button></th>
+            <th><button data-sort="device">Device</button></th>
+            <th><button data-sort="gflops">GFLOPs</button></th>
+          </tr>
+        </thead>
+        <tbody id="kernels"></tbody>
+      </table>
+    </section>
+    <section>
+      <h2>Selected Event</h2>
+      <div class="detail-grid">
+        <div id="detailSummary" class="detail-head"></div>
+        <div class="tabs" id="tabs">
+          <button class="tab active" data-tab="source">Source</button>
+          <button class="tab" data-tab="uops">UOps</button>
+          <button class="tab" data-tab="assembly">Assembly</button>
+          <button class="tab" data-tab="json">JSON</button>
+        </div>
+        <pre id="detail">Select event.</pre>
+      </div>
+    </section>
+    <section class="wide">
+      <h2>Events</h2>
+      <pre id="events"></pre>
+    </section>
+  </main>
+  <script>
+    const statusEl = document.getElementById('status');
+    const summaryEl = document.getElementById('summary');
+    const searchEl = document.getElementById('search');
+    const kindFilterEl = document.getElementById('kindFilter');
+    const deviceFilterEl = document.getElementById('deviceFilter');
+    const sortSelectEl = document.getElementById('sortSelect');
+    const zoomRangeEl = document.getElementById('zoomRange');
+    const rangeLabelEl = document.getElementById('rangeLabel');
+    const timelineRulerEl = document.getElementById('timelineRuler');
+    const timelineEl = document.getElementById('timeline');
+    const graphEl = document.getElementById('graph');
+    const kernelsEl = document.getElementById('kernels');
+    const detailSummaryEl = document.getElementById('detailSummary');
+    const tabsEl = document.getElementById('tabs');
+    const detailEl = document.getElementById('detail');
+    const eventsEl = document.getElementById('events');
+
+    const state = {
+      trace: { events: [], metadata: {} },
+      selectedEvent: null,
+      selectedTab: 'source',
+      sortKey: 'elapsed_ms',
+      sortDir: 'desc',
+      query: '',
+      kind: 'all',
+      device: 'all',
+      zoom: 1,
+    };
+
+    const text = value => value == null ? '' : String(value);
+    const asNumber = value => {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : 0;
+    };
+    const eventData = event => event && event.data ? event.data : {};
+    const tensorId = value => value && value.id != null ? String(value.id) : null;
+    const tensorLabel = value => {
+      if (!value) return 'tensor';
+      const shape = Array.isArray(value.shape) ? `[${value.shape.join(',')}]` : '';
+      return `${tensorId(value) || 'tensor'} ${shape}`.trim();
+    };
+    const opLabel = op => op && op.name ? op.name : text(op || 'op');
+    const kernelName = event => text(eventData(event).name) || '(unnamed)';
+    const kernelDevice = event => text(eventData(event).device) || '';
+    const kernelElapsed = event => asNumber(eventData(event).elapsed_ms);
+    const eventDuration = event => asNumber(eventData(event).duration_ms || eventData(event).elapsed_ms);
+    const eventName = event => {
+      const data = eventData(event);
+      if (event.kind === 'kernel') return kernelName(event);
+      if (event.kind === 'compile') return `compile ${text(data.name)}`.trim();
+      if (event.kind === 'launch') return `launch ${text(data.kernel)}`.trim();
+      if (event.kind === 'copy') return `${text(data.direction) || 'copy'} copy`;
+      if (event.kind === 'function') return `${text(data.function)}.${text(data.method)}`.replace(/^\./, 'function');
+      if (event.kind === 'uop') return `uop ${text((data.summary && data.summary.op) || data.op)}`.trim();
+      return text(data.name || data.kernel || event.kind);
+    };
+    const eventLabel = event => {
+      const name = eventName(event) || event.kind;
+      const ms = eventDuration(event);
+      return ms > 0 ? `${name} · ${ms.toFixed(3)} ms` : name;
+    };
+    const eventBounds = event => {
+      const end = asNumber(event.ts_ms);
+      const duration = eventDuration(event);
+      return { start: duration > 0 ? Math.max(0, end - duration) : end, end, duration };
+    };
+    const eventHash = event => text(eventData(event).source_hash);
+    const eventSummary = event => {
+      const data = eventData(event);
+      const parts = [event.kind, eventName(event)];
+      if (data.op && data.op.name) parts.push(data.op.name);
+      if (data.device) parts.push(text(data.device));
+      if (data.schedule_id != null) parts.push(`schedule ${data.schedule_id}`);
+      return parts.filter(Boolean).join(' · ');
+    };
+
+    function card(label, value) {
+      const el = document.createElement('div');
+      el.className = 'card';
+      const b = document.createElement('b');
+      b.textContent = label;
+      const span = document.createElement('span');
+      span.textContent = text(value);
+      el.append(b, span);
+      return el;
+    }
+
+    function setSelectedEvent(event) {
+      state.selectedEvent = event;
+      renderDetail();
+      renderTimeline();
+      renderKernels();
+    }
+
+    function setTab(tab) {
+      state.selectedTab = tab;
+      tabsEl.querySelectorAll('.tab').forEach(button => button.classList.toggle('active', button.dataset.tab === tab));
+      renderDetail();
+    }
+
+    function selectedCompileEvent(event) {
+      if (!event) return null;
+      const data = eventData(event);
+      const sourceHash = eventHash(event);
+      const device = text(data.device);
+      const name = text(data.name || data.kernel);
+      const compileEvents = state.trace.events.filter(item => item.kind === 'compile');
+      return compileEvents.find(item => {
+        const itemData = eventData(item);
+        return text(itemData.device) === device && text(itemData.name) === name && (!sourceHash || text(itemData.source_hash) === sourceHash);
+      }) || compileEvents.find(item => text(eventData(item).device) === device && (!sourceHash || text(eventData(item).source_hash) === sourceHash)) || null;
+    }
+
+    function selectedUops(event) {
+      const data = eventData(event);
+      if (data.schedule_id == null) return [];
+      return state.trace.events.filter(item => item.kind === 'uop' && eventData(item).schedule_id === data.schedule_id);
+    }
+
+    function artifactText(event) {
+      const compileEvent = event && event.kind === 'compile' ? event : selectedCompileEvent(event);
+      if (!compileEvent) return 'No assembly or IR recorded.';
+      const artifacts = eventData(compileEvent).artifacts || {};
+      const chunks = [];
+      if (artifacts.ptx) chunks.push(`PTX\n----\n${artifacts.ptx}`);
+      if (artifacts.sass) chunks.push(`SASS\n-----\n${artifacts.sass}`);
+      if (artifacts.ir) chunks.push(`IR\n--\n${artifacts.ir}`);
+      if (artifacts.objdump) chunks.push(`OBJDUMP\n-------\n${artifacts.objdump}`);
+      if (artifacts.archs) chunks.push(`ARCHS\n-----\n${artifacts.archs}`);
+      if (artifacts.warnings && artifacts.warnings.length) chunks.push(`WARNINGS\n--------\n${artifacts.warnings.join('\n')}`);
+      return chunks.length ? chunks.join('\n\n') : 'No assembly or IR recorded.';
+    }
+
+    function renderDetail() {
+      const event = state.selectedEvent;
+      detailSummaryEl.replaceChildren();
+      if (!event) {
+        detailEl.textContent = 'Select event.';
+        return;
+      }
+
+      const data = eventData(event);
+      detailSummaryEl.replaceChildren(
+        card('Kind', event.kind),
+        card('Name', eventName(event)),
+        card('ms', eventDuration(event) ? `${eventDuration(event).toFixed(3)} ms` : ''),
+        card('Device', data.device || ''),
+        card('Schedule', data.schedule_id == null ? '' : data.schedule_id),
+        card('Source hash', data.source_hash || '')
+      );
+
+      if (state.selectedTab === 'source') {
+        const compileEvent = event.kind === 'compile' ? event : selectedCompileEvent(event);
+        detailEl.textContent = text(data.source) || text(compileEvent && eventData(compileEvent).source) || 'No source recorded.';
+        return;
+      }
+
+      if (state.selectedTab === 'uops') {
+        const uops = selectedUops(event);
+        detailEl.textContent = uops.length ? uops.map(item => {
+          const itemData = eventData(item);
+          return JSON.stringify({
+            schedule_id: itemData.schedule_id,
+            summary: itemData.summary,
+            repr: itemData.repr,
+          }, null, 2);
+        }).join('\n\n') : 'No UOps recorded for selected event.';
+        return;
+      }
+
+      if (state.selectedTab === 'assembly') {
+        detailEl.textContent = artifactText(event);
+        return;
+      }
+
+      detailEl.textContent = JSON.stringify(event, null, 2);
+    }
+
+    function matchesFilter(event) {
+      const data = eventData(event);
+      const haystack = [
+        event.kind,
+        eventName(event),
+        text(data.op && data.op.name),
+        text(data.device),
+        text(data.name),
+        text(data.kernel),
+        text(data.source_hash),
+        text(data.schedule_id),
+        text(data.summary && data.summary.op),
+        text(data.repr),
+      ].join(' ').toLowerCase();
+      if (state.query && !haystack.includes(state.query.toLowerCase())) return false;
+      if (state.kind !== 'all' && event.kind !== state.kind) return false;
+      if (state.device !== 'all' && text(data.device) !== state.device) return false;
+      return true;
+    }
+
+    function visibleTimelineEvents() {
+      return state.trace.events.filter(event => eventDuration(event) > 0 && matchesFilter(event));
+    }
+
+    function visibleKernelEvents() {
+      return state.trace.events.filter(event => event.kind === 'kernel' && matchesFilter(event));
+    }
+
+    function sortKernelEvents(list) {
+      const dir = state.sortDir === 'asc' ? 1 : -1;
+      const sorted = [...list].sort((a, b) => {
+        const da = eventData(a);
+        const db = eventData(b);
+        switch (state.sortKey) {
+          case 'index': return dir * (asNumber(da.schedule_id) - asNumber(db.schedule_id));
+          case 'name': return dir * eventName(a).localeCompare(eventName(b));
+          case 'op': return dir * text(da.op && da.op.name).localeCompare(text(db.op && db.op.name));
+          case 'device': return dir * text(da.device).localeCompare(text(db.device));
+          case 'gflops': return dir * (asNumber(da.gflops) - asNumber(db.gflops));
+          default: return dir * (kernelElapsed(a) - kernelElapsed(b));
+        }
+      });
+      return sorted;
+    }
+
+    function renderTimeline() {
+      const events = visibleTimelineEvents();
+      const maxEnd = Math.max(1, ...events.map(event => eventBounds(event).end));
+      const scale = state.zoom;
+      const rulerWidth = Math.max(100, scale * 100);
+      timelineRulerEl.replaceChildren();
+      timelineEl.replaceChildren();
+      timelineRulerEl.style.minWidth = `${rulerWidth}%`;
+      timelineEl.style.minWidth = `${rulerWidth}%`;
+
+      [0, 0.25, 0.5, 0.75, 1].forEach(frac => {
+        const tick = document.createElement('span');
+        tick.style.left = `${frac * 100}%`;
+        tick.textContent = `${(maxEnd * frac).toFixed(0)} ms`;
+        timelineRulerEl.appendChild(tick);
+      });
+
+      const selected = state.selectedEvent;
+      events.forEach(event => {
+        const { start, duration } = eventBounds(event);
+        const span = document.createElement('button');
+        span.type = 'button';
+        span.className = `span ${event.kind} ${duration <= 0 ? 'instant' : ''}`;
+        span.style.left = `${Math.min(99.5, (start / maxEnd) * 100)}%`;
+        span.style.width = duration > 0 ? `${Math.max(0.3, (duration / maxEnd) * 100)}%` : '3px';
+        span.style.top = `${12 + (event.kind === 'kernel' ? 0 : event.kind === 'compile' ? 28 : event.kind === 'launch' ? 44 : event.kind === 'copy' ? 60 : 76)}px`;
+        span.title = `${eventSummary(event)}\n${start.toFixed(3)} -> ${eventBounds(event).end.toFixed(3)} ms`;
+        const label = document.createElement('span');
+        label.className = 'label';
+        label.textContent = `${eventName(event)}`;
+        const ms = document.createElement('span');
+        ms.className = 'ms';
+        ms.textContent = duration > 0 ? `${duration.toFixed(3)} ms` : '';
+        span.append(label, ms);
+        span.classList.toggle('selected', selected === event);
+        span.addEventListener('click', () => setSelectedEvent(event));
+        timelineEl.appendChild(span);
+      });
+
+      rangeLabelEl.textContent = `${events.length} spans · ${maxEnd.toFixed(3)} ms`; 
+      if (!events.length) timelineEl.textContent = 'No timed events.';
+    }
+
+    function renderGraph(opEvents) {
+      const width = Math.max(720, (opEvents.length + 1) * 180);
+      const height = 300;
+      const nodes = new Map();
+      const edges = [];
+      const addNode = (id, label, x, y, leaf=false) => {
+        if (!id || nodes.has(id)) return;
+        nodes.set(id, {id, label, x, y, leaf});
+      };
+      opEvents.forEach((event, index) => {
+        const data = event.data || {};
+        const outId = tensorId(data.tensor) || `op-${index}`;
+        const x = 150 + index * 170;
+        const y = 70 + (index % 3) * 70;
+        addNode(outId, `${opLabel(data.op)}\n${tensorLabel(data.tensor)}`, x, y);
+        (data.inputs || []).forEach((input, inputIndex) => {
+          const inId = tensorId(input) || `${outId}-in-${inputIndex}`;
+          addNode(inId, tensorLabel(input), Math.max(20, x - 140), 45 + inputIndex * 45, true);
+          edges.push([inId, outId]);
+        });
+      });
+      if (!nodes.size) {
+        graphEl.textContent = 'No op_created events recorded.';
+        return;
+      }
+      const ns = 'http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(ns, 'svg');
+      svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+      svg.setAttribute('height', height);
+      const defs = document.createElementNS(ns, 'defs');
+      defs.innerHTML = '<marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#4c566a"></path></marker>';
+      svg.appendChild(defs);
+      edges.forEach(([from, to]) => {
+        const a = nodes.get(from), b = nodes.get(to);
+        if (!a || !b) return;
+        const path = document.createElementNS(ns, 'path');
+        path.setAttribute('class', 'edge');
+        path.setAttribute('d', `M${a.x + 120},${a.y + 20} C${a.x + 150},${a.y + 20} ${b.x - 30},${b.y + 20} ${b.x},${b.y + 20}`);
+        svg.appendChild(path);
+      });
+      nodes.forEach(node => {
+        const g = document.createElementNS(ns, 'g');
+        g.setAttribute('class', `node ${node.leaf ? 'leaf' : ''}`);
+        const rect = document.createElementNS(ns, 'rect');
+        rect.setAttribute('x', node.x);
+        rect.setAttribute('y', node.y);
+        rect.setAttribute('width', 120);
+        rect.setAttribute('height', 42);
+        const title = document.createElementNS(ns, 'title');
+        title.textContent = node.label;
+        const label = document.createElementNS(ns, 'text');
+        label.setAttribute('x', node.x + 8);
+        label.setAttribute('y', node.y + 25);
+        label.textContent = node.label.split('\n')[0].slice(0, 16);
+        g.append(rect, title, label);
+        svg.appendChild(g);
+      });
+      graphEl.replaceChildren(svg);
+    }
+
+    function renderKernels() {
+      const kernels = sortKernelEvents(visibleKernelEvents());
+      const selected = state.selectedEvent;
+      kernelsEl.replaceChildren(...kernels.map((event, index) => {
+        const row = document.createElement('tr');
+        row.className = 'kernel';
+        row.classList.toggle('selected', selected === event);
+        const gflops = eventData(event).gflops;
+        const cols = [
+          asNumber(eventData(event).schedule_id ?? index),
+          `${kernelElapsed(event).toFixed(4)} ms`,
+          eventName(event),
+          text(eventData(event).op && eventData(event).op.name),
+          kernelDevice(event),
+          gflops == null ? '' : Number(gflops).toFixed(4),
+        ];
+        cols.forEach(value => {
+          const td = document.createElement('td');
+          td.textContent = text(value);
+          row.appendChild(td);
+        });
+        row.addEventListener('click', () => setSelectedEvent(event));
+        return row;
+      }));
+    }
+
+    function render(trace) {
+      state.trace = trace;
+      const events = trace.events || [];
+      const kernels = events.filter(event => event.kind === 'kernel');
+      const opEvents = events.filter(event => event.kind === 'op_created');
+      const totalKernelMs = kernels.reduce((acc, event) => acc + kernelElapsed(event), 0);
+      const slowest = kernels.reduce((best, event) => kernelElapsed(event) > kernelElapsed(best || {}) ? event : best, null);
+      const meta = trace.metadata || {};
+      statusEl.textContent = `Loaded ${events.length} events`;
+      summaryEl.replaceChildren(
+        card('Format', meta.format || 'unknown'),
+        card('Events', events.length),
+        card('Kernels', kernels.length),
+        card('Kernel ms', totalKernelMs.toFixed(3)),
+        card('Slowest', slowest ? `${kernelName(slowest)} ${kernelElapsed(slowest).toFixed(3)} ms` : ''),
+        card('PID', meta.pid || ''),
+        card('Created', meta.created_at || '')
+      );
+
+      const kinds = ['all', ...new Set(events.map(event => event.kind))].sort();
+      kindFilterEl.replaceChildren(...kinds.map(kind => {
+        const option = document.createElement('option');
+        option.value = kind;
+        option.textContent = kind;
+        return option;
+      }));
+      kindFilterEl.value = state.kind;
+
+      const devices = ['all', ...new Set(events.map(event => text(eventData(event).device)).filter(Boolean))].sort();
+      deviceFilterEl.replaceChildren(...devices.map(device => {
+        const option = document.createElement('option');
+        option.value = device;
+        option.textContent = device;
+        return option;
+      }));
+      deviceFilterEl.value = state.device;
+
+      sortSelectEl.replaceChildren(...[
+        ['elapsed_ms', 'Elapsed ms'],
+        ['name', 'Name'],
+        ['op', 'Op'],
+        ['device', 'Device'],
+        ['gflops', 'GFLOPs'],
+        ['index', 'Schedule id'],
+      ].map(([value, label]) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = label;
+        return option;
+      }));
+      sortSelectEl.value = state.sortKey;
+
+      renderTimeline();
+      renderGraph(opEvents);
+      renderKernels();
+
+      if (!state.selectedEvent && kernels.length) setSelectedEvent(kernels[0]);
+      if (state.selectedEvent && !matchesFilter(state.selectedEvent) && kernels.length) setSelectedEvent(kernels[0]);
+      if (state.selectedEvent && !events.includes(state.selectedEvent) && !kernels.length) setSelectedEvent(events[0] || null);
+
+      eventsEl.textContent = JSON.stringify(events, null, 2);
+    }
+
+    searchEl.addEventListener('input', () => { state.query = searchEl.value; render(state.trace); });
+    kindFilterEl.addEventListener('change', () => { state.kind = kindFilterEl.value; render(state.trace); });
+    deviceFilterEl.addEventListener('change', () => { state.device = deviceFilterEl.value; render(state.trace); });
+    sortSelectEl.addEventListener('change', () => { state.sortKey = sortSelectEl.value; render(state.trace); });
+    zoomRangeEl.addEventListener('input', () => {
+      state.zoom = Number(zoomRangeEl.value);
+      renderTimeline();
+    });
+    tabsEl.addEventListener('click', event => {
+      const button = event.target.closest('.tab');
+      if (!button) return;
+      setTab(button.dataset.tab);
+    });
+    document.querySelectorAll('th button[data-sort]').forEach(button => {
+      button.addEventListener('click', () => {
+        const key = button.dataset.sort;
+        state.sortDir = state.sortKey === key && state.sortDir === 'desc' ? 'asc' : 'desc';
+        state.sortKey = key;
+        renderKernels();
+      });
+    });
+
+    fetch('traces/latest.json')
+      .then(response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then(render)
+      .catch(error => {
+        statusEl.textContent = `Could not load traces/latest.json: ${error.message}`;
+      });
+  </script>
+</body>
+</html>
