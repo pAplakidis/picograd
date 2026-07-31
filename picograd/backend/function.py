@@ -253,7 +253,7 @@ class Softmax(Function):
   def forward(self, a: "Tensor", axis=None):
     self.a = a
     self.axis = axis if axis is not None else -1
-    self.out = self.UnaryOps.softmax(a, axis)
+    self.out = self.UnaryOps.softmax(a, self.axis)
     return self.out
   
   def backward(self, grad_out):

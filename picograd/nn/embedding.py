@@ -40,6 +40,8 @@ class Embedding(Layer):
     # TODO: with no_grad()
     if padding_idx is not None: self.weight[padding_idx] = 0.0
 
+    self.register_param("weight", self.weight)
+
   def __call__(self, x: Tensor) -> Tensor:
       emb = self.weight[x.numpy()]
       # if self.padding_idx is not None:

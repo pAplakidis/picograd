@@ -183,13 +183,12 @@ Open `http://localhost:8000/index.html` locally. Use `--host 0.0.0.0` only if yo
 
 ## TODO
 
-- save/load models - state dict
 - rewrite device to use Buffer class
-- shapetracker + conv2d padding
+- shapetracker + conv2d with padding
 - full metal support (20 ops)
 - cleanup renderer and tensor: generic unary ops for activation functions, etc
 - allocate memory on realize + UOps.LOAD only (+ store on UOps.STORE only)
-- MNIST: lazy CUDA much slower than CPU?
+- Make CUDA and METAL faster (MNIST lazy CUDA much slower than CPU)
 
 - Better AST => better Lazy Buffers => ScheduleItems
 - Generic Renderer using pattern matcher
@@ -202,12 +201,9 @@ Open `http://localhost:8000/index.html` locally. Use `--host 0.0.0.0` only if yo
 - Stable Diffusion
 - LLAMA (?)
 
-## BUGS
-
-- MNIST_simple (cuda) - illegal address on relu out.grad read + out of memory after some iterations
-
 ### DONE
 
+- save/load models - state dict
 - make gradients a Tensor so that backwards can be used with lazy
 - Conv2D trick
 - Lazy buffers, scheduler, linearizer

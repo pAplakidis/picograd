@@ -11,6 +11,7 @@ import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import picograd.nn as nn
+import picograd.nn.state as state
 from picograd.tensor import Tensor, default_device
 from picograd.backend.device import Devices
 from picograd.loss import *
@@ -45,6 +46,7 @@ class Testnet(nn.Module):
 if __name__ == '__main__':
   X_train, Y_train, X_test, Y_test = get_data()
 
+  model_path = "./checkpoints/mnist_simple.pth"
   model = Testnet(784, 10).to(device)
   optim = Adam(model.get_params(), lr=1e-3)
 
@@ -84,6 +86,7 @@ if __name__ == '__main__':
       t.set_description(f"Loss: {loss_mean:.2f}")
 
     print(f"Avg loss: {np.array(epoch_losses).mean()}")
+  state.save(model.state_dict(), model_path)
 
   plt.plot(losses)
   plt.show()

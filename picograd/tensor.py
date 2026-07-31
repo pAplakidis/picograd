@@ -106,6 +106,20 @@ class Tensor:
     self._device_grad = None
     if device.name != Devices.CPU: self.to(device)
 
+  def __getstate__(self):
+    # snapshot host data only: skips unpicklable lambdas, device managers, and dangling device pointers
+    return {
+      'data': self.data.copy(),
+      'name': self.name,
+      'requires_grad': self.requires_grad,
+      'device': self.device.name.name,
+      'dtype': self.dtype,
+    }
+
+  def __setstate__(self, state):
+    self.__init__(np.array(state['data'], dtype=state['dtype']), name=state['name'],
+                  requires_grad=state['requires_grad'], device=Device(Devices[state['device']]), dtype=state['dtype'])
+
   @property
   def data(self) -> np.ndarray:
     assert self._data is not None or self.device_data is not None, "Tensor data is not initialized."
@@ -503,22 +517,33 @@ class Tensor:
     return self.data.tolist()
 
   def realize(self):
+    if not self.lazy:
+      if self.device.name != Devices.CPU and self.device_data is not None: self.device.manager.tensor_to_host(self)
+      return
+
+    # Leaf tensors hold data directly (params, inputs) — nothing to compile/schedule
+    if self.prev_op is None or len(self._prev) == 0:
+      if self.device.name != Devices.CPU and self.device_data is not None:
+        self.device.manager.dev_data_to_host(self, free=False)  # sync device->host, keep device copy
+      self.realized = True
+      return
+
     if viz.enabled():
       realize_start = time.perf_counter()
       viz.record("realize_start", tensor=self)
+
     renderer = self.get_renderer()
     ast = linearize(build_ast(self))
     scheduler = Scheduler(ast, renderer)
     schedule = scheduler.create_schedule()
-    if viz.enabled():
-      viz.record("schedule", tensor=self, ast_nodes=len(ast), schedule_items=len(schedule), ops=[node.op for node in ast])
+
+    if viz.enabled(): viz.record("schedule", tensor=self, ast_nodes=len(ast), schedule_items=len(schedule), ops=[node.op for node in ast])
     try:
       scheduler.run_schedule()
       for node in ast:
         if node.tensor.prev_op is not None: node.tensor.realized = True
     finally:
-      if viz.enabled():
-        viz.record("realize_end", tensor=self, ast_nodes=len(ast), schedule_items=len(schedule), duration_ms=(time.perf_counter() - realize_start) * 1000.0)
+      if viz.enabled(): viz.record("realize_end", tensor=self, ast_nodes=len(ast), schedule_items=len(schedule), duration_ms=(time.perf_counter() - realize_start) * 1000.0)
 
   def from_op(
     self,
