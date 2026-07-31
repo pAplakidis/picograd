@@ -8,6 +8,7 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import picograd
 import picograd.nn as nn
+import picograd.nn.state as state
 import picograd.optim as optim
 from picograd.loss import CrossEntropyLoss
 from picograd.draw_utils import draw_dot
@@ -142,6 +143,9 @@ if __name__ == "__main__":
 
   m = GPT(vocab_size, n_embed, block_size).to(device)
   train_model(m)
+  model_path = "./checkpoints/gpt.pth"
+  state.save(m.state_dict(), model_path)
+  print(f"[+] Model saved to {model_path}")
 
   # context = torch.zeros((1, 1), dtype=torch.long, device=device)
   # print(decode(m.generate(context, max_new_tokens=500)[0].tolist()))

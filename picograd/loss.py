@@ -75,13 +75,35 @@ def CrossEntropyLoss(z: Tensor, y: Tensor) -> Tensor:
       def backward():
         target._accumulate_grad(Tensor(grad, requires_grad=False, device=z.device, lazy=True))
 
-    out = Tensor(loss_val, name="crossentropyloss_out", requires_grad=False, lazy=False)
+    out = Tensor(loss_val, name="crossentropyloss_out", requires_grad=False, device=z.device, lazy=z.lazy)
+    out.realized = True
     out._prev = prev
     out.prev_op = OPS.CrossEntropyLoss
     out._backward = backward
     return out
 
   func = CrossEntropy(z.device.name)
+
+  # Fused softmax+CE: backprop straight to the pre-softmax logits, skipping the softmax node
+  if z.prev_op == OPS.Softmax and len(z._prev) > 0:
+    target = z._prev[0]
+    batch_size, n_classes = z.shape
+    labels = y.data.astype(np.int32)
+    one_hot = np.zeros((batch_size, n_classes), dtype=np.float32)
+    one_hot[np.arange(batch_size), labels] = 1
+    scale = 1.0 / batch_size
+
+    if z.device.name == Devices.CPU:
+      out = Tensor(func.forward(z, y), name="crossentropyloss_out", _prev=(target,), requires_grad=False)
+    else:
+      out = Tensor(device_data=func.forward(z, y), shape=(z.shape[0],), _prev=(target,), requires_grad=False, device=z.device)
+
+    def backward():
+      target._accumulate_grad(Tensor((z.data - one_hot) * scale, requires_grad=False, device=z.device, lazy=z.lazy))
+    out.prev_op = OPS.CrossEntropyLoss
+    out._backward = backward
+    return out
+
   if z.device.name == Devices.CPU:
     out = Tensor(
       func.forward(z, y),

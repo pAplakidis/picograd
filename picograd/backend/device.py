@@ -6,6 +6,7 @@ from typing import Optional, Tuple, List
 from enum import Enum, auto
 
 from picograd.print_utils import *
+from picograd.viz import recorder as viz
 
 DEBUG = int(os.getenv("DEBUG", 0))
 PSEUDO_DEBUG = int(os.getenv("PSEUDO_DEBUG", 0))  # if 1, generate assembly code as string but don't print (helps with segfaults)
@@ -86,7 +87,7 @@ class DeviceManager:
   def host_data_to_dev(self, tensor: "Tensor"):
     assert tensor._data is not None, "Tensor data is None, cannot copy to device"
 
-    if DEBUG >= 3 and not PSEUDO_DEBUG:
+    if (DEBUG >= 3 and not PSEUDO_DEBUG) or viz.enabled():
       start_time = time.time()
 
     T_flat = self.flatten_tensor(tensor._data)
@@ -94,12 +95,14 @@ class DeviceManager:
     self.copy_data_to_device(d_T, T_flat)
     tensor.device_data = d_T
     
+    if viz.enabled():
+      viz.record("copy", direction="host_to_device", tensor=tensor, bytes=tensor._data.nbytes, device=self.device_name, duration_ms=(time.time() - start_time) * 1000.0 if 'start_time' in locals() else None)
     if DEBUG >= 3 and not PSEUDO_DEBUG:
       print(f"{color_green(f'[{self.device_name}]')} Tensor data copied to device - {color_red(f'{tensor._data.nbytes} bytes')} - {color_red(f'{(time.time() - start_time) * 1000:.4f} ms')}")
 
   def host_grad_to_dev(self, tensor: "Tensor"):
     if tensor.grad is None: return
-    if DEBUG >= 3 and not PSEUDO_DEBUG:
+    if (DEBUG >= 3 and not PSEUDO_DEBUG) or viz.enabled():
       start_time = time.time()
 
     grad_flat = self.flatten_tensor(tensor.grad.data)
@@ -107,13 +110,15 @@ class DeviceManager:
     self.copy_data_to_device(d_grad, grad_flat)
     tensor.device_grad = d_grad
 
+    if viz.enabled():
+      viz.record("copy", direction="grad_host_to_device", tensor=tensor, bytes=grad_flat.nbytes, device=self.device_name, duration_ms=(time.time() - start_time) * 1000.0 if 'start_time' in locals() else None)
     if DEBUG >= 3 and not PSEUDO_DEBUG:
       print(f"{color_green(f'[{self.device_name}]')} Tensor gradient copied to device - {color_red(f'{tensor.grad.nbytes} bytes')} - {color_red(f'{(time.time() - start_time) * 1000:.4f} ms')}")
 
   def dev_data_to_host(self, tensor: "Tensor", free=True):
     assert tensor.device_data is not None, "Tensor device data is None, cannot copy to host"
 
-    if DEBUG >= 3 and not PSEUDO_DEBUG:
+    if (DEBUG >= 3 and not PSEUDO_DEBUG) or viz.enabled():
       start_time = time.time()
 
     if not tensor.is_contiguous: tensor = tensor.contiguous()
@@ -121,17 +126,17 @@ class DeviceManager:
     self.copy_data_to_host(tensor.device_data, data_flat)
     tensor._data = data_flat.reshape(tensor._shape)
 
-    if free:
-      self.free_device_tensor(tensor.device_data)
-      tensor.device_data = None
+    if free: tensor.device_data = None
 
+    if viz.enabled():
+      viz.record("copy", direction="device_to_host", tensor=tensor, bytes=tensor._data.nbytes, device=self.device_name, duration_ms=(time.time() - start_time) * 1000.0 if 'start_time' in locals() else None)
     if DEBUG >= 3 and not PSEUDO_DEBUG:
       print(f"{color_green(f'[{self.device_name}]')} Tensor data copied to host - {color_red(f'{tensor._data.nbytes} bytes')} - {color_red(f'{(time.time() - start_time) * 1000:.4f} ms')}")
 
   def dev_grad_to_host(self, tensor: "Tensor", free=True):
     assert tensor.device_grad is not None, "Tensor device grad is None, cannot copy to host"
 
-    if DEBUG >= 3 and not PSEUDO_DEBUG:
+    if (DEBUG >= 3 and not PSEUDO_DEBUG) or viz.enabled():
       start_time = time.time()
 
     grad_flat = np.empty(tensor._shape, dtype=tensor.dtype).ravel()
@@ -142,6 +147,8 @@ class DeviceManager:
       self.free_device_tensor(tensor.device_grad)
       tensor.device_grad = None
 
+    if viz.enabled():
+      viz.record("copy", direction="grad_device_to_host", tensor=tensor, bytes=grad_flat.nbytes, device=self.device_name, duration_ms=(time.time() - start_time) * 1000.0 if 'start_time' in locals() else None)
     if DEBUG >= 3 and not PSEUDO_DEBUG:
       print(f"{color_green(f'[{self.device_name}]')} Tensor gradient copied to host - {color_red(f'{tensor.grad.nbytes} bytes')} - {color_red(f'{(time.time() - start_time) * 1000:.4f} ms')}")
 

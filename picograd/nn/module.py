@@ -38,13 +38,14 @@ class Layer:
     self._params[name] = tensor
     return tensor
 
+  @property
   def parameters(self):
     """Returns a list of Tensors registered on this layer."""
     return list(self._params.values())
 
   def to(self, device: Device):
     self.device = device
-    for param in self.parameters(): param.to(device)
+    for param in self.parameters: param.to(device)
     return self
 
   def _track(self, t: Tensor):
@@ -60,6 +61,9 @@ class Module:
     self.params = []
     self.train = True
     self.device = Device(Devices.CPU)
+
+    self._buffers = {}
+    self._modules = {}
 
   def to(self, device: Device):
     self.device = device
@@ -82,27 +86,41 @@ class Module:
   def __call__(self, *params):
     return self.forward(*params)
 
-  def get_layers(self):
-    layers = []
-    for _, v in self.__dict__.items():
-      if isinstance(v, Layer):
-        layers.append(v)
-    return layers
+  @property
+  def layers(self):
+    return {name: v for name, v in self.__dict__.items() if isinstance(v, Layer)}
 
   def get_params(self):
     params = []
-    for layer in self.get_layers():
-      params.extend(layer.parameters())
+    for layer in self.layers.values():
+      params.extend(layer.parameters)
     return params
+
+  def state_dict(self):
+    state = {}
+    for name, layer in self.layers.items():
+      for param_name, param in layer._params.items():
+        param.realize()
+        state[f"{name}.{param_name}"] = param
+    return state
+
+  def load_state_dict(self, state_dict: dict):
+    for name, layer in self.layers.items():
+      for param_name, param in layer._params.items():
+        key = f"{name}.{param_name}"
+        if key in state_dict:
+          param.data = state_dict[key].data
+        else:
+          raise KeyError(f"Parameter {key} not found in state_dict")
 
 
 class Sequential(Module):
   def __init__(self, *layers: Layer):
     super().__init__()
-    self.layers = layers
+    self._layers = layers
 
   def forward(self, x: Tensor) -> Tensor:
-    for layer in self.layers:
+    for layer in self._layers:
       x = layer(x)
     return x
 

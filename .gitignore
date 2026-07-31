@@ -1,6 +1,7 @@
 .*.swp
 .gdb_history
 *.so
+
 __pycache__/
 graphs/
 media/
@@ -8,3 +9,6 @@ lib/
 mnist_data/
 **/.DS_Store
 graphify-out/
+picograd/viz/traces/
+checkpoints/
+.vscode/

@@ -7,15 +7,15 @@ import numpy as np
 # setup import path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from picograd.tensor import Tensor
+from picograd.tensor import Tensor, default_device
 from picograd.loss import CrossEntropyLoss
-from picograd.backend.device import Devices, Device
+from picograd.backend.device import Devices
 from picograd.backend.linearizer import *
 
 
 IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
-
-device = None if IN_GITHUB_ACTIONS else Device(Devices.METAL)
+device = None if IN_GITHUB_ACTIONS else default_device()
+if device is not None and device.name == Devices.CPU: device = None
 lazy = True
 serial = True
 if device is not None:
@@ -23,7 +23,7 @@ if device is not None:
 
 
 # TODO: skip for now, we need CPU renderer and/or mock GPU
-@unittest.skipIf(IN_GITHUB_ACTIONS, "GPU compiler tests require Metal/CUDA")
+@unittest.skipIf(device is None, "GPU compiler tests require CUDA=1 or METAL=1")
 class TestCompilerOps(unittest.TestCase):
   def setUp(self):
     np.random.seed(42)
